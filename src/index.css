@@ -24,7 +24,7 @@
 
 * { box-sizing: border-box; }
 html { min-width: 320px; background: var(--paper); }
-html, body { overflow-x: hidden; }
+html, body { overflow-x: clip; }
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -101,13 +101,23 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .icon-button:hover, .quiet-button:hover { background: var(--card); border-color: #a9aaa3; transform: translateY(-1px); }
 .voice-status { display:flex; align-items:center; gap:6px; font-size:.78em; font-weight:700; color:var(--accent-deep); }
 .profile-strip {
-  margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,253,248,.78);
+  margin-top: 12px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px 16px;
+  padding:8px 12px; border:1px solid var(--line); border-radius:13px; background:rgba(255,253,248,.78);
 }
-.profile-label { display:flex; align-items:center; gap:8px; font-size:.82em; font-weight:700; }
-.profile-summary { color:var(--muted); font-size:.76em; margin-top: 3px; }
-.clear-profile { border:0; background:transparent; color:var(--accent-deep); font-weight:700; padding:8px; border-radius:8px; }
-.clear-profile:hover { background:var(--accent-soft); }
+.profile-strip-main { min-width:0; }
+.profile-label { display:flex; align-items:center; gap:8px; min-height:42px; font-size:.86em; font-weight:800; line-height:1.3; word-break:keep-all; }
+.profile-label svg { flex:none; }
+.profile-details { margin-top:3px; }
+.profile-summary { display:flex; flex-wrap:wrap; gap:6px; list-style:none; margin:0; padding:0; }
+.profile-summary li { padding:5px 9px; border-radius:99px; background:var(--accent-soft); color:var(--accent-deep); font-size:.76em; line-height:1.25; word-break:keep-all; }
+.profile-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+.profile-details-toggle, .clear-profile {
+  min-height:calc(44px * var(--control)); display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:0 12px; border:1px solid var(--line); border-radius:11px; background:var(--card); color:var(--ink);
+  font-size:.78em; font-weight:800; line-height:1.25; white-space:nowrap; word-break:keep-all;
+}
+.clear-profile { border-color:var(--accent); color:var(--accent-deep); }
+.profile-details-toggle:hover, .clear-profile:hover { background:var(--accent-soft); }
 .main-content { flex:1; padding: 30px 0 0; }
 .eyebrow { color: var(--accent-deep); font-size: .76em; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 h1, h2, h3, p { margin-top:0; }
@@ -144,10 +154,18 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .hero-art-caption strong { font-size:.76em; }
 .hero-art-caption small { margin-top:3px; color:rgba(255,250,243,.82); font-size:.64em; }
 .hero-actions { display:flex; gap:12px; margin-top:30px; flex-wrap:wrap; }
+.hero-actions > button { flex:1; min-width:0; }
+.kiosk.text-extra .hero-actions, .kiosk.text-extra .bottom-actions, .kiosk.text-extra .item-footer, .kiosk.text-extra .cart-bar {
+  flex-direction:column; align-items:stretch;
+}
+.kiosk.text-extra .hero-actions > button, .kiosk.text-extra .bottom-actions > button, .kiosk.text-extra .item-footer > button { width:100%; min-width:0; }
+.kiosk.text-extra .cart-bar > * { width:100%; }
 .primary-button, .secondary-button {
   min-height:calc(58px * var(--control)); border-radius:16px; padding:0 23px; display:inline-flex; align-items:center; justify-content:center; gap:10px;
-  border:1px solid transparent; font-size:1em; font-weight:800; transition:transform .18s, background .18s, box-shadow .18s;
+  border:1px solid transparent; font-size:1em; font-weight:800; line-height:1.3; text-align:center; word-break:keep-all; overflow-wrap:normal;
+  transition:transform .18s, background .18s, box-shadow .18s;
 }
+.button-label { flex:none; white-space:nowrap; word-break:keep-all; }
 .primary-button { color:#fffaf1; background:var(--ink); box-shadow:0 8px 18px rgba(69,45,29,.17); }
 .primary-button:hover { background:#4b3528; transform:translateY(-2px); }
 .secondary-button { color:var(--ink); background:var(--card); border-color:var(--line); }
@@ -180,12 +198,29 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 }
 .category-button:hover { background:#eae5da; color:var(--ink); }
 .category-button.active { color:var(--ink); background:#e3e8df; box-shadow:inset 3px 0 0 var(--accent); }
+.menu-products { min-width:0; }
+.menu-browse-tools {
+  position:sticky; top:14px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  margin:0 0 12px; padding:10px 12px; border:1px solid var(--line); border-radius:15px;
+  background:rgba(255,253,249,.96); box-shadow:0 6px 18px rgba(62,43,29,.08); backdrop-filter:blur(10px);
+}
+.menu-browse-note { display:flex; flex-direction:column; gap:3px; min-width:0; margin:0; }
+.menu-browse-note strong { font-size:.88em; line-height:1.35; word-break:keep-all; }
+.menu-browse-note span { color:var(--muted); font-size:.76em; }
+.menu-next-button {
+  min-height:48px; display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:none;
+  padding:0 13px; border:1px solid var(--accent); border-radius:12px; background:var(--card); color:var(--accent-deep);
+  font-size:.84em; font-weight:800; line-height:1.25; white-space:nowrap; word-break:keep-all;
+}
+.menu-next-button:hover:not(:disabled) { background:var(--accent-soft); }
+.menu-next-button:disabled { background:var(--accent-soft); cursor:default; opacity:1; }
 .product-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .product-card {
+  min-width:0; scroll-margin-top:150px; scroll-margin-bottom:140px;
   background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; display:flex; flex-direction:column;
   transition:transform .2s, box-shadow .2s, border .2s;
 }
-.product-card > button { border:0; padding:0; text-align:left; color:inherit; background:transparent; display:flex; flex-direction:column; height:100%; }
+.product-card > button { min-width:0; border:0; padding:0; text-align:left; color:inherit; background:transparent; display:flex; flex-direction:column; height:100%; }
 .product-card:hover { transform:translateY(-3px); box-shadow:var(--shadow); border-color:#b9b5a9; }
 .product-art { height:138px; display:grid; place-items:center; position:relative; overflow:hidden; background:#eee4d8; color:#79573f; }
 .product-art:before,.product-art:after { content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.38); }
@@ -200,8 +235,8 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .art-macaron { background:#ece3dc;color:#796257; }
 .art-croissant { background:#f0e3ce;color:#9c7040; }
 .art-food { background:#e9e2d6;color:#6e624d; }
-.product-meta { padding:16px 17px 17px; display:flex; flex:1; flex-direction:column; }
-.product-name-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.product-meta { min-width:0; padding:16px 17px 17px; display:flex; flex:1; flex-direction:column; }
+.product-name-row { min-width:0; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
 .product-korean { color:var(--muted); font-size:.76em; margin-top:4px; }
 .price { font-weight:800; white-space:nowrap; font-size:.97em; }
 .product-bottom { display:flex; align-items:center; justify-content:space-between; margin-top:auto; padding-top:15px; }
@@ -310,9 +345,6 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .loading-dot { width:9px;height:9px;border-radius:50%;background:var(--accent);animation:soft-pulse 1s ease-in-out infinite; }
 .empty-state { padding:42px 20px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:20px;color:var(--muted); }
 .empty-state svg { margin-bottom:12px;color:#75877e; }
-.show-more-button { display:flex;align-items:center;justify-content:center;gap:6px;min-height:50px;margin:14px auto 0;padding:0 17px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink);font-weight:800; }
-.show-more-button:hover { border-color:var(--accent);background:var(--accent-soft); }
-.rotate-chevron { transform:rotate(-90deg); }
 .help-note { display:flex;align-items:center;gap:13px;padding:17px;border-radius:15px;background:var(--sage);color:var(--ink);font-weight:700;line-height:1.5; }
 .help-close { width:100%;margin-top:18px; }
 .store-chip { display:inline-flex;align-items:center;gap:6px;background:#f0e3d4;padding:7px 11px;border-radius:99px;font-size:.76em;font-weight:700;color:#684a35; }
@@ -335,7 +367,8 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .brand-name { font-size:16px; }
   .top-actions .quiet-button span { display:none; }
   .voice-status { display:none; }
-  .profile-strip { align-items:flex-start; }
+  .profile-strip { grid-template-columns:minmax(0,1fr); align-items:stretch; }
+  .profile-actions { justify-content:flex-start; }
   .main-content { padding-top:22px; }
   .hero-panel { min-height:0;grid-template-columns:1fr;gap:20px;padding:18px; }
   .hero-art { height:260px;border-radius:140px 140px 19px 19px; }
@@ -343,6 +376,12 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .hero-copy h1 { max-width:13ch;font-size:clamp(2.05em,8vw,2.8em); }
   .hero-actions { margin-top:23px; }
   .hero-actions > button { flex:1;min-width:0;padding-right:13px;padding-left:13px; }
+  .kiosk.text-large .hero-actions, .kiosk.text-large .bottom-actions, .kiosk.text-large .item-footer, .kiosk.text-large .cart-bar {
+    flex-direction:column; align-items:stretch;
+  }
+  .kiosk.text-large .hero-actions > button, .kiosk.text-large .bottom-actions > button, .kiosk.text-large .item-footer > button { width:100%; min-width:0; }
+  .kiosk.text-large .cart-bar > * { width:100%; }
+  .kiosk.text-large .complete-panel > .primary-button { width:100%; }
   .welcome-support { gap:9px;margin-top:13px; }
   .welcome-link { min-height:68px;padding:9px 10px;gap:8px; }
   .welcome-link-icon { width:34px;height:34px; }
@@ -351,10 +390,14 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .access-choice { min-height:68px;gap:10px;padding:10px; }
   .access-choice-icon { width:38px;height:38px; }
   .menu-layout { grid-template-columns:1fr;gap:17px; }
-  .category-nav { position:static;flex-direction:row;overflow-x:auto;padding:1px 0 8px;margin-right:-16px;scrollbar-width:thin; }
+  .category-nav { position:sticky;top:0;z-index:7;flex-direction:row;overflow-x:auto;padding:8px 0;margin-right:-16px;background:var(--paper);scrollbar-width:thin; }
   .category-button { flex:none;white-space:nowrap;padding:10px 13px;min-height:44px; }
   .category-button.active { box-shadow:inset 0 -3px 0 var(--accent); }
+  .menu-browse-tools { top:60px; }
   .product-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+  .kiosk.text-large .product-grid, .kiosk.text-extra .product-grid, .kiosk.controls-large .product-grid, .kiosk.simplified .product-grid { grid-template-columns:minmax(0,1fr); }
+  .kiosk.text-large .menu-browse-tools, .kiosk.text-extra .menu-browse-tools { flex-direction:column;align-items:stretch; }
+  .kiosk.text-large .menu-next-button, .kiosk.text-extra .menu-next-button { width:100%; }
   .product-art { height:112px; }
   .product-meta { padding:12px; }
   .product-name-row { display:block; }
@@ -380,6 +423,7 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 }
 @media (max-width:380px) {
   .shell { padding-left:12px;padding-right:12px; }
+  .category-nav { margin-right:-12px; }
   .product-grid { grid-template-columns:1fr; }
   .product-card { display:grid;grid-template-columns:100px 1fr; }
   .product-art { height:100%;min-height:138px; }
@@ -396,6 +440,20 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .access-choice { gap:8px;padding:9px; }
   .access-choice small { font-size:.68em; }
   .access-choice-icon { width:36px;height:36px; }
+}
+@media (min-width:701px) and (max-width:900px) {
+  .kiosk.text-extra .product-grid, .kiosk.controls-large .product-grid {
+    grid-template-columns:minmax(0,1fr);
+  }
+}
+@media (max-width:900px) {
+  .kiosk.simplified .product-grid {
+    grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
+  }
+}
+@media (min-width:701px) {
+  .kiosk.text-extra .profile-strip { grid-template-columns:minmax(0,1fr); }
+  .kiosk.text-extra .profile-actions { justify-content:flex-start; }
 }
 @media (min-width:381px) and (max-width:440px) {
   .welcome-support { grid-template-columns:1fr; }

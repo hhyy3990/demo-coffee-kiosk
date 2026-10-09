@@ -152,6 +152,7 @@ export default function App() {
   const [preferences, setPreferences] = useState<Preferences>({ ...DEFAULT_PREFERENCES });
   const [activeProfile, setActiveProfile] = useState<"none" | "central" | "demo" | "manual">("none");
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
+  const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
@@ -160,7 +161,11 @@ export default function App() {
   const [guideVisible, setGuideVisible] = useState(false);
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
-  const [showAllProducts, setShowAllProducts] = useState(false);
+  const [menuFocusIndex, setMenuFocusIndex] = useState(0);
+  const productGridRef = useRef<HTMLDivElement>(null);
+  const menuBrowseRef = useRef<HTMLDivElement>(null);
+  const programmaticMenuScrollRef = useRef(false);
+  const menuScrollGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityRef = useRef({ count: 0, lastAt: Date.now() });
   const guideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakRef = useRef<(text: string) => void>(() => undefined);
@@ -245,6 +250,58 @@ export default function App() {
     preferences.bottomControls ? "bottom-controls" : "",
   ].filter(Boolean).join(" ");
 
+  const currentProducts = PRODUCTS.filter((product) => product.category === category);
+  const isLastMenu = menuFocusIndex >= currentProducts.length - 1;
+  const goToNextMenu = () => {
+    if (isLastMenu) return;
+    const nextIndex = menuFocusIndex + 1;
+    setMenuFocusIndex(nextIndex);
+    programmaticMenuScrollRef.current = true;
+    if (menuScrollGuardRef.current) clearTimeout(menuScrollGuardRef.current);
+    menuScrollGuardRef.current = setTimeout(() => {
+      programmaticMenuScrollRef.current = false;
+      menuScrollGuardRef.current = null;
+    }, 900);
+    requestAnimationFrame(() => {
+      const target = productGridRef.current?.querySelector<HTMLElement>(`[data-menu-index="${nextIndex}"]`);
+      if (!target) return;
+      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      target.scrollIntoView({ behavior, block: "start" });
+      target.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    });
+  };
+
+  useEffect(() => {
+    if (stage !== "menu" || !preferences.simplifiedLayout) return;
+    let animationFrame = 0;
+    const updateMenuPosition = () => {
+      if (programmaticMenuScrollRef.current) return;
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = 0;
+        if (programmaticMenuScrollRef.current) return;
+        const cards = Array.from(productGridRef.current?.querySelectorAll<HTMLElement>(".product-card") ?? []);
+        if (!cards.length) return;
+        const browseBottom = menuBrowseRef.current?.getBoundingClientRect().bottom ?? 0;
+        const visibleIndex = cards.findIndex((card) => card.getBoundingClientRect().bottom > Math.max(0, browseBottom) + 8);
+        const atPageBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+        const nextIndex = atPageBottom || visibleIndex === -1 ? cards.length - 1 : Number(cards[visibleIndex].dataset.menuIndex);
+        if (!Number.isNaN(nextIndex)) {
+          setMenuFocusIndex((current) => current === nextIndex ? current : nextIndex);
+        }
+      });
+    };
+    window.addEventListener("scroll", updateMenuPosition, { passive: true });
+    updateMenuPosition();
+    return () => {
+      window.removeEventListener("scroll", updateMenuPosition);
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (menuScrollGuardRef.current) clearTimeout(menuScrollGuardRef.current);
+      menuScrollGuardRef.current = null;
+      programmaticMenuScrollRef.current = false;
+    };
+  }, [category, currentProducts.length, preferences.simplifiedLayout, stage]);
+
   const openOptions = (product: Product) => {
     setSelectedProduct(product);
     setItemOptions(productDefaultOptions(product));
@@ -275,10 +332,12 @@ export default function App() {
   const clearProfile = () => {
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
+    setProfileDetailsOpen(false);
   };
   const applyDemoProfile = () => {
     setPreferences({ ...DEMO_PREFERENCES });
     setActiveProfile("demo");
+    setProfileDetailsOpen(false);
     setQrError("");
     setQrOpen(false);
     setAccessibilityOpen(false);
@@ -289,6 +348,7 @@ export default function App() {
       ? { ...current, textSize: "large", buttonSize: "large" }
       : { ...current, contrast: "high" });
     setActiveProfile("manual");
+    setProfileDetailsOpen(false);
     setAccessibilityOpen(false);
     say(preference === "large" ? "큰 글씨와 큰 버튼을 적용했어요." : "고대비 화면을 적용했어요.");
   };
@@ -315,6 +375,7 @@ export default function App() {
       if (!resolved) throw new Error("응답에서 접근성 설정을 찾지 못했어요. 데모 설정을 대신 적용할 수 있어요.");
       setPreferences(resolved);
       setActiveProfile("central");
+      setProfileDetailsOpen(false);
       setQrOpen(false);
       setTokenInput("");
       say("접근성 설정을 불러왔어요.");
@@ -329,6 +390,7 @@ export default function App() {
     setSelectedPayment("card");
     setReceiptChoice(null);
     setOrderType(type);
+    setMenuFocusIndex(0);
     setStage("menu");
     say(`${type} 주문을 선택했어요.`);
   };
@@ -339,6 +401,7 @@ export default function App() {
     setOrderNumber("");
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
+    setProfileDetailsOpen(false);
     setStage("start");
     say("새 주문을 시작할 수 있어요.");
   };
@@ -351,8 +414,6 @@ export default function App() {
   const openQr = () => { setAccessibilityOpen(false); setQrError(""); setQrOpen(true); };
   const closeQr = () => { if (!qrLoading) setQrOpen(false); };
   const stageStep = stage === "menu" || stage === "options" ? 1 : stage === "cart" ? 2 : stage === "payment" || stage === "processing" ? 3 : stage === "complete" ? 4 : 0;
-  const currentProducts = PRODUCTS.filter((product) => product.category === category);
-  const visibleProducts = preferences.simplifiedLayout && !showAllProducts ? currentProducts.slice(0, 2) : currentProducts;
   const showQrButton = stage === "cart";
 
   return (
@@ -376,12 +437,29 @@ export default function App() {
           </div>
         </header>
         {activeProfile !== "none" && (
-          <section className="profile-strip" aria-label="적용된 화면 설정">
-            <div>
-              <div className="profile-label"><Accessibility size={16} /> {activeProfile === "central" ? "내 QR 설정 적용 중" : activeProfile === "demo" ? "간편 설정 적용 중" : "편한 화면 설정 적용 중"}</div>
-              <div className="profile-summary">{summaryParts.length ? summaryParts.join(" · ") : "현재 화면 설정을 적용했어요."}</div>
+          <section className={`profile-strip ${profileDetailsOpen ? "expanded" : ""}`} aria-label="적용된 화면 설정">
+            <div className="profile-strip-main">
+              <div className="profile-label"><Accessibility size={18} /> {activeProfile === "central" ? "내 QR 설정 적용 중" : activeProfile === "demo" ? "간편 설정 적용 중" : "편한 화면 설정 적용 중"}</div>
+              <div id="profile-details" className="profile-details" hidden={!profileDetailsOpen}>
+                <ul className="profile-summary">
+                  {(summaryParts.length ? summaryParts : ["화면 기본 설정"]).map((part) => <li key={part}>{part}</li>)}
+                </ul>
+              </div>
             </div>
-            <button type="button" className="clear-profile" onClick={clearProfile}>설정 초기화</button>
+            <div className="profile-actions">
+              <button
+                type="button"
+                className="profile-details-toggle"
+                aria-expanded={profileDetailsOpen}
+                aria-controls="profile-details"
+                onClick={() => setProfileDetailsOpen((current) => !current)}
+              >
+                {profileDetailsOpen ? "설정 닫기" : "설정 보기"}
+              </button>
+              <button type="button" className="clear-profile" onClick={clearProfile}>
+                <RotateCcw size={15} aria-hidden="true" /><span className="button-label">설정 초기화</span>
+              </button>
+            </div>
           </section>
         )}
 
@@ -401,8 +479,8 @@ export default function App() {
                   <h1>오늘도<br />향긋한 한 잔</h1>
                   <p className="lede">맛있는 커피와 편안한 시간을 선사합니다.</p>
                   <div className="hero-actions">
-                    <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /> 매장 이용 <ArrowRight size={18} /></button>
-                    <button type="button" className="secondary-button" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /> 포장하기</button>
+                    <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /><span className="button-label">매장 이용</span><ArrowRight size={18} /></button>
+                    <button type="button" className="secondary-button" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /><span className="button-label">포장하기</span></button>
                   </div>
                 </div>
               </section>
@@ -430,18 +508,46 @@ export default function App() {
               <div className="menu-layout">
                 <nav className="category-nav" aria-label="메뉴 분류">
                   {CATEGORY_INFO.map(({ id, label, icon: Icon }) => (
-                    <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => { setCategory(id); setShowAllProducts(false); say(`${label} 메뉴를 보고 있어요.`); }} aria-pressed={category === id}>
+                    <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
+                      setCategory(id);
+                      setMenuFocusIndex(0);
+                      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+                      requestAnimationFrame(() => document.querySelector(".section-heading")?.scrollIntoView({ behavior, block: "start" }));
+                      say(`${label} 메뉴를 보고 있어요.`);
+                    }} aria-pressed={category === id}>
                       <Icon size={19} /> {label}
                     </button>
                   ))}
                 </nav>
-                <section aria-label={categoryNames[category]}>
-                  <div className="product-grid">
-                    {visibleProducts.map((product, index) => {
+                <section className="menu-products" aria-label={categoryNames[category]}>
+                  {preferences.simplifiedLayout && (
+                    <div className="menu-browse-tools" ref={menuBrowseRef}>
+                      <p className="menu-browse-note" aria-live="polite">
+                        <strong>{isLastMenu ? "이 분류의 메뉴를 모두 확인했어요." : "아래에도 메뉴가 있어요."}</strong>
+                        <span>메뉴 {Math.min(menuFocusIndex + 1, currentProducts.length)} / {currentProducts.length}</span>
+                      </p>
+                      <button type="button" className="menu-next-button" onClick={goToNextMenu} disabled={isLastMenu}>
+                        <span>{isLastMenu ? "마지막 메뉴예요" : "다음 메뉴 보기"}</span>
+                        {!isLastMenu && <ArrowRight size={18} aria-hidden="true" />}
+                      </button>
+                    </div>
+                  )}
+                  <div
+                    className="product-grid"
+                    ref={productGridRef}
+                    data-menu-count={currentProducts.length}
+                    data-simplified={preferences.simplifiedLayout}
+                  >
+                    {currentProducts.map((product, index) => {
                       const Icon = product.icon;
                       return (
-                        <article className={`product-card ${guideVisible && index === 0 ? "guide-emphasis" : ""}`} id={guideVisible && index === 0 ? "menu-first-product" : undefined} key={product.id}>
-                          <button type="button" onClick={() => openOptions(product)} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
+                        <article
+                          className={`product-card ${guideVisible && index === 0 ? "guide-emphasis" : ""}`}
+                          id={guideVisible && index === 0 ? "menu-first-product" : undefined}
+                          data-menu-index={index}
+                          key={product.id}
+                        >
+                          <button type="button" onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
                             <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
                             <div className="product-meta">
                               <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean">{product.koreanName}</div></div><span className="price">{won(product.price)}</span></div>
@@ -453,11 +559,6 @@ export default function App() {
                       );
                     })}
                   </div>
-                  {preferences.simplifiedLayout && currentProducts.length > 2 && (
-                    <button type="button" className="show-more-button" onClick={() => setShowAllProducts((current) => !current)}>
-                      {showAllProducts ? "메뉴 덜 보기" : `메뉴 ${currentProducts.length - 2}개 더 보기`} <ChevronRight size={17} className={showAllProducts ? "rotate-chevron" : ""} />
-                    </button>
-                  )}
                 </section>
               </div>
               {cart.length > 0 && (
