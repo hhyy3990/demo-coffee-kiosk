@@ -334,9 +334,34 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 }
 .demo-profile-link:hover { color:var(--accent-deep); background:var(--accent-soft); }
 .demo-profile-link:disabled { cursor:not-allowed; opacity:.55; }
-.scan-placeholder { min-height:120px;border:1px dashed #b8b8aa;background:#ecebe2;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:13px;padding:18px;color:var(--muted);margin:18px 0; }
-.scan-placeholder strong { color:var(--ink);display:block;margin-bottom:4px; }
-.scan-placeholder p { font-size:.8em;line-height:1.4;margin:0; }
+.qr-modal { width:min(620px,100%); }
+.qr-error { margin:0 0 14px; }
+.qr-camera-panel { display:grid;gap:13px;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--card); }
+.qr-camera-stage { position:relative;min-height:190px;aspect-ratio:16/9;overflow:hidden;border-radius:14px;background:#292723;color:#fffaf1; }
+.qr-camera-video { position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover; }
+.qr-camera-placeholder { position:absolute;z-index:1;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;color:#fffaf1;background:linear-gradient(145deg,#39332d,#201d19);font-size:.9em;font-weight:800; }
+.qr-camera-frame { position:absolute;z-index:2;left:50%;top:50%;width:min(54%,190px);aspect-ratio:1;transform:translate(-50%,-50%); }
+.qr-camera-frame i { position:absolute;width:29px;height:29px;border:3px solid #fffaf1; }
+.qr-camera-frame i:nth-child(1) { left:0;top:0;border-right:0;border-bottom:0;border-radius:9px 0 0; }
+.qr-camera-frame i:nth-child(2) { right:0;top:0;border-left:0;border-bottom:0;border-radius:0 9px 0 0; }
+.qr-camera-frame i:nth-child(3) { right:0;bottom:0;border-left:0;border-top:0;border-radius:0 0 9px; }
+.qr-camera-frame i:nth-child(4) { left:0;bottom:0;border-right:0;border-top:0;border-radius:0 0 0 9px; }
+.qr-camera-instructions strong { display:block;font-size:1em;line-height:1.4;word-break:keep-all; }
+.qr-camera-instructions p { margin:5px 0 7px;color:var(--muted);font-size:.82em;line-height:1.55;word-break:keep-all; }
+.qr-camera-instructions small { display:block;color:var(--muted);font-size:.74em;line-height:1.45;word-break:keep-all; }
+.qr-camera-status { margin:0;padding:10px 12px;border-radius:11px;background:var(--accent-soft);color:var(--accent-deep);font-size:.82em;font-weight:750;line-height:1.45;word-break:keep-all; }
+.qr-camera-actions { display:flex; }
+.qr-camera-actions > button { width:100%;min-height:54px; }
+.qr-manual-toggle,.qr-mode-return {
+  width:100%;min-height:50px;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;padding:10px 14px;
+  border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--accent-deep);font-weight:800;line-height:1.35;word-break:keep-all;
+}
+.qr-manual-toggle:hover,.qr-mode-return:hover { background:var(--accent-soft); }
+.qr-manual-toggle:disabled,.qr-mode-return:disabled { opacity:.55;cursor:not-allowed; }
+.qr-manual-form { margin-top:18px; }
+.qr-manual-note { margin:8px 0 0;color:var(--muted);font-size:.78em;line-height:1.5;word-break:keep-all; }
+.qr-camera-error { margin:0 0 12px;padding:12px 14px;border:1px solid #c87b62;border-radius:12px;background:#fae8df;color:#6d2c1f;font-size:.88em;font-weight:750;line-height:1.5;word-break:keep-all; }
+.qr-modal-footer { display:flex;justify-content:flex-end;margin-top:12px;padding-top:9px;border-top:1px solid var(--line); }
 .field-label { display:block;font-weight:800;font-size:.84em;margin-bottom:8px; }
 .text-field { display:block;width:100%;min-height:52px;border:1px solid var(--line);border-radius:13px;background:var(--card);padding:12px 14px;color:var(--ink); }
 .modal-actions { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;flex-wrap:wrap; }
@@ -427,6 +452,9 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .product-grid { grid-template-columns:1fr; }
   .product-card { display:grid;grid-template-columns:100px 1fr; }
   .product-art { height:100%;min-height:138px; }
+  .qr-modal { padding:18px; }
+  .qr-camera-panel { padding:10px; }
+  .qr-camera-stage { min-height:164px; }
   .product-name-row { display:flex; }
   .price { display:inline;margin-top:0; }
   .hero-actions { flex-direction:column; }

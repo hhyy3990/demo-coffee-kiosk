@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronRight, Clock3, Coffee,
   Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Info, Minus, PackageCheck, Plus,
-  QrCode, RotateCcw, ScanLine, ShoppingBag, Smartphone, Sparkles, Store, Ticket,
+  QrCode, RotateCcw, ShoppingBag, Smartphone, Sparkles, Store, Ticket,
   Trash2, Volume2, VolumeX, X,
 } from "lucide-react";
+import { getManualProfileToken, getScannedProfileToken, isValidProfileToken } from "./qrProfile";
+
+const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
 type Stage = "start" | "menu" | "options" | "cart" | "payment" | "processing" | "complete";
 type Category = "coffee" | "cake" | "dessert" | "food";
@@ -115,28 +118,33 @@ function validatePreferences(input: unknown): Preferences {
   };
 }
 
+function isUnavailableProfileResponse(body: unknown): boolean {
+  if (!isRecord(body)) return true;
+  const candidates: Record<string, unknown>[] = [body];
+  if (isRecord(body.profile)) candidates.push(body.profile);
+  if (isRecord(body.data)) candidates.push(body.data);
+
+  const unavailableStatuses = new Set(["disabled", "inactive", "deactivated", "revoked", "expired", "deleted", "unavailable"]);
+  return candidates.some((candidate) => {
+    const status = typeof candidate.status === "string" ? candidate.status.trim().toLowerCase() : "";
+    return candidate.success === false ||
+      candidate.ok === false ||
+      candidate.active === false ||
+      candidate.enabled === false ||
+      candidate.isActive === false ||
+      candidate.isEnabled === false ||
+      candidate.disabled === true ||
+      candidate.revoked === true ||
+      unavailableStatuses.has(status);
+  });
+}
+
 function extractPreferences(body: unknown): Preferences | null {
   if (!isRecord(body)) return null;
   let candidate: unknown = body.preferences;
   if (!isRecord(candidate) && isRecord(body.profile)) candidate = body.profile.preferences;
   if (!isRecord(candidate) && isRecord(body.data)) candidate = body.data.preferences;
   return isRecord(candidate) ? validatePreferences(candidate) : null;
-}
-
-function getToken(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  try {
-    const addressLike = /^[\w.-]+\.[a-z]{2,}(?:\/|[?#])/i.test(trimmed);
-    const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : addressLike ? `https://${trimmed}` : trimmed;
-    const url = new URL(candidate, "https://kiosk.invalid");
-    const token = url.searchParams.get("token");
-    if (token) return token.trim();
-    if (/^https?:\/\//i.test(candidate) || addressLike || trimmed.startsWith("/") || trimmed.startsWith("?")) return "";
-    return trimmed;
-  } catch {
-    return trimmed;
-  }
 }
 
 export default function App() {
@@ -154,10 +162,13 @@ export default function App() {
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrMode, setQrMode] = useState<"camera" | "manual">("camera");
+  const [qrCameraError, setQrCameraError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
+  const qrRequestInFlightRef = useRef(false);
   const [guideVisible, setGuideVisible] = useState(false);
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
@@ -352,12 +363,14 @@ export default function App() {
     setAccessibilityOpen(false);
     say(preference === "large" ? "큰 글씨와 큰 버튼을 적용했어요." : "고대비 화면을 적용했어요.");
   };
-  const submitToken = async () => {
-    const token = getToken(tokenInput);
-    if (!token) {
-      setQrError("주소에서 토큰을 찾지 못했어요. 토큰을 붙여 넣거나 데모 설정을 적용해 보세요.");
+  const loadProfileToken = async (token: string) => {
+    if (!isValidProfileToken(token)) {
+      setQrError("사용할 수 없는 QR이에요");
       return;
     }
+    if (qrRequestInFlightRef.current) return;
+
+    qrRequestInFlightRef.current = true;
     setQrLoading(true);
     setQrError("");
     try {
@@ -368,22 +381,50 @@ export default function App() {
       });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
+        if ([400, 401, 403, 404, 410, 422].includes(response.status)) {
+          throw new Error("사용할 수 없는 QR이에요");
+        }
         const message = isRecord(body) && typeof body.error === "string" ? body.error : "접근성 설정을 불러오지 못했어요. 다시 시도하거나 데모 설정을 사용해 주세요.";
         throw new Error(message);
       }
+      if (isUnavailableProfileResponse(body)) throw new Error("사용할 수 없는 QR이에요");
       const resolved = extractPreferences(body);
-      if (!resolved) throw new Error("응답에서 접근성 설정을 찾지 못했어요. 데모 설정을 대신 적용할 수 있어요.");
+      if (!resolved) throw new Error("사용할 수 없는 QR이에요");
       setPreferences(resolved);
       setActiveProfile("central");
       setProfileDetailsOpen(false);
       setQrOpen(false);
       setTokenInput("");
+      setQrCameraError("");
       say("접근성 설정을 불러왔어요.");
     } catch (error) {
       setQrError(error instanceof Error ? error.message : "설정을 불러오지 못했어요. 네트워크를 확인해 주세요.");
     } finally {
+      qrRequestInFlightRef.current = false;
       setQrLoading(false);
     }
+  };
+  const submitManualToken = () => {
+    const token = getManualProfileToken(tokenInput);
+    if (!token) {
+      setQrError("사용할 수 없는 QR이에요. 공식 주소 또는 토큰을 확인해 주세요.");
+      return;
+    }
+    void loadProfileToken(token);
+  };
+  const handleScannedQr = (value: string) => {
+    const token = getScannedProfileToken(value);
+    setQrError("");
+    if (!token) {
+      setQrError("사용할 수 없는 QR이에요");
+      return;
+    }
+    void loadProfileToken(token);
+  };
+  const handleCameraUnavailable = (message: string) => {
+    setQrCameraError(message);
+    setQrError("");
+    setQrMode("manual");
   };
   const chooseOrderType = (type: "매장" | "포장") => {
     setCart([]);
@@ -411,7 +452,13 @@ export default function App() {
     return pieces.join(" · ");
   };
 
-  const openQr = () => { setAccessibilityOpen(false); setQrError(""); setQrOpen(true); };
+  const openQr = () => {
+    setAccessibilityOpen(false);
+    setQrError("");
+    setQrCameraError("");
+    setQrMode("camera");
+    setQrOpen(true);
+  };
   const closeQr = () => { if (!qrLoading) setQrOpen(false); };
   const stageStep = stage === "menu" || stage === "options" ? 1 : stage === "cart" ? 2 : stage === "payment" || stage === "processing" ? 3 : stage === "complete" ? 4 : 0;
   const showQrButton = stage === "cart";
@@ -753,25 +800,78 @@ export default function App() {
 
       {qrOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeQr(); }}>
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+          <section className="modal qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
             <div className="modal-header">
-                <div><div className="eyebrow">QR 설정</div><h2 id="qr-title">내 설정 불러오기</h2><p>공유받은 주소나 토큰으로 화면 설정을 적용해요.</p></div>
+              <div><div className="eyebrow">QR 설정</div><h2 id="qr-title">내 설정 불러오기</h2><p>카메라로 QR을 스캔하거나 주소와 토큰을 직접 입력할 수 있어요.</p></div>
               <button type="button" className="icon-button" onClick={closeQr} aria-label="설정 불러오기 닫기"><X size={19} /></button>
             </div>
-            <div className="scan-placeholder">
-              <ScanLine size={32} />
-              <div><strong>QR 카메라 스캔은 데모에서 사용할 수 없어요</strong><p>아래 칸에 공유 주소 또는 토큰을 직접 붙여 넣어 주세요.</p></div>
+            {qrError && <div className="error-message qr-error" role="alert">{qrError}</div>}
+            {qrMode === "camera" ? (
+              <>
+                <Suspense fallback={<div className="loading-state" role="status"><span className="loading-dot" /> 카메라 스캔을 준비하고 있어요.</div>}>
+                  <QrCameraScanner
+                    disabled={qrLoading}
+                    onScan={handleScannedQr}
+                    onCameraUnavailable={handleCameraUnavailable}
+                    onRestart={() => setQrError("")}
+                  />
+                </Suspense>
+                <button
+                  type="button"
+                  className="qr-manual-toggle"
+                  onClick={() => {
+                    setQrError("");
+                    setQrCameraError("");
+                    setQrMode("manual");
+                  }}
+                  disabled={qrLoading}
+                >
+                  <Smartphone size={18} aria-hidden="true" /> 주소 또는 토큰 직접 입력
+                </button>
+              </>
+            ) : (
+              <>
+                {qrCameraError && <div className="qr-camera-error" role="alert">{qrCameraError}</div>}
+                <button
+                  type="button"
+                  className="qr-mode-return"
+                  onClick={() => {
+                    setQrError("");
+                    setQrCameraError("");
+                    setQrMode("camera");
+                  }}
+                  disabled={qrLoading}
+                >
+                  <QrCode size={18} aria-hidden="true" /> 카메라 스캔으로 돌아가기
+                </button>
+                <form className="qr-manual-form" onSubmit={(event) => { event.preventDefault(); submitManualToken(); }}>
+                  <label className="field-label" htmlFor="profile-token">공유 주소 또는 토큰</label>
+                  <input
+                    id="profile-token"
+                    className="text-field"
+                    value={tokenInput}
+                    onChange={(event) => setTokenInput(event.target.value)}
+                    placeholder="공식 QR 주소 또는 토큰"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    disabled={qrLoading}
+                  />
+                  <p className="qr-manual-note">주소를 입력할 때는 내 방식 QR 서비스에서 받은 공식 주소만 사용할 수 있어요.</p>
+                  <div className="modal-actions">
+                    <button type="submit" className="primary-button" disabled={qrLoading}>
+                      {qrLoading ? "불러오는 중" : "설정 불러오기"} <ArrowRight size={17} />
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+            {qrLoading && <div className="loading-state" role="status"><span className="loading-dot" /> 설정을 불러오고 있어요. 잠시만 기다려 주세요.</div>}
+            <div className="qr-modal-footer">
+              <button type="button" className="demo-profile-link" onClick={applyDemoProfile} disabled={qrLoading}>
+                <Accessibility size={17} aria-hidden="true" /> 데모 설정 적용
+              </button>
             </div>
-            <form onSubmit={(event) => { event.preventDefault(); void submitToken(); }}>
-              <label className="field-label" htmlFor="profile-token">공유 주소 또는 토큰</label>
-              <input id="profile-token" className="text-field" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="주소 또는 토큰 붙여 넣기" autoComplete="off" />
-              {qrLoading && <div className="loading-state" role="status"><span className="loading-dot" /> 설정을 불러오고 있어요. 잠시만 기다려 주세요.</div>}
-              {qrError && <div className="error-message" role="alert">{qrError}</div>}
-              <div className="modal-actions">
-                <button type="button" className="demo-profile-link" onClick={applyDemoProfile} disabled={qrLoading}><Accessibility size={17} /> 데모 설정 적용</button>
-                <button type="submit" className="primary-button" disabled={qrLoading}>{qrLoading ? "불러오는 중" : "설정 불러오기"} <ArrowRight size={17} /></button>
-              </div>
-            </form>
           </section>
         </div>
       )}
