@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronRight, Clock3, Coffee,
   Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Info, Minus, PackageCheck, Plus,
@@ -6,10 +6,11 @@ import {
   Trash2, Volume2, VolumeX, X,
 } from "lucide-react";
 import { getManualProfileToken, getScannedProfileToken, isValidProfileToken } from "./qrProfile";
+import { resolveSmartGuide, smartGuideDelayMs, type SmartGuideStage } from "./smartGuide";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
-type Stage = "start" | "menu" | "options" | "cart" | "payment" | "processing" | "complete";
+type Stage = SmartGuideStage;
 type Category = "coffee" | "cake" | "dessert" | "food";
 type Preferences = {
   textSize: "standard" | "large" | "extraLarge";
@@ -91,16 +92,6 @@ const productDefaultOptions = (product: Product): OrderOptions => ({
   cup: "store",
 });
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-const STAGE_GUIDE: Record<Stage, { title: string; text: string }> = {
-  start: { title: "천천히 골라 보세요", text: "매장에서 드실지, 포장하실지 선택하면 메뉴가 열려요." },
-  menu: { title: "메뉴를 골라 보세요", text: "분류를 고른 다음 원하는 메뉴의 더하기 버튼을 눌러요." },
-  options: { title: "원하는 방식으로 선택해요", text: "옵션을 고르고 아래의 메뉴 담기 버튼을 누르면 돼요." },
-  cart: { title: "주문을 확인해요", text: "수량을 바꾸거나 메뉴를 뺄 수 있어요. 확인이 끝나면 결제로 가요." },
-  payment: { title: "결제 방법을 골라요", text: "원하는 방법을 선택한 뒤 결제하기를 누르면 돼요." },
-  processing: { title: "결제를 확인하고 있어요", text: "잠시만 기다려 주세요. 화면이 자동으로 바뀝니다." },
-  complete: { title: "주문이 끝났어요", text: "영수증을 받을지 고르고 처음 화면으로 돌아갈 수 있어요." },
-};
-
 function validatePreferences(input: unknown): Preferences {
   if (!isRecord(input)) return { ...DEFAULT_PREFERENCES };
   const textSize = input.textSize === "large" || input.textSize === "extraLarge" ? input.textSize : "standard";
@@ -170,15 +161,19 @@ export default function App() {
   const [qrError, setQrError] = useState("");
   const qrRequestInFlightRef = useRef(false);
   const [guideVisible, setGuideVisible] = useState(false);
+  const [guideToastPosition, setGuideToastPosition] = useState<{ left: number; top: number } | null>(null);
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
+  const [menuNavigationActive, setMenuNavigationActive] = useState(false);
   const productGridRef = useRef<HTMLDivElement>(null);
   const menuBrowseRef = useRef<HTMLDivElement>(null);
+  const guideToastRef = useRef<HTMLElement | null>(null);
   const programmaticMenuScrollRef = useRef(false);
   const menuScrollGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityRef = useRef({ count: 0, lastAt: Date.now() });
   const guideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resetGuideTimerRef = useRef<() => void>(() => undefined);
   const speakRef = useRef<(text: string) => void>(() => undefined);
 
   const say = useCallback((text: string) => {
@@ -198,38 +193,134 @@ export default function App() {
   const linesCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + (line.product.price + (line.options.size === "large" && line.product.optionsSupported ? 700 : 0)) * line.quantity, 0);
   const total = subtotal;
+  const currentProducts = PRODUCTS.filter((product) => product.category === category);
+  const isLastMenu = menuFocusIndex >= currentProducts.length - 1;
+  const guideCopy = useMemo(() => resolveSmartGuide({
+    stage,
+    cartItemCount: linesCount,
+    easyLanguage: preferences.easyLanguage,
+    simplifiedLayout: preferences.simplifiedLayout,
+    menuNavigationActive,
+    menuIndex: menuFocusIndex,
+    menuCount: currentProducts.length,
+    selectedMenuName: selectedProduct.koreanName,
+    optionsSupported: selectedProduct.optionsSupported,
+    temperature: itemOptions.temperature === "hot" ? "hot" : "iced",
+    size: itemOptions.size,
+    cup: itemOptions.cup,
+    itemQuantity,
+  }), [
+    stage,
+    linesCount,
+    preferences.easyLanguage,
+    preferences.simplifiedLayout,
+    menuNavigationActive,
+    menuFocusIndex,
+    currentProducts.length,
+    selectedProduct.koreanName,
+    selectedProduct.optionsSupported,
+    itemOptions.temperature,
+    itemOptions.size,
+    itemOptions.cup,
+    itemQuantity,
+  ]);
+
   useEffect(() => {
-    if (!preferences.smartGuide || qrOpen) {
+    if (!preferences.smartGuide || qrOpen || stage === "processing") {
       if (guideTimer.current) clearTimeout(guideTimer.current);
+      guideTimer.current = null;
+      resetGuideTimerRef.current = () => undefined;
       setGuideVisible(false);
       return;
     }
     setGuideVisible(false);
     const showGuide = () => {
+      guideTimer.current = null;
+      if (!guideCopy?.actionId) return;
       setGuideVisible(true);
-      speakRef.current(STAGE_GUIDE[stage].text);
+      speakRef.current(guideCopy.text);
     };
     const schedule = () => {
       if (guideTimer.current) clearTimeout(guideTimer.current);
-      guideTimer.current = setTimeout(showGuide, preferences.guideDelaySeconds * 1000);
+      guideTimer.current = setTimeout(showGuide, smartGuideDelayMs(preferences.guideDelaySeconds));
     };
+    resetGuideTimerRef.current = schedule;
     const recordInteraction = () => {
       activityRef.current = { count: activityRef.current.count + 1, lastAt: Date.now() };
       setInteractionCount(activityRef.current.count);
       setGuideVisible(false);
       schedule();
     };
+    const recordScrollInteraction = () => {
+      if (Date.now() - activityRef.current.lastAt < 250) return;
+      recordInteraction();
+    };
     schedule();
     document.addEventListener("pointerdown", recordInteraction, { passive: true });
     document.addEventListener("keydown", recordInteraction);
     document.addEventListener("touchstart", recordInteraction, { passive: true });
+    window.addEventListener("scroll", recordScrollInteraction, { passive: true });
     return () => {
       if (guideTimer.current) clearTimeout(guideTimer.current);
+      guideTimer.current = null;
+      resetGuideTimerRef.current = () => undefined;
       document.removeEventListener("pointerdown", recordInteraction);
       document.removeEventListener("keydown", recordInteraction);
       document.removeEventListener("touchstart", recordInteraction);
+      window.removeEventListener("scroll", recordScrollInteraction);
     };
-  }, [stage, preferences.smartGuide, preferences.guideDelaySeconds, qrOpen]);
+  }, [stage, preferences.smartGuide, preferences.guideDelaySeconds, qrOpen, guideCopy]);
+
+  useLayoutEffect(() => {
+    if (!guideVisible || !guideCopy?.actionId) {
+      setGuideToastPosition(null);
+      return;
+    }
+    const actionId = guideCopy.actionId;
+    const updatePosition = () => {
+      const target = document.getElementById(actionId);
+      const toast = guideToastRef.current;
+      if (!target || !toast) return;
+
+      const targetRect = target.getBoundingClientRect();
+      const toastRect = toast.getBoundingClientRect();
+      const margin = 12;
+      const gap = 12;
+      const above = targetRect.top - toastRect.height - gap;
+      const below = targetRect.bottom + gap;
+      const canFitAbove = above >= margin;
+      const canFitBelow = below + toastRect.height <= window.innerHeight - margin;
+      let top: number;
+      if (canFitAbove) {
+        top = above;
+      } else if (canFitBelow) {
+        top = below;
+      } else {
+        const spaceAbove = targetRect.top - margin;
+        const spaceBelow = window.innerHeight - margin - targetRect.bottom;
+        top = spaceAbove >= spaceBelow
+          ? margin
+          : Math.max(margin, window.innerHeight - toastRect.height - margin);
+      }
+      const left = Math.max(
+        margin,
+        Math.min(
+          window.innerWidth - toastRect.width - margin,
+          targetRect.left + (targetRect.width - toastRect.width) / 2,
+        ),
+      );
+      setGuideToastPosition((current) => current && Math.abs(current.left - left) < 1 && Math.abs(current.top - top) < 1
+        ? current
+        : { left, top });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [guideVisible, guideCopy?.actionId, guideCopy?.title, guideCopy?.text]);
 
   useEffect(() => {
     if (stage !== "processing") return;
@@ -261,11 +352,10 @@ export default function App() {
     preferences.bottomControls ? "bottom-controls" : "",
   ].filter(Boolean).join(" ");
 
-  const currentProducts = PRODUCTS.filter((product) => product.category === category);
-  const isLastMenu = menuFocusIndex >= currentProducts.length - 1;
   const goToNextMenu = () => {
     if (isLastMenu) return;
     const nextIndex = menuFocusIndex + 1;
+    setMenuNavigationActive(true);
     setMenuFocusIndex(nextIndex);
     programmaticMenuScrollRef.current = true;
     if (menuScrollGuardRef.current) clearTimeout(menuScrollGuardRef.current);
@@ -283,7 +373,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (stage !== "menu" || !preferences.simplifiedLayout) return;
+    if (stage !== "menu") return;
     let animationFrame = 0;
     const updateMenuPosition = () => {
       if (programmaticMenuScrollRef.current) return;
@@ -295,7 +385,8 @@ export default function App() {
         if (!cards.length) return;
         const browseBottom = menuBrowseRef.current?.getBoundingClientRect().bottom ?? 0;
         const visibleIndex = cards.findIndex((card) => card.getBoundingClientRect().bottom > Math.max(0, browseBottom) + 8);
-        const atPageBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+        const pageIsScrollable = document.documentElement.scrollHeight > window.innerHeight + 2;
+        const atPageBottom = pageIsScrollable && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
         const nextIndex = atPageBottom || visibleIndex === -1 ? cards.length - 1 : Number(cards[visibleIndex].dataset.menuIndex);
         if (!Number.isNaN(nextIndex)) {
           setMenuFocusIndex((current) => current === nextIndex ? current : nextIndex);
@@ -311,7 +402,7 @@ export default function App() {
       menuScrollGuardRef.current = null;
       programmaticMenuScrollRef.current = false;
     };
-  }, [category, currentProducts.length, preferences.simplifiedLayout, stage]);
+  }, [category, currentProducts.length, stage]);
 
   const openOptions = (product: Product) => {
     setSelectedProduct(product);
@@ -432,6 +523,7 @@ export default function App() {
     setReceiptChoice(null);
     setOrderType(type);
     setMenuFocusIndex(0);
+    setMenuNavigationActive(false);
     setStage("menu");
     say(`${type} 주문을 선택했어요.`);
   };
@@ -443,6 +535,7 @@ export default function App() {
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
     setProfileDetailsOpen(false);
+    setMenuNavigationActive(false);
     setStage("start");
     say("새 주문을 시작할 수 있어요.");
   };
@@ -526,7 +619,7 @@ export default function App() {
                   <h1>오늘도<br />향긋한 한 잔</h1>
                   <p className="lede">맛있는 커피와 편안한 시간을 선사합니다.</p>
                   <div className="hero-actions">
-                    <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /><span className="button-label">매장 이용</span><ArrowRight size={18} /></button>
+                    <button type="button" className={`primary-button ${guideVisible && guideCopy?.actionId === "start-store" ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /><span className="button-label">매장 이용</span><ArrowRight size={18} /></button>
                     <button type="button" className="secondary-button" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /><span className="button-label">포장하기</span></button>
                   </div>
                 </div>
@@ -558,6 +651,7 @@ export default function App() {
                     <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
                       setCategory(id);
                       setMenuFocusIndex(0);
+                      setMenuNavigationActive(false);
                       const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
                       requestAnimationFrame(() => document.querySelector(".section-heading")?.scrollIntoView({ behavior, block: "start" }));
                       say(`${label} 메뉴를 보고 있어요.`);
@@ -573,7 +667,7 @@ export default function App() {
                         <strong>{isLastMenu ? "이 분류의 메뉴를 모두 확인했어요." : "아래에도 메뉴가 있어요."}</strong>
                         <span>메뉴 {Math.min(menuFocusIndex + 1, currentProducts.length)} / {currentProducts.length}</span>
                       </p>
-                      <button type="button" className="menu-next-button" onClick={goToNextMenu} disabled={isLastMenu}>
+                      <button type="button" id="menu-next-button" className={`menu-next-button ${guideVisible && guideCopy?.actionId === "menu-next-button" ? "guide-emphasis" : ""}`} onClick={goToNextMenu} disabled={isLastMenu}>
                         <span>{isLastMenu ? "마지막 메뉴예요" : "다음 메뉴 보기"}</span>
                         {!isLastMenu && <ArrowRight size={18} aria-hidden="true" />}
                       </button>
@@ -589,12 +683,11 @@ export default function App() {
                       const Icon = product.icon;
                       return (
                         <article
-                          className={`product-card ${guideVisible && index === 0 ? "guide-emphasis" : ""}`}
-                          id={guideVisible && index === 0 ? "menu-first-product" : undefined}
+                          className={`product-card ${guideVisible && guideCopy?.actionId === `menu-product-${index}` ? "guide-emphasis" : ""}`}
                           data-menu-index={index}
                           key={product.id}
                         >
-                          <button type="button" onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
+                          <button type="button" id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
                             <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
                             <div className="product-meta">
                               <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean">{product.koreanName}</div></div><span className="price">{won(product.price)}</span></div>
@@ -611,7 +704,7 @@ export default function App() {
               {cart.length > 0 && (
                 <div className="cart-bar">
                   <div><div><ShoppingBag size={17} style={{ verticalAlign: "middle", marginRight: 7 }} />{linesCount}개 담았어요</div><div className="secondary-note">현재 주문 금액 {won(total)}</div></div>
-                  <button type="button" className="primary-button" onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
+                  <button type="button" id="menu-order-confirm" className={`primary-button ${guideVisible && guideCopy?.actionId === "menu-order-confirm" ? "guide-emphasis" : ""}`} onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
                 </div>
               )}
               <div className="bottom-actions"><button type="button" className="back-button" onClick={() => setStage("start")}><ArrowLeft size={17} /> 처음으로</button></div>
@@ -659,7 +752,7 @@ export default function App() {
                       <strong aria-live="polite">{itemQuantity}</strong>
                       <button type="button" className="stepper-button" aria-label="수량 늘리기" onClick={() => setItemQuantity((q) => q + 1)}><Plus size={18} /></button>
                     </div>
-                    <button type="button" className={`primary-button accent ${guideVisible ? "guide-emphasis" : ""}`} id="item-add" onClick={addToCart}>메뉴 담기 · {won((selectedProduct.price + (itemOptions.size === "large" && selectedProduct.optionsSupported ? 700 : 0)) * itemQuantity)} <Plus size={18} /></button>
+                    <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "item-add" ? "guide-emphasis" : ""}`} id="item-add" onClick={addToCart}>메뉴 담기 · {won((selectedProduct.price + (itemOptions.size === "large" && selectedProduct.optionsSupported ? 700 : 0)) * itemQuantity)} <Plus size={18} /></button>
                   </div>
                 </div>
               </div>
@@ -673,7 +766,7 @@ export default function App() {
                 <button type="button" className="quiet-button" onClick={openQr}><QrCode size={18} /> 설정 불러오기</button>
               </div>
               {cart.length === 0 ? (
-                <div className="empty-state"><ShoppingBag size={31} /><h3>아직 담긴 메뉴가 없어요</h3><p>메뉴에서 먹고 싶은 것을 골라 주세요.</p><button type="button" className="primary-button" onClick={() => setStage("menu")}>메뉴 고르기 <ArrowRight size={17} /></button></div>
+                <div className="empty-state"><ShoppingBag size={31} /><h3>아직 담긴 메뉴가 없어요</h3><p>메뉴에서 먹고 싶은 것을 골라 주세요.</p><button type="button" id="cart-empty-menu" className={`primary-button ${guideVisible && guideCopy?.actionId === "cart-empty-menu" ? "guide-emphasis" : ""}`} onClick={() => setStage("menu")}>메뉴 고르기 <ArrowRight size={17} /></button></div>
               ) : (
                 <>
                   <div className="cart-list">
@@ -694,7 +787,7 @@ export default function App() {
                   </div>
                   <div className="bottom-actions">
                     <button type="button" className="secondary-button" onClick={() => setStage("menu")}>메뉴 더 고르기</button>
-                    <button type="button" className={`primary-button accent ${guideVisible ? "guide-emphasis" : ""}`} id="cart-pay" onClick={() => { setStage("payment"); say("결제 방법을 골라 주세요."); }}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
+                    <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "cart-pay" ? "guide-emphasis" : ""}`} id="cart-pay" onClick={() => { setStage("payment"); say("결제 방법을 골라 주세요."); }}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
                   </div>
                 </>
               )}
@@ -720,7 +813,7 @@ export default function App() {
               </div>
               <div className="bottom-actions">
                 <button type="button" className="secondary-button" onClick={() => setStage("cart")}>주문 다시 보기</button>
-                <button type="button" className={`primary-button accent ${guideVisible ? "guide-emphasis" : ""}`} id="payment-pay" onClick={startPayment}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
+                <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "payment-pay" ? "guide-emphasis" : ""}`} id="payment-pay" onClick={startPayment}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
               </div>
             </>
           )}
@@ -751,7 +844,7 @@ export default function App() {
                   </div>
                 </> : <div className="receipt-result" aria-live="polite">{receiptChoice === "yes" ? "영수증을 준비했어요. (데모)" : "영수증 없이 마무리했어요."}</div>}
               </div>
-              <button type="button" className={`primary-button accent ${guideVisible ? "guide-emphasis" : ""}`} id="complete-reset" style={{ marginTop: 20 }} onClick={returnToStart}><RotateCcw size={18} /> 처음으로 돌아가기</button>
+              <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "complete-reset" ? "guide-emphasis" : ""}`} id="complete-reset" style={{ marginTop: 20 }} onClick={returnToStart}><RotateCcw size={18} /> 처음으로 돌아가기</button>
             </section>
           )}
         </main>
@@ -763,9 +856,32 @@ export default function App() {
         )}
       </div>
 
-      {guideVisible && preferences.smartGuide && !qrOpen && (
-        <aside className="guide-toast" role="status" aria-live="polite">
-          <div><Info size={20} /></div><p><strong>{STAGE_GUIDE[stage].title}</strong>{STAGE_GUIDE[stage].text}</p>
+      {guideVisible && preferences.smartGuide && !qrOpen && guideCopy?.actionId && (
+        <aside
+          ref={guideToastRef}
+          className="guide-toast"
+          style={guideToastPosition ? { left: guideToastPosition.left, top: guideToastPosition.top } : undefined}
+          role="status"
+          aria-live="polite"
+        >
+          <div><Info size={20} /></div>
+          <p><strong>{guideCopy.title}</strong>{guideCopy.text}</p>
+          <button
+            type="button"
+            className="guide-toast-close"
+            aria-label="스마트 길잡이 닫기"
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={() => {
+              activityRef.current = { count: activityRef.current.count + 1, lastAt: Date.now() };
+              setInteractionCount(activityRef.current.count);
+              setGuideVisible(false);
+              resetGuideTimerRef.current();
+            }}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
         </aside>
       )}
 
