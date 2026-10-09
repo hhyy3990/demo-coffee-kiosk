@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Bd08sw41sunNEC1-kclhP"
+uri = "file://packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.1.0.tgz"
+type = "unspecified"
+title = "내 방식 QR 키오스크 접근성 SDK v0.1.0"
+description = "다른 Replit 프로젝트에 로컬 파일로 설치할 수 있는 독립 SDK 패키지(.tgz). README와 빌드 JS, 타입 선언, CSS 포함."
+logical_id = "e7c19be1-ca87-45ba-aa41-db9f5d8b96f8"
+content_hash = "sha256:ebaa10d5ad930b580dcc7dedc2e6028bcf922fa2137a90a08611cdb0d1c22874"
+size = 15154
+mtime_ms = 1791559756064
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:65323282-8e64-4b32-8c23-e064609d7786/e7c19be1-ca87-45ba-aa41-db9f5d8b96f8/0851a2d5-e0f6-4f2c-8d47-f84879137543"
+storage_version_token = "1791559980252946"
+content_type = "application/octet-stream"

@@ -43,31 +43,6 @@ button:focus-visible, input:focus-visible {
 button:disabled { cursor: not-allowed; opacity: .55; }
   ::selection { background: #e7cbb6; color: var(--ink); }
 
-.kiosk {
-  --scale: 1;
-  --control: 1;
-  min-height: 100dvh;
-  color: var(--ink);
-  font-size: calc(16px * var(--scale));
-}
-.kiosk.text-large { --scale: 1.13; }
-.kiosk.text-extra { --scale: 1.28; }
-.kiosk.controls-large { --control: 1.15; }
-.kiosk.high-contrast {
-  --paper: #fffaf3;
-  --card: #fffefa;
-  --ink: #211710;
-  --muted: #43362c;
-  --line: #716052;
-  --accent: #963c25;
-  --accent-deep: #702818;
-  --accent-soft: #f4d8c6;
-  --shadow: 0 0 0 1px rgba(33,23,16,.16), 0 18px 48px rgba(33,23,16,.14);
-}
-.kiosk.easy-language { letter-spacing: .005em; }
-.kiosk.easy-language .helper { font-size: 1em; }
-.kiosk.simplified .optional-detail { display: none !important; }
-
 .shell {
   width: min(100%, 1060px);
   min-height: 100dvh;
@@ -155,11 +130,11 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .hero-art-caption small { margin-top:3px; color:rgba(255,250,243,.82); font-size:.64em; }
 .hero-actions { display:flex; gap:12px; margin-top:30px; flex-wrap:wrap; }
 .hero-actions > button { flex:1; min-width:0; }
-.kiosk.text-extra .hero-actions, .kiosk.text-extra .bottom-actions, .kiosk.text-extra .item-footer, .kiosk.text-extra .cart-bar {
+.kiosk.a11y-text-extra .hero-actions, .kiosk.a11y-text-extra .bottom-actions, .kiosk.a11y-text-extra .item-footer, .kiosk.a11y-text-extra .cart-bar {
   flex-direction:column; align-items:stretch;
 }
-.kiosk.text-extra .hero-actions > button, .kiosk.text-extra .bottom-actions > button, .kiosk.text-extra .item-footer > button { width:100%; min-width:0; }
-.kiosk.text-extra .cart-bar > * { width:100%; }
+.kiosk.a11y-text-extra .hero-actions > button, .kiosk.a11y-text-extra .bottom-actions > button, .kiosk.a11y-text-extra .item-footer > button { width:100%; min-width:0; }
+.kiosk.a11y-text-extra .cart-bar > * { width:100%; }
 .primary-button, .secondary-button {
   min-height:calc(58px * var(--control)); border-radius:16px; padding:0 23px; display:inline-flex; align-items:center; justify-content:center; gap:10px;
   border:1px solid transparent; font-size:1em; font-weight:800; line-height:1.3; text-align:center; word-break:keep-all; overflow-wrap:normal;
@@ -300,17 +275,6 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .receipt-actions button { min-width:126px; }
 .receipt-result { padding:12px;color:var(--accent-deep);font-weight:700; }
 .order-number { font:800 1em "DM Sans",sans-serif;letter-spacing:.12em;color:var(--accent-deep);margin:9px 0 18px; }
-.guide-toast {
-  position:fixed;z-index:10;left:12px;top:12px;bottom:auto;width:min(500px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;
-  padding:11px 13px;border-radius:16px;background:#f5edc5;color:#3c3a2b;border:1px solid #e3d78e;box-shadow:0 12px 32px rgba(45,43,28,.18);
-  display:flex;align-items:flex-start;gap:10px;animation:toast-in .28s ease-out;
-}
-.guide-toast > div { flex:none;padding-top:2px; }
-.guide-toast p { flex:1;min-width:0;margin:0;line-height:1.45;font-size:.88em;overflow-wrap:anywhere; }
-.guide-toast strong { display:block;margin-bottom:3px; }
-.guide-toast-close { flex:none;width:44px;height:44px;display:grid;place-items:center;margin:-3px -5px 0 0;border:0;border-radius:11px;background:transparent;color:#4d4433; }
-.guide-toast-close:hover,.guide-toast-close:focus-visible { background:rgba(83,71,40,.12); }
-.guide-emphasis { position:relative;z-index:5!important;box-shadow:0 0 0 5px #efdc78,0 0 0 9px rgba(239,220,120,.35)!important; }
 .modal-backdrop { position:fixed;z-index:20;inset:0;background:rgba(18,32,39,.45);display:grid;place-items:center;padding:18px;animation:fade-in .16s ease-out; }
 .modal {
   width:min(590px,100%);max-height:min(90dvh,800px);overflow:auto;background:var(--paper);border-radius:24px;padding:25px;box-shadow:0 25px 80px rgba(7,19,25,.28);
@@ -376,16 +340,9 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .help-note { display:flex;align-items:center;gap:13px;padding:17px;border-radius:15px;background:var(--sage);color:var(--ink);font-weight:700;line-height:1.5; }
 .help-close { width:100%;margin-top:18px; }
 .store-chip { display:inline-flex;align-items:center;gap:6px;background:#f0e3d4;padding:7px 11px;border-radius:99px;font-size:.76em;font-weight:700;color:#684a35; }
-.bottom-controls .shell { padding-bottom:104px; }
-.bottom-controls .bottom-actions, .bottom-controls .item-footer.sticky-action {
-  position:fixed;z-index:6;bottom:0;left:0;right:0;margin:0;padding:13px max(22px,calc((100vw - 990px)/2)) max(14px,env(safe-area-inset-bottom));
-  background:rgba(249,245,238,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line);
-}
-.bottom-controls .bottom-actions .primary-button { flex:1; }
-.bottom-controls .cart-bar { bottom:88px; }
-.kiosk.high-contrast .hero-panel { background:#fff8ec; border-color:#72543d; }
+.kiosk.a11y-bottom-controls .bottom-actions .primary-button { flex:1; }
+.kiosk.a11y-high-contrast .hero-panel { background:#fff8ec; border-color:#72543d; }
 @keyframes soft-pulse { 0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.92);opacity:.65} }
-@keyframes toast-in { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes fade-in { from{opacity:0}to{opacity:1} }
 
 @media (max-width:700px) {
@@ -404,12 +361,12 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .hero-copy h1 { max-width:13ch;font-size:clamp(2.05em,8vw,2.8em); }
   .hero-actions { margin-top:23px; }
   .hero-actions > button { flex:1;min-width:0;padding-right:13px;padding-left:13px; }
-  .kiosk.text-large .hero-actions, .kiosk.text-large .bottom-actions, .kiosk.text-large .item-footer, .kiosk.text-large .cart-bar {
+  .kiosk.a11y-text-large .hero-actions, .kiosk.a11y-text-large .bottom-actions, .kiosk.a11y-text-large .item-footer, .kiosk.a11y-text-large .cart-bar {
     flex-direction:column; align-items:stretch;
   }
-  .kiosk.text-large .hero-actions > button, .kiosk.text-large .bottom-actions > button, .kiosk.text-large .item-footer > button { width:100%; min-width:0; }
-  .kiosk.text-large .cart-bar > * { width:100%; }
-  .kiosk.text-large .complete-panel > .primary-button { width:100%; }
+  .kiosk.a11y-text-large .hero-actions > button, .kiosk.a11y-text-large .bottom-actions > button, .kiosk.a11y-text-large .item-footer > button { width:100%; min-width:0; }
+  .kiosk.a11y-text-large .cart-bar > * { width:100%; }
+  .kiosk.a11y-text-large .complete-panel > .primary-button { width:100%; }
   .welcome-support { gap:9px;margin-top:13px; }
   .welcome-link { min-height:68px;padding:9px 10px;gap:8px; }
   .welcome-link-icon { width:34px;height:34px; }
@@ -423,9 +380,9 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .category-button.active { box-shadow:inset 0 -3px 0 var(--accent); }
   .menu-browse-tools { top:60px; }
   .product-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
-  .kiosk.text-large .product-grid, .kiosk.text-extra .product-grid, .kiosk.controls-large .product-grid, .kiosk.simplified .product-grid { grid-template-columns:minmax(0,1fr); }
-  .kiosk.text-large .menu-browse-tools, .kiosk.text-extra .menu-browse-tools { flex-direction:column;align-items:stretch; }
-  .kiosk.text-large .menu-next-button, .kiosk.text-extra .menu-next-button { width:100%; }
+  .kiosk.a11y-text-large .product-grid, .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid, .kiosk.a11y-simplified .product-grid { grid-template-columns:minmax(0,1fr); }
+  .kiosk.a11y-text-large .menu-browse-tools, .kiosk.a11y-text-extra .menu-browse-tools { flex-direction:column;align-items:stretch; }
+  .kiosk.a11y-text-large .menu-next-button, .kiosk.a11y-text-extra .menu-next-button { width:100%; }
   .product-art { height:112px; }
   .product-meta { padding:12px; }
   .product-name-row { display:block; }
@@ -473,18 +430,18 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .access-choice-icon { width:36px;height:36px; }
 }
 @media (min-width:701px) and (max-width:900px) {
-  .kiosk.text-extra .product-grid, .kiosk.controls-large .product-grid {
+  .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid {
     grid-template-columns:minmax(0,1fr);
   }
 }
 @media (max-width:900px) {
-  .kiosk.simplified .product-grid {
+  .kiosk.a11y-simplified .product-grid {
     grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
   }
 }
 @media (min-width:701px) {
-  .kiosk.text-extra .profile-strip { grid-template-columns:minmax(0,1fr); }
-  .kiosk.text-extra .profile-actions { justify-content:flex-start; }
+  .kiosk.a11y-text-extra .profile-strip { grid-template-columns:minmax(0,1fr); }
+  .kiosk.a11y-text-extra .profile-actions { justify-content:flex-start; }
 }
 @media (min-width:381px) and (max-width:440px) {
   .welcome-support { grid-template-columns:1fr; }

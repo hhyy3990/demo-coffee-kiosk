@@ -6,6 +6,10 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
+    "paths": {
+      "@naebangsik/kiosk-accessibility-sdk": ["./packages/kiosk-accessibility-sdk/src/index.ts"],
+      "@naebangsik/kiosk-accessibility-sdk/*": ["./packages/kiosk-accessibility-sdk/src/*"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -14,5 +18,5 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src"]
+  "include": ["src", "packages/kiosk-accessibility-sdk/src"]
 }

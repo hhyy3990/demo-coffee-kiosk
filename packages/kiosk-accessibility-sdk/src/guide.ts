@@ -1,4 +1,4 @@
-import type { AccessibilityGuideMessage } from "./adapter";
+import type { AccessibilityGuideMessage } from "./adapter.ts";
 
 export type GuideDelaySeconds = 10 | 15 | 20;
 

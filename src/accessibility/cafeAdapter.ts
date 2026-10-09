@@ -144,6 +144,7 @@ export function createCafeAccessibilityAdapter(
         id,
         name: readableName(element, id),
         element,
+        highlightElement: element.closest<HTMLElement>("[data-a11y-highlight-container]") ?? element,
         enabled: !element.disabled,
         primary: element.dataset.a11yPrimary === "true",
       };
@@ -158,9 +159,17 @@ export function createCafeAccessibilityAdapter(
         state: {
           cartItemCount: state.cartItemCount,
           categoryId: state.categoryId,
+          easyLanguage: state.easyLanguage,
+          simplifiedLayout: state.simplifiedLayout,
           menuIndex: state.menuIndex,
           menuCount: state.menuCount,
           menuNavigationActive: state.menuNavigationActive,
+          selectedMenuName: state.selectedMenuName,
+          optionsSupported: state.optionsSupported,
+          temperature: state.temperature,
+          size: state.size,
+          cup: state.cup,
+          itemQuantity: state.itemQuantity,
         },
       };
     },

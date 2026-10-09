@@ -9,12 +9,12 @@ export {
   type ContrastMode,
   type GuideDelaySeconds,
   type TextSize,
-} from "./profile";
+} from "./profile.ts";
 export {
   createAccessibilitySdk,
   type AccessibilitySdk,
   type AccessibilitySdkOptions,
-} from "./accessibility-sdk";
+} from "./accessibility-sdk.ts";
 export {
   type AccessibilityAdapter,
   type AccessibilityGuideMessage,
@@ -22,16 +22,16 @@ export {
   type KioskLayoutRegions,
   type KioskSnapshot,
   type KioskTextTarget,
-} from "./adapter";
+} from "./adapter.ts";
 export {
   inspectKioskLayout,
   type AccessibilityDiagnostic,
   type AccessibilityIssueType,
   type LayoutDiagnosticOptions,
-} from "./diagnostics";
+} from "./diagnostics.ts";
 export {
   createIdleTimer,
   smartGuideDelayMs,
   type GuideState,
   type IdleTimerDriver,
-} from "./guide";
+} from "./guide.ts";

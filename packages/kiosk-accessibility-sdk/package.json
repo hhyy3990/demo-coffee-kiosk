@@ -1,20 +1,38 @@
 {
   "name": "@naebangsik/kiosk-accessibility-sdk",
   "version": "0.1.0",
-  "description": "Framework-independent accessibility helpers for web kiosks",
+  "description": "Framework-independent accessibility SDK for web kiosks",
   "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "style": "./dist/styles.css",
   "sideEffects": [
-    "./src/styles.css"
+    "./dist/styles.css"
   ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src",
+    "dist",
     "README.md"
-  ]
+  ],
+  "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node ./scripts/copy-css.mjs",
+    "prepack": "npm run build",
+    "pack:artifact": "node ./scripts/ensure-release-dir.mjs && npm pack --pack-destination ./releases"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }

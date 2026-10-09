@@ -8,6 +8,8 @@ export interface KioskAction {
   id: string;
   name: string;
   element: HTMLElement;
+  /** Optional outer visual target when the interactive control clips its own highlight. */
+  highlightElement?: HTMLElement;
   enabled: boolean;
   primary?: boolean;
 }

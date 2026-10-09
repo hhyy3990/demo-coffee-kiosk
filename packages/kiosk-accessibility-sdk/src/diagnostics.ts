@@ -2,7 +2,7 @@ import type {
   AccessibilityAdapter,
   KioskAction,
   KioskTextTarget,
-} from "./adapter";
+} from "./adapter.ts";
 
 export type AccessibilityIssueType =
   | "text-clipped"
@@ -20,6 +20,10 @@ export interface AccessibilityDiagnostic {
 
 export interface LayoutDiagnosticOptions {
   minimumTouchTarget?: number;
+}
+
+function safeSemanticId(value: string): string {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value) ? value : "unmapped";
 }
 
 function isVisible(element: HTMLElement): boolean {
@@ -86,7 +90,7 @@ export function inspectKioskLayout(
   adapter: AccessibilityAdapter,
   options: LayoutDiagnosticOptions = {},
 ): AccessibilityDiagnostic[] {
-  const screenId = adapter.getSnapshot().screenId;
+  const screenId = safeSemanticId(adapter.getSnapshot().screenId);
   const issues: AccessibilityDiagnostic[] = [];
   const minimumTouchTarget = options.minimumTouchTarget ?? 44;
   const regions = adapter.getLayoutRegions();
@@ -108,7 +112,7 @@ export function inspectKioskLayout(
     if (!root.contains(target.element) || !textIsClipped(target)) continue;
     issues.push({
       screenId,
-      semanticId: target.id,
+      semanticId: safeSemanticId(target.id),
       issueType: "text-clipped",
       measurements: {
         clientWidth: target.element.clientWidth,
@@ -131,7 +135,7 @@ export function inspectKioskLayout(
     if (rect.width < minimumTouchTarget || rect.height < minimumTouchTarget) {
       issues.push({
         screenId,
-        semanticId: action.id,
+        semanticId: safeSemanticId(action.id),
         issueType: "small-touch-target",
         measurements: {
           width: Math.round(rect.width * 100) / 100,
@@ -149,7 +153,7 @@ export function inspectKioskLayout(
     if (outsideHorizontalViewport || outsideVerticalViewport) {
       issues.push({
         screenId,
-        semanticId: action.id,
+          semanticId: safeSemanticId(action.id),
         issueType: "action-offscreen",
         measurements: {
           left: Math.round(rect.left * 100) / 100,
@@ -169,7 +173,7 @@ export function inspectKioskLayout(
       if (!overlaps(rect, bottomRect)) continue;
       issues.push({
         screenId,
-        semanticId: action.id,
+        semanticId: safeSemanticId(action.id),
         issueType: "bottom-control-obscures-action",
         measurements: {
           actionTop: Math.round(rect.top * 100) / 100,

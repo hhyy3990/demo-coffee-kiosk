@@ -28,7 +28,9 @@ test("idle timer reset cancels the prior timer and dispose prevents later callba
   timer.reset(15_000);
   assert.equal(pending.size, 1);
   assert.equal([...pending.values()][0].delayMs, 15_000);
-  [...pending.values()][0].callback();
+  const [handle, entry] = [...pending.entries()][0];
+  pending.delete(handle);
+  entry.callback();
   assert.equal(idleCalls, 1);
   timer.reset(20_000);
   timer.dispose();

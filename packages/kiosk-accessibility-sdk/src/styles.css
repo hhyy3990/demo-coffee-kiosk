@@ -1,6 +1,7 @@
 .kiosk {
   --scale: 1;
   --control: 1;
+  min-height: 100dvh;
   color: var(--ink);
   font-size: calc(16px * var(--scale));
 }
@@ -20,6 +21,12 @@
   --accent-soft: #f4d8c6;
   --shadow: 0 0 0 1px rgba(33,23,16,.16), 0 18px 48px rgba(33,23,16,.14);
 }
+.kiosk.a11y-high-contrast .a11y-guide-toast {
+  background: #fffefa;
+  color: #211710;
+  border-color: #211710;
+}
+.kiosk.a11y-high-contrast .a11y-guide-close { color: #211710; }
 
 .kiosk.a11y-easy-language { letter-spacing: .005em; }
 .kiosk.a11y-easy-language .helper { font-size: 1em; }

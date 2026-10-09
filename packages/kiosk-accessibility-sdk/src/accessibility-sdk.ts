@@ -1,8 +1,14 @@
-import type { AccessibilityAdapter, AccessibilityGuideMessage } from "./adapter";
-import { inspectKioskLayout, type AccessibilityDiagnostic } from "./diagnostics";
-import { createIdleTimer, smartGuideDelayMs, type GuideState } from "./guide";
-import { accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, type AccessibilityProfile } from "./profile";
-import { cancelSpeech, speakText } from "./speech";
+import type { AccessibilityAdapter, AccessibilityGuideMessage } from "./adapter.ts";
+import { inspectKioskLayout, type AccessibilityDiagnostic } from "./diagnostics.ts";
+import { createIdleTimer, smartGuideDelayMs, type GuideState } from "./guide.ts";
+import {
+  ACCESSIBILITY_SDK_VERSION,
+  accessibilityClasses,
+  DEFAULT_ACCESSIBILITY_PROFILE,
+  validateAccessibilityProfile,
+  type AccessibilityProfile,
+} from "./profile.ts";
+import { cancelSpeech, speakText } from "./speech.ts";
 
 export interface AccessibilitySdkOptions {
   root: HTMLElement;
@@ -114,6 +120,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const { root, adapter } = options;
   const addedKioskClass = !root.classList.contains("kiosk");
   root.classList.add("kiosk");
+  const originalManagedClasses = new Set(
+    MANAGED_CLASSES.filter((className) => root.classList.contains(className)),
+  );
 
   let currentProfile: AccessibilityProfile = { ...DEFAULT_ACCESSIBILITY_PROFILE };
   let guideState: GuideState = {
@@ -140,14 +149,15 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     highlightedAction = null;
   }
 
-  function findGuideTarget(actionId: string | null): HTMLElement | null {
+  function findGuideAction(actionId: string | null) {
     if (!actionId) return null;
-    return adapter.getActions().find((action) => action.id === actionId)?.element ?? null;
+    return adapter.getActions().find((action) => action.id === actionId) ?? null;
   }
 
   function updateGuidePosition(): void {
     if (!guideOverlay || !guideState.message?.actionId) return;
-    positionGuide(guideOverlay, findGuideTarget(guideState.message.actionId));
+    const action = findGuideAction(guideState.message.actionId);
+    positionGuide(guideOverlay, action?.element ?? null);
   }
 
   function showGuide(): void {
@@ -160,10 +170,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       return;
     }
 
-    const target = findGuideTarget(guideState.message.actionId);
-    if (!target || !root.contains(target)) return;
+    const action = findGuideAction(guideState.message.actionId);
+    const target = action?.element ?? null;
+    if (!action || !target || !root.contains(target)) return;
     removeGuide();
-    highlightedAction = target;
+    highlightedAction = action.highlightElement ?? target;
     highlightedAction.classList.add("a11y-guide-emphasis");
     guideOverlay = createGuideOverlay(root, guideState.message, () => {
       interactionCount += 1;
@@ -244,7 +255,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   window.addEventListener("scroll", recordScrollInteraction, { passive: true });
 
   const sdk: AccessibilitySdk = {
-    version: "0.1.0",
+    version: ACCESSIBILITY_SDK_VERSION,
     get profile() {
       return { ...currentProfile };
     },
@@ -263,7 +274,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       root.removeEventListener("touchstart", recordInteraction);
       window.removeEventListener("scroll", recordScrollInteraction);
       cancelSpeech();
-      for (const className of MANAGED_CLASSES) root.classList.remove(className);
+      for (const className of MANAGED_CLASSES) {
+        root.classList.toggle(className, originalManagedClasses.has(className));
+      }
       if (addedKioskClass) root.classList.remove("kiosk");
     },
   };

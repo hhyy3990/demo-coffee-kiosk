@@ -1,28 +1,30 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronRight, Clock3, Coffee,
-  Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Info, Minus, PackageCheck, Plus,
+  Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Minus, PackageCheck, Plus,
   QrCode, RotateCcw, ShoppingBag, Smartphone, Sparkles, Store, Ticket,
   Trash2, Volume2, VolumeX, X,
 } from "lucide-react";
+import {
+  createAccessibilitySdk,
+  DEFAULT_ACCESSIBILITY_PROFILE,
+  validateAccessibilityProfile,
+  type AccessibilityProfile,
+  type AccessibilitySdk,
+} from "@naebangsik/kiosk-accessibility-sdk";
 import { getManualProfileToken, getScannedProfileToken, isValidProfileToken } from "./qrProfile";
-import { resolveSmartGuide, smartGuideDelayMs, type SmartGuideStage } from "./smartGuide";
+import {
+  createCafeAccessibilityAdapter,
+  resolveCafeGuide,
+  type CafeAdapterState,
+  type CafeStage,
+} from "./accessibility/cafeAdapter";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
-type Stage = SmartGuideStage;
+type Stage = CafeStage;
 type Category = "coffee" | "cake" | "dessert" | "food";
-type Preferences = {
-  textSize: "standard" | "large" | "extraLarge";
-  buttonSize: "standard" | "large";
-  contrast: "standard" | "high";
-  easyLanguage: boolean;
-  simplifiedLayout: boolean;
-  bottomControls: boolean;
-  smartGuide: boolean;
-  voiceGuidance: boolean;
-  guideDelaySeconds: 10 | 15 | 20;
-};
+type Preferences = AccessibilityProfile;
 type Product = {
   id: string;
   name: string;
@@ -38,17 +40,7 @@ type Product = {
 type OrderOptions = { temperature: string; size: "regular" | "large"; cup: "store" | "tumbler" };
 type CartLine = { key: string; product: Product; quantity: number; options: OrderOptions };
 
-const DEFAULT_PREFERENCES: Preferences = {
-  textSize: "standard",
-  buttonSize: "standard",
-  contrast: "standard",
-  easyLanguage: false,
-  simplifiedLayout: false,
-  bottomControls: false,
-  smartGuide: false,
-  voiceGuidance: false,
-  guideDelaySeconds: 15,
-};
+const DEFAULT_PREFERENCES: Preferences = { ...DEFAULT_ACCESSIBILITY_PROFILE };
 const DEMO_PREFERENCES: Preferences = {
   ...DEFAULT_PREFERENCES,
   textSize: "large",
@@ -92,23 +84,6 @@ const productDefaultOptions = (product: Product): OrderOptions => ({
   cup: "store",
 });
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-function validatePreferences(input: unknown): Preferences {
-  if (!isRecord(input)) return { ...DEFAULT_PREFERENCES };
-  const textSize = input.textSize === "large" || input.textSize === "extraLarge" ? input.textSize : "standard";
-  const buttonSize = input.buttonSize === "large" ? "large" : "standard";
-  const contrast = input.contrast === "high" ? "high" : "standard";
-  const delay = input.guideDelaySeconds === 10 || input.guideDelaySeconds === 20 ? input.guideDelaySeconds : 15;
-  return {
-    textSize, buttonSize, contrast,
-    easyLanguage: input.easyLanguage === true,
-    simplifiedLayout: input.simplifiedLayout === true,
-    bottomControls: input.bottomControls === true,
-    smartGuide: input.smartGuide === true,
-    voiceGuidance: input.voiceGuidance === true,
-    guideDelaySeconds: delay,
-  };
-}
-
 function isUnavailableProfileResponse(body: unknown): boolean {
   if (!isRecord(body)) return true;
   const candidates: Record<string, unknown>[] = [body];
@@ -135,7 +110,7 @@ function extractPreferences(body: unknown): Preferences | null {
   let candidate: unknown = body.preferences;
   if (!isRecord(candidate) && isRecord(body.profile)) candidate = body.profile.preferences;
   if (!isRecord(candidate) && isRecord(body.data)) candidate = body.data.preferences;
-  return isRecord(candidate) ? validatePreferences(candidate) : null;
+  return isRecord(candidate) ? validateAccessibilityProfile(candidate) : null;
 }
 
 export default function App() {
@@ -160,42 +135,65 @@ export default function App() {
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
   const qrRequestInFlightRef = useRef(false);
-  const [guideVisible, setGuideVisible] = useState(false);
-  const [guideToastPosition, setGuideToastPosition] = useState<{ left: number; top: number } | null>(null);
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
   const [menuNavigationActive, setMenuNavigationActive] = useState(false);
+  const kioskRootRef = useRef<HTMLDivElement>(null);
+  const accessibilitySdkRef = useRef<AccessibilitySdk | null>(null);
+  const cafeStateRef = useRef<CafeAdapterState>({
+    stage: "start",
+    cartItemCount: 0,
+    easyLanguage: false,
+    simplifiedLayout: false,
+    menuNavigationActive: false,
+    menuIndex: 0,
+    menuCount: 0,
+    selectedMenuName: "",
+    optionsSupported: false,
+    temperature: "hot",
+    size: "regular",
+    cup: "store",
+    itemQuantity: 1,
+    categoryId: "coffee",
+  });
   const productGridRef = useRef<HTMLDivElement>(null);
   const menuBrowseRef = useRef<HTMLDivElement>(null);
-  const guideToastRef = useRef<HTMLElement | null>(null);
   const programmaticMenuScrollRef = useRef(false);
   const menuScrollGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activityRef = useRef({ count: 0, lastAt: Date.now() });
-  const guideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const resetGuideTimerRef = useRef<() => void>(() => undefined);
-  const speakRef = useRef<(text: string) => void>(() => undefined);
 
   const say = useCallback((text: string) => {
-    if (!preferences.voiceGuidance || typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ko-KR";
-      utterance.rate = 0.92;
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      // Speech guidance is optional; ordering stays available when the browser does not support it.
-    }
-  }, [preferences.voiceGuidance]);
-  speakRef.current = say;
+    accessibilitySdkRef.current?.speak(text);
+  }, []);
 
   const linesCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const subtotal = cart.reduce((sum, line) => sum + (line.product.price + (line.options.size === "large" && line.product.optionsSupported ? 700 : 0)) * line.quantity, 0);
   const total = subtotal;
   const currentProducts = PRODUCTS.filter((product) => product.category === category);
   const isLastMenu = menuFocusIndex >= currentProducts.length - 1;
-  const guideCopy = useMemo(() => resolveSmartGuide({
+
+  cafeStateRef.current = {
+    stage,
+    cartItemCount: linesCount,
+    easyLanguage: preferences.easyLanguage,
+    simplifiedLayout: preferences.simplifiedLayout,
+    menuNavigationActive,
+    menuIndex: menuFocusIndex,
+    menuCount: currentProducts.length,
+    selectedMenuName: selectedProduct.koreanName,
+    optionsSupported: selectedProduct.optionsSupported,
+    temperature: itemOptions.temperature === "hot" ? "hot" : "iced",
+    size: itemOptions.size,
+    cup: itemOptions.cup,
+    itemQuantity,
+    categoryId: category,
+  };
+
+  const cafeAdapter = useMemo(
+    () => createCafeAccessibilityAdapter(() => kioskRootRef.current, () => cafeStateRef.current),
+    [],
+  );
+  const guideCopy = useMemo(() => resolveCafeGuide({
     stage,
     cartItemCount: linesCount,
     easyLanguage: preferences.easyLanguage,
@@ -226,101 +224,43 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!preferences.smartGuide || qrOpen || stage === "processing") {
-      if (guideTimer.current) clearTimeout(guideTimer.current);
-      guideTimer.current = null;
-      resetGuideTimerRef.current = () => undefined;
-      setGuideVisible(false);
-      return;
-    }
-    setGuideVisible(false);
-    const showGuide = () => {
-      guideTimer.current = null;
-      if (!guideCopy?.actionId) return;
-      setGuideVisible(true);
-      speakRef.current(guideCopy.text);
-    };
-    const schedule = () => {
-      if (guideTimer.current) clearTimeout(guideTimer.current);
-      guideTimer.current = setTimeout(showGuide, smartGuideDelayMs(preferences.guideDelaySeconds));
-    };
-    resetGuideTimerRef.current = schedule;
-    const recordInteraction = () => {
-      activityRef.current = { count: activityRef.current.count + 1, lastAt: Date.now() };
-      setInteractionCount(activityRef.current.count);
-      setGuideVisible(false);
-      schedule();
-    };
-    const recordScrollInteraction = () => {
-      if (Date.now() - activityRef.current.lastAt < 250) return;
-      recordInteraction();
-    };
-    schedule();
-    document.addEventListener("pointerdown", recordInteraction, { passive: true });
-    document.addEventListener("keydown", recordInteraction);
-    document.addEventListener("touchstart", recordInteraction, { passive: true });
-    window.addEventListener("scroll", recordScrollInteraction, { passive: true });
+    const root = kioskRootRef.current;
+    if (!root) return;
+    const sdk = createAccessibilitySdk({
+      root,
+      adapter: cafeAdapter,
+      onInteractionCount: setInteractionCount,
+      onDiagnostics: (issues) => {
+        if (import.meta.env.DEV && issues.length > 0) {
+          console.info("[kiosk accessibility diagnostics]", issues);
+        }
+      },
+    });
+    accessibilitySdkRef.current = sdk;
     return () => {
-      if (guideTimer.current) clearTimeout(guideTimer.current);
-      guideTimer.current = null;
-      resetGuideTimerRef.current = () => undefined;
-      document.removeEventListener("pointerdown", recordInteraction);
-      document.removeEventListener("keydown", recordInteraction);
-      document.removeEventListener("touchstart", recordInteraction);
-      window.removeEventListener("scroll", recordScrollInteraction);
+      sdk.destroy();
+      if (accessibilitySdkRef.current === sdk) accessibilitySdkRef.current = null;
     };
-  }, [stage, preferences.smartGuide, preferences.guideDelaySeconds, qrOpen, guideCopy]);
+  }, [cafeAdapter]);
 
-  useLayoutEffect(() => {
-    if (!guideVisible || !guideCopy?.actionId) {
-      setGuideToastPosition(null);
-      return;
-    }
-    const actionId = guideCopy.actionId;
-    const updatePosition = () => {
-      const target = document.getElementById(actionId);
-      const toast = guideToastRef.current;
-      if (!target || !toast) return;
+  useEffect(() => {
+    accessibilitySdkRef.current?.applyProfile(preferences);
+  }, [preferences]);
 
-      const targetRect = target.getBoundingClientRect();
-      const toastRect = toast.getBoundingClientRect();
-      const margin = 12;
-      const gap = 12;
-      const above = targetRect.top - toastRect.height - gap;
-      const below = targetRect.bottom + gap;
-      const canFitAbove = above >= margin;
-      const canFitBelow = below + toastRect.height <= window.innerHeight - margin;
-      let top: number;
-      if (canFitAbove) {
-        top = above;
-      } else if (canFitBelow) {
-        top = below;
-      } else {
-        const spaceAbove = targetRect.top - margin;
-        const spaceBelow = window.innerHeight - margin - targetRect.bottom;
-        top = spaceAbove >= spaceBelow
-          ? margin
-          : Math.max(margin, window.innerHeight - toastRect.height - margin);
-      }
-      const left = Math.max(
-        margin,
-        Math.min(
-          window.innerWidth - toastRect.width - margin,
-          targetRect.left + (targetRect.width - toastRect.width) / 2,
-        ),
-      );
-      setGuideToastPosition((current) => current && Math.abs(current.left - left) < 1 && Math.abs(current.top - top) < 1
-        ? current
-        : { left, top });
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [guideVisible, guideCopy?.actionId, guideCopy?.title, guideCopy?.text]);
+  useEffect(() => {
+    accessibilitySdkRef.current?.setGuideState({
+      enabled: preferences.smartGuide,
+      paused: qrOpen || stage === "processing",
+      delaySeconds: preferences.guideDelaySeconds,
+      message: guideCopy,
+    });
+  }, [guideCopy, preferences.smartGuide, preferences.guideDelaySeconds, qrOpen, stage]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const frame = requestAnimationFrame(() => accessibilitySdkRef.current?.inspectLayout());
+    return () => cancelAnimationFrame(frame);
+  }, [stage, preferences]);
 
   useEffect(() => {
     if (stage !== "processing") return;
@@ -340,17 +280,6 @@ export default function App() {
     if (preferences.voiceGuidance) parts.push("음성 안내");
     return parts;
   }, [preferences]);
-
-  const kioskClass = [
-    "kiosk",
-    preferences.textSize === "large" ? "text-large" : "",
-    preferences.textSize === "extraLarge" ? "text-extra" : "",
-    preferences.buttonSize === "large" ? "controls-large" : "",
-    preferences.contrast === "high" ? "high-contrast" : "",
-    preferences.easyLanguage ? "easy-language" : "",
-    preferences.simplifiedLayout ? "simplified" : "",
-    preferences.bottomControls ? "bottom-controls" : "",
-  ].filter(Boolean).join(" ");
 
   const goToNextMenu = () => {
     if (isLastMenu) return;
@@ -557,8 +486,8 @@ export default function App() {
   const showQrButton = stage === "cart";
 
   return (
-    <div className={kioskClass} data-interactions={interactionCount}>
-      <div className="shell">
+    <div ref={kioskRootRef} className="kiosk" data-interactions={interactionCount}>
+      <div className="shell" data-a11y-slot="scroll-content">
         <header className="topbar">
           <div className="brand-lockup" aria-label="데모커피 DEMO COFFEE">
             <div className="brand-mark" aria-hidden="true"><Coffee size={22} /></div>
@@ -616,11 +545,11 @@ export default function App() {
                 </figure>
                 <div className="hero-copy">
                   <div className="eyebrow">COFFEE · DESSERT</div>
-                  <h1>오늘도<br />향긋한 한 잔</h1>
+                  <h1 data-a11y-text data-a11y-id="cafe.welcome.title">오늘도<br />향긋한 한 잔</h1>
                   <p className="lede">맛있는 커피와 편안한 시간을 선사합니다.</p>
                   <div className="hero-actions">
-                    <button type="button" className={`primary-button ${guideVisible && guideCopy?.actionId === "start-store" ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /><span className="button-label">매장 이용</span><ArrowRight size={18} /></button>
-                    <button type="button" className="secondary-button" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /><span className="button-label">포장하기</span></button>
+                    <button type="button" className="primary-button" id="start-store" data-a11y-action-id="start-store" data-a11y-primary="true" onClick={() => chooseOrderType("매장")}><Store size={20} /><span className="button-label">매장 이용</span><ArrowRight size={18} /></button>
+                    <button type="button" className="secondary-button" id="start-takeout" data-a11y-action-id="start-takeout" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /><span className="button-label">포장하기</span></button>
                   </div>
                 </div>
               </section>
@@ -642,7 +571,7 @@ export default function App() {
           {stage === "menu" && (
             <>
               <div className="section-heading">
-                <div><div className="eyebrow">ORDER / 01</div><h2>무엇을 드릴까요?</h2><p>{preferences.easyLanguage ? "먹고 싶은 메뉴를 골라 주세요." : "메뉴를 선택해 주세요. 옵션은 다음 화면에서 바꿀 수 있어요."}</p></div>
+                <div><div className="eyebrow">ORDER / 01</div><h2 data-a11y-text data-a11y-id="cafe.menu.title">무엇을 드릴까요?</h2><p data-a11y-text data-a11y-id="cafe.menu.instruction">{preferences.easyLanguage ? "먹고 싶은 메뉴를 골라 주세요." : "메뉴를 선택해 주세요. 옵션은 다음 화면에서 바꿀 수 있어요."}</p></div>
                 <div className="steps" aria-label="주문 단계"><span className="store-chip"><Store size={14} /> {orderType} 주문</span><span className="step-dot active" /><span className="step-dot" /><span className="step-dot" /></div>
               </div>
               <div className="menu-layout">
@@ -667,7 +596,7 @@ export default function App() {
                         <strong>{isLastMenu ? "이 분류의 메뉴를 모두 확인했어요." : "아래에도 메뉴가 있어요."}</strong>
                         <span>메뉴 {Math.min(menuFocusIndex + 1, currentProducts.length)} / {currentProducts.length}</span>
                       </p>
-                      <button type="button" id="menu-next-button" className={`menu-next-button ${guideVisible && guideCopy?.actionId === "menu-next-button" ? "guide-emphasis" : ""}`} onClick={goToNextMenu} disabled={isLastMenu}>
+                      <button type="button" id="menu-next-button" data-a11y-action-id="menu-next-button" data-a11y-primary="true" className="menu-next-button" onClick={goToNextMenu} disabled={isLastMenu}>
                         <span>{isLastMenu ? "마지막 메뉴예요" : "다음 메뉴 보기"}</span>
                         {!isLastMenu && <ArrowRight size={18} aria-hidden="true" />}
                       </button>
@@ -683,15 +612,16 @@ export default function App() {
                       const Icon = product.icon;
                       return (
                         <article
-                          className={`product-card ${guideVisible && guideCopy?.actionId === `menu-product-${index}` ? "guide-emphasis" : ""}`}
+                          className="product-card"
+                          data-a11y-highlight-container
                           data-menu-index={index}
                           key={product.id}
                         >
-                          <button type="button" id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
+                          <button type="button" id={`menu-product-${index}`} data-a11y-action-id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
                             <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
                             <div className="product-meta">
                               <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean">{product.koreanName}</div></div><span className="price">{won(product.price)}</span></div>
-                              {!preferences.simplifiedLayout && <div className="product-korean optional-detail">{product.note}</div>}
+                              {!preferences.simplifiedLayout && <div className="product-korean optional-detail" data-a11y-detail data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>}
                               <div className="product-bottom"><span className="product-tag">{product.optionsSupported ? "옵션 선택 가능" : "바로 담기"}</span><span className="add-round" aria-hidden="true"><Plus size={20} /></span></div>
                             </div>
                           </button>
@@ -702,19 +632,19 @@ export default function App() {
                 </section>
               </div>
               {cart.length > 0 && (
-                <div className="cart-bar">
+                <div className="cart-bar" data-a11y-slot="above-bottom-controls">
                   <div><div><ShoppingBag size={17} style={{ verticalAlign: "middle", marginRight: 7 }} />{linesCount}개 담았어요</div><div className="secondary-note">현재 주문 금액 {won(total)}</div></div>
-                  <button type="button" id="menu-order-confirm" className={`primary-button ${guideVisible && guideCopy?.actionId === "menu-order-confirm" ? "guide-emphasis" : ""}`} onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
+                  <button type="button" id="menu-order-confirm" data-a11y-action-id="menu-order-confirm" data-a11y-primary="true" className="primary-button" onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
                 </div>
               )}
-              <div className="bottom-actions"><button type="button" className="back-button" onClick={() => setStage("start")}><ArrowLeft size={17} /> 처음으로</button></div>
+              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" onClick={() => setStage("start")}><ArrowLeft size={17} /> 처음으로</button></div>
             </>
           )}
 
           {stage === "options" && (
             <>
               <div className="page-heading">
-                <div><button type="button" className="back-button" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴로 돌아가기</button><div className="eyebrow">MENU OPTIONS</div><h2>{selectedProduct.koreanName}</h2><p className="lede">{selectedProduct.note}</p></div>
+                <div><button type="button" className="back-button" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴로 돌아가기</button><div className="eyebrow">MENU OPTIONS</div><h2 data-a11y-text data-a11y-id="cafe.options.title">{selectedProduct.koreanName}</h2><p className="lede" data-a11y-text data-a11y-id="cafe.options.description">{selectedProduct.note}</p></div>
                 <span className="steps"><span className="step-dot active" /><span className="step-dot" /><span className="step-dot" /></span>
               </div>
               <div className="item-detail">
@@ -746,13 +676,13 @@ export default function App() {
                     </>
                   )}
                   {!selectedProduct.optionsSupported && <div className="order-summary"><div className="summary-row"><span>메뉴</span><strong>{selectedProduct.koreanName}</strong></div><div className="summary-row"><span>분류</span><span>{categoryNames[selectedProduct.category]}</span></div></div>}
-                  <div className="item-footer sticky-action">
+                  <div className="item-footer sticky-action" data-a11y-slot="bottom-controls">
                     <div className="quantity-stepper" aria-label="수량 선택">
                       <button type="button" className="stepper-button" aria-label="수량 줄이기" onClick={() => setItemQuantity((q) => Math.max(1, q - 1))}><Minus size={18} /></button>
                       <strong aria-live="polite">{itemQuantity}</strong>
                       <button type="button" className="stepper-button" aria-label="수량 늘리기" onClick={() => setItemQuantity((q) => q + 1)}><Plus size={18} /></button>
                     </div>
-                    <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "item-add" ? "guide-emphasis" : ""}`} id="item-add" onClick={addToCart}>메뉴 담기 · {won((selectedProduct.price + (itemOptions.size === "large" && selectedProduct.optionsSupported ? 700 : 0)) * itemQuantity)} <Plus size={18} /></button>
+                    <button type="button" className="primary-button accent" id="item-add" data-a11y-action-id="item-add" data-a11y-primary="true" onClick={addToCart}>메뉴 담기 · {won((selectedProduct.price + (itemOptions.size === "large" && selectedProduct.optionsSupported ? 700 : 0)) * itemQuantity)} <Plus size={18} /></button>
                   </div>
                 </div>
               </div>
@@ -766,7 +696,7 @@ export default function App() {
                 <button type="button" className="quiet-button" onClick={openQr}><QrCode size={18} /> 설정 불러오기</button>
               </div>
               {cart.length === 0 ? (
-                <div className="empty-state"><ShoppingBag size={31} /><h3>아직 담긴 메뉴가 없어요</h3><p>메뉴에서 먹고 싶은 것을 골라 주세요.</p><button type="button" id="cart-empty-menu" className={`primary-button ${guideVisible && guideCopy?.actionId === "cart-empty-menu" ? "guide-emphasis" : ""}`} onClick={() => setStage("menu")}>메뉴 고르기 <ArrowRight size={17} /></button></div>
+                <div className="empty-state"><ShoppingBag size={31} /><h3>아직 담긴 메뉴가 없어요</h3><p>메뉴에서 먹고 싶은 것을 골라 주세요.</p><button type="button" id="cart-empty-menu" data-a11y-action-id="cart-empty-menu" data-a11y-primary="true" className="primary-button" onClick={() => setStage("menu")}>메뉴 고르기 <ArrowRight size={17} /></button></div>
               ) : (
                 <>
                   <div className="cart-list">
@@ -785,9 +715,9 @@ export default function App() {
                     <div className="summary-row"><span>주문 수량</span><span>{linesCount}개</span></div>
                     <div className="summary-row total"><span>총 결제 금액</span><span>{won(total)}</span></div>
                   </div>
-                  <div className="bottom-actions">
+                  <div className="bottom-actions" data-a11y-slot="bottom-controls">
                     <button type="button" className="secondary-button" onClick={() => setStage("menu")}>메뉴 더 고르기</button>
-                    <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "cart-pay" ? "guide-emphasis" : ""}`} id="cart-pay" onClick={() => { setStage("payment"); say("결제 방법을 골라 주세요."); }}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
+                    <button type="button" className="primary-button accent" id="cart-pay" data-a11y-action-id="cart-pay" data-a11y-primary="true" onClick={() => { setStage("payment"); say("결제 방법을 골라 주세요."); }}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
                   </div>
                 </>
               )}
@@ -811,9 +741,9 @@ export default function App() {
                 <div className="summary-row"><span>선택한 결제 방법</span><strong>{PAYMENT_METHODS.find((method) => method.id === selectedPayment)?.name}</strong></div>
                 <div className="summary-row total"><span>결제 예정 금액</span><span>{won(total)}</span></div>
               </div>
-              <div className="bottom-actions">
+              <div className="bottom-actions" data-a11y-slot="bottom-controls">
                 <button type="button" className="secondary-button" onClick={() => setStage("cart")}>주문 다시 보기</button>
-                <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "payment-pay" ? "guide-emphasis" : ""}`} id="payment-pay" onClick={startPayment}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
+                <button type="button" className="primary-button accent" id="payment-pay" data-a11y-action-id="payment-pay" data-a11y-primary="true" onClick={startPayment}>결제하기 · {won(total)} <ArrowRight size={18} /></button>
               </div>
             </>
           )}
@@ -844,7 +774,7 @@ export default function App() {
                   </div>
                 </> : <div className="receipt-result" aria-live="polite">{receiptChoice === "yes" ? "영수증을 준비했어요. (데모)" : "영수증 없이 마무리했어요."}</div>}
               </div>
-              <button type="button" className={`primary-button accent ${guideVisible && guideCopy?.actionId === "complete-reset" ? "guide-emphasis" : ""}`} id="complete-reset" style={{ marginTop: 20 }} onClick={returnToStart}><RotateCcw size={18} /> 처음으로 돌아가기</button>
+              <button type="button" className="primary-button accent" id="complete-reset" data-a11y-action-id="complete-reset" data-a11y-primary="true" style={{ marginTop: 20 }} onClick={returnToStart}><RotateCcw size={18} /> 처음으로 돌아가기</button>
             </section>
           )}
         </main>
@@ -855,35 +785,6 @@ export default function App() {
           </footer>
         )}
       </div>
-
-      {guideVisible && preferences.smartGuide && !qrOpen && guideCopy?.actionId && (
-        <aside
-          ref={guideToastRef}
-          className="guide-toast"
-          style={guideToastPosition ? { left: guideToastPosition.left, top: guideToastPosition.top } : undefined}
-          role="status"
-          aria-live="polite"
-        >
-          <div><Info size={20} /></div>
-          <p><strong>{guideCopy.title}</strong>{guideCopy.text}</p>
-          <button
-            type="button"
-            className="guide-toast-close"
-            aria-label="스마트 길잡이 닫기"
-            onPointerDown={(event) => event.stopPropagation()}
-            onTouchStart={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onClick={() => {
-              activityRef.current = { count: activityRef.current.count + 1, lastAt: Date.now() };
-              setInteractionCount(activityRef.current.count);
-              setGuideVisible(false);
-              resetGuideTimerRef.current();
-            }}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </aside>
-      )}
 
       {accessibilityOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAccessibilityOpen(false); }}>

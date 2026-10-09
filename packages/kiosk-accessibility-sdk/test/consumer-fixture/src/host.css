@@ -1,0 +1,57 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #29231e;
+  background: #f6f3ec;
+  --ink: #29231e;
+  --muted: #71675e;
+  --line: #d7cfc2;
+  --paper: #f6f3ec;
+  --card: #fffefa;
+  --accent: #79513a;
+  --accent-deep: #543925;
+  --accent-soft: #eadbca;
+  --shadow: 0 12px 30px rgba(40, 31, 23, .12);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+#kiosk-root {
+  width: min(100%, 680px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 30px 24px 150px;
+  background: var(--paper);
+}
+
+.content {
+  min-height: 60vh;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--card);
+}
+
+.eyebrow { color: var(--muted); font-weight: 700; letter-spacing: .08em; }
+h1 { line-height: 1.2; }
+#host-state { display: block; margin-top: 28px; color: var(--muted); }
+
+.bottom-controls {
+  display: flex;
+  justify-content: flex-end;
+  border-radius: 18px 18px 0 0;
+}
+
+#host-continue {
+  min-width: 180px;
+  min-height: 60px;
+  padding: 12px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--accent);
+  color: white;
+  font: inherit;
+  font-weight: 700;
+}
+
+.sdk-status { display: block; padding-top: 100px; color: var(--muted); }
