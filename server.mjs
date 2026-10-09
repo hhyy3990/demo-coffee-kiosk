@@ -1,0 +1,56 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+
+const app = express();
+const port = Number(process.env.PORT) || 5000;
+const upstreamBase = "https://naebangsikqr.replit.app";
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "8kb" }));
+
+app.post("/api/qr-profile", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token || token.length > 512) {
+    return res.status(400).json({ error: "QR 주소에서 유효한 토큰을 찾지 못했어요." });
+  }
+
+  try {
+    const upstream = await fetch(`${upstreamBase}/api/profiles/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+      signal: AbortSignal.timeout(12000),
+      cache: "no-store",
+    });
+
+    const body = await upstream.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return res.status(502).json({ error: "중앙 QR 서비스에서 읽을 수 없는 응답을 받았어요." });
+    }
+
+    return res.status(upstream.status).json(body);
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return res.status(502).json({
+      error: timedOut
+        ? "중앙 QR 서비스 응답이 늦어요. 잠시 후 다시 시도해 주세요."
+        : "중앙 QR 서비스에 연결할 수 없어요. 데모 프로필을 대신 적용할 수 있어요.",
+    });
+  }
+});
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static("dist", { maxAge: "1h" }));
+  app.get(/.*/, (_req, res) => res.sendFile(new URL("./dist/index.html", import.meta.url).pathname));
+} else {
+  const vite = await createViteServer({
+    configFile: "./vite.config.ts",
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+}
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Cafe kiosk demo listening on port ${port}`);
+});

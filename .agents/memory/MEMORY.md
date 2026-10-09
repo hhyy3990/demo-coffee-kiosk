@@ -1,0 +1,1 @@
+- [Central QR profile access](qr-profile-integration.md) — resolve profiles through the kiosk server; the public resolver rejects browser cross-origin preflight requests.
