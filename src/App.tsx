@@ -150,7 +150,8 @@ export default function App() {
   const [selectedPayment, setSelectedPayment] = useState<string>("card");
   const [receiptChoice, setReceiptChoice] = useState<"yes" | "no" | null>(null);
   const [preferences, setPreferences] = useState<Preferences>({ ...DEFAULT_PREFERENCES });
-  const [activeProfile, setActiveProfile] = useState<"none" | "central" | "demo">("none");
+  const [activeProfile, setActiveProfile] = useState<"none" | "central" | "demo" | "manual">("none");
+  const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
@@ -280,7 +281,16 @@ export default function App() {
     setActiveProfile("demo");
     setQrError("");
     setQrOpen(false);
+    setAccessibilityOpen(false);
     say("큰 글씨와 쉬운 화면 설정을 적용했어요.");
+  };
+  const applyQuickPreference = (preference: "large" | "contrast") => {
+    setPreferences((current) => preference === "large"
+      ? { ...current, textSize: "large", buttonSize: "large" }
+      : { ...current, contrast: "high" });
+    setActiveProfile("manual");
+    setAccessibilityOpen(false);
+    say(preference === "large" ? "큰 글씨와 큰 버튼을 적용했어요." : "고대비 화면을 적용했어요.");
   };
   const submitToken = async () => {
     const token = getToken(tokenInput);
@@ -338,25 +348,25 @@ export default function App() {
     return pieces.join(" · ");
   };
 
-  const openQr = () => { setQrError(""); setQrOpen(true); };
+  const openQr = () => { setAccessibilityOpen(false); setQrError(""); setQrOpen(true); };
   const closeQr = () => { if (!qrLoading) setQrOpen(false); };
   const stageStep = stage === "menu" || stage === "options" ? 1 : stage === "cart" ? 2 : stage === "payment" || stage === "processing" ? 3 : stage === "complete" ? 4 : 0;
   const currentProducts = PRODUCTS.filter((product) => product.category === category);
   const visibleProducts = preferences.simplifiedLayout && !showAllProducts ? currentProducts.slice(0, 2) : currentProducts;
-  const showQrButton = stage === "start" || stage === "cart";
+  const showQrButton = stage === "cart";
 
   return (
     <div className={kioskClass} data-interactions={interactionCount}>
       <div className="shell">
         <header className="topbar">
-          <div className="brand-lockup" aria-label="카페 주문 키오스크">
+          <div className="brand-lockup" aria-label="데모커피 DEMO COFFEE">
             <div className="brand-mark" aria-hidden="true"><Coffee size={22} /></div>
-            <div><div className="brand-name">카페 주문</div><div className="brand-sub">self-service demo</div></div>
+            <div><div className="brand-name">데모커피</div><div className="brand-sub">DEMO COFFEE</div></div>
           </div>
           <div className="top-actions">
             {preferences.voiceGuidance && <span className="voice-status" aria-live="polite"><Volume2 size={16} /> 음성 안내 켜짐</span>}
             {showQrButton && <button type="button" className="quiet-button" onClick={openQr} aria-label="QR 접근성 설정 불러오기"><QrCode size={18} /><span>설정 불러오기</span></button>}
-            <button type="button" className="quiet-button help-button" onClick={() => setHelpOpen(true)}><HandHelping size={18} /><span>직원 도움 요청</span></button>
+            {stage !== "start" && <button type="button" className="quiet-button help-button" onClick={() => setHelpOpen(true)}><HandHelping size={18} /><span>직원 도움 요청</span></button>}
             <button type="button" className="icon-button" onClick={() => {
               setPreferences((current) => ({ ...current, voiceGuidance: !current.voiceGuidance }));
               if (!preferences.voiceGuidance) say("음성 안내를 켰어요.");
@@ -365,37 +375,47 @@ export default function App() {
             </button>
           </div>
         </header>
-        <section className="profile-strip" aria-label="현재 접근성 설정">
-          <div>
-            <div className="profile-label"><Accessibility size={16} /> {activeProfile === "central" ? "공유 접근성 설정 적용 중" : activeProfile === "demo" ? "데모 접근성 설정 적용 중" : "기본 모드"}</div>
-            <div className="profile-summary">{summaryParts.length ? summaryParts.join(" · ") : "별도 접근성 프로필을 적용하지 않았어요."}{activeProfile === "demo" ? " · 언제든 바꿀 수 있어요" : ""}</div>
-          </div>
-          {activeProfile !== "none" && <button type="button" className="clear-profile" onClick={clearProfile}>설정 지우기</button>}
-        </section>
+        {activeProfile !== "none" && (
+          <section className="profile-strip" aria-label="적용된 화면 설정">
+            <div>
+              <div className="profile-label"><Accessibility size={16} /> {activeProfile === "central" ? "내 QR 설정 적용 중" : activeProfile === "demo" ? "간편 설정 적용 중" : "편한 화면 설정 적용 중"}</div>
+              <div className="profile-summary">{summaryParts.length ? summaryParts.join(" · ") : "현재 화면 설정을 적용했어요."}</div>
+            </div>
+            <button type="button" className="clear-profile" onClick={clearProfile}>설정 초기화</button>
+          </section>
+        )}
 
         <main className="main-content">
           {stage === "start" && (
             <div className="start-screen">
               <section className="hero-panel">
+                <div className="hero-art" aria-hidden="true">
+                  <span className="coffee-steam steam-one" />
+                  <span className="coffee-steam steam-two" />
+                  <span className="coffee-saucer" />
+                  <span className="coffee-handle" />
+                  <span className="coffee-cup"><span className="coffee-surface" /></span>
+                </div>
                 <div className="hero-copy">
-                  <div className="eyebrow">잠깐의 여유를 준비할게요</div>
-                  <h1>오늘의 한 잔,<br />편한 방식으로.</h1>
-                  <p className="lede">화면과 안내는 나에게 편한 모습으로 바꿀 수 있어요. 먼저 이용 방법을 골라 주세요.</p>
+                  <div className="eyebrow">데모커피에 오신 것을 환영합니다</div>
+                  <h1>오늘도 향긋한 한 잔</h1>
+                  <p className="lede">맛있는 커피와 편안한 시간을 선사합니다.</p>
                   <div className="hero-actions">
-                    <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /> 매장에서 먹기 <ArrowRight size={18} /></button>
+                    <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /> 매장 이용 <ArrowRight size={18} /></button>
                     <button type="button" className="secondary-button" onClick={() => chooseOrderType("포장")}><PackageCheck size={20} /> 포장하기</button>
                   </div>
                 </div>
-                <div className="hero-art" aria-hidden="true"><span /></div>
               </section>
-              <div className="option-grid">
-                <button type="button" className="choice-card" onClick={openQr}>
-                  <div className="choice-icon"><QrCode size={25} /></div>
-                  <div><h3>내 설정 가져오기</h3><p>공유 QR 토큰으로 편한 화면을 불러와요.</p></div><ChevronRight className="choice-arrow" size={21} />
+              <div className="welcome-support" aria-label="추가 도움">
+                <button type="button" className="welcome-link" onClick={() => setAccessibilityOpen(true)}>
+                  <span className="welcome-link-icon"><Accessibility size={19} /></span>
+                  <span className="welcome-link-copy"><strong>편한 화면 설정</strong><small>원하는 화면으로 바꿔 보세요</small></span>
+                  <ChevronRight className="welcome-link-arrow" size={19} />
                 </button>
-                <button type="button" className="choice-card" onClick={applyDemoProfile}>
-                  <div className="choice-icon"><Accessibility size={25} /></div>
-                  <div><h3>큰 글씨로 시작하기</h3><p>큰 버튼과 쉬운 안내를 바로 적용해요.</p></div><ChevronRight className="choice-arrow" size={21} />
+                <button type="button" className="welcome-link" onClick={() => setHelpOpen(true)}>
+                  <span className="welcome-link-icon"><HandHelping size={19} /></span>
+                  <span className="welcome-link-copy"><strong>직원 도움</strong><small>주문이 어려우시면 말씀해 주세요</small></span>
+                  <ChevronRight className="welcome-link-arrow" size={19} />
                 </button>
               </div>
             </div>
@@ -588,10 +608,11 @@ export default function App() {
           )}
         </main>
 
-        <footer className="optional-detail" style={{ paddingTop: 22, color: "var(--muted)", fontSize: ".72em", display: "flex", justifyContent: "space-between", gap: 12 }}>
-          <span>편안한 주문 경험을 위한 접근성 키오스크 데모</span>
-          {preferences.smartGuide && <span><Sparkles size={13} style={{ verticalAlign: "middle", marginRight: 4 }} />{preferences.guideDelaySeconds}초 후 도움말 · 활동 {interactionCount}회</span>}
-        </footer>
+        {stage !== "start" && preferences.smartGuide && (
+          <footer className="optional-detail smart-guide-status">
+            <Sparkles size={13} /> {preferences.guideDelaySeconds}초 후 도움말 · 활동 {interactionCount}회
+          </footer>
+        )}
       </div>
 
       {guideVisible && preferences.smartGuide && !qrOpen && (
@@ -600,11 +621,40 @@ export default function App() {
         </aside>
       )}
 
+      {accessibilityOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAccessibilityOpen(false); }}>
+          <section className="modal access-settings-modal" role="dialog" aria-modal="true" aria-labelledby="access-settings-title">
+            <div className="modal-header">
+              <div><div className="eyebrow">화면 설정</div><h2 id="access-settings-title">편한 화면 설정</h2><p>원하는 방식으로 화면을 바꿔서 주문할 수 있어요.</p></div>
+              <button type="button" className="icon-button" onClick={() => setAccessibilityOpen(false)} aria-label="화면 설정 닫기"><X size={19} /></button>
+            </div>
+            <div className="access-choice-list">
+              <button type="button" className="access-choice" onClick={openQr}>
+                <span className="access-choice-icon"><QrCode size={21} /></span>
+                <span><strong>내 QR로 설정 불러오기</strong><small>공유받은 주소나 토큰을 입력해요</small></span>
+                <ChevronRight size={19} />
+              </button>
+              <button type="button" className="access-choice" onClick={() => applyQuickPreference("large")}>
+                <span className="access-choice-icon"><Accessibility size={21} /></span>
+                <span><strong>큰 글씨로 이용하기</strong><small>글씨와 주요 버튼을 크게 바꿔요</small></span>
+                <ChevronRight size={19} />
+              </button>
+              <button type="button" className="access-choice" onClick={() => applyQuickPreference("contrast")}>
+                <span className="access-choice-icon"><Sparkles size={20} /></span>
+                <span><strong>고대비 화면 사용하기</strong><small>글자와 버튼을 더 뚜렷하게 보여요</small></span>
+                <ChevronRight size={19} />
+              </button>
+            </div>
+            <button type="button" className="demo-profile-link" onClick={applyDemoProfile}><Sparkles size={16} /> 모든 편의 설정 한 번에 적용 <span>데모</span></button>
+          </section>
+        </div>
+      )}
+
       {qrOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeQr(); }}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
             <div className="modal-header">
-              <div><div className="eyebrow">SHARED ACCESSIBILITY</div><h2 id="qr-title">내 설정 불러오기</h2><p>공유받은 주소나 토큰으로 편한 주문 설정을 적용해요.</p></div>
+                <div><div className="eyebrow">QR 설정</div><h2 id="qr-title">내 설정 불러오기</h2><p>공유받은 주소나 토큰으로 화면 설정을 적용해요.</p></div>
               <button type="button" className="icon-button" onClick={closeQr} aria-label="설정 불러오기 닫기"><X size={19} /></button>
             </div>
             <div className="scan-placeholder">
@@ -617,11 +667,10 @@ export default function App() {
               {qrLoading && <div className="loading-state" role="status"><span className="loading-dot" /> 설정을 불러오고 있어요. 잠시만 기다려 주세요.</div>}
               {qrError && <div className="error-message" role="alert">{qrError}</div>}
               <div className="modal-actions">
-                <button type="button" className="secondary-button" onClick={applyDemoProfile} disabled={qrLoading}><Accessibility size={18} /> 데모 설정 적용</button>
+                <button type="button" className="demo-profile-link" onClick={applyDemoProfile} disabled={qrLoading}><Accessibility size={17} /> 데모 설정 적용</button>
                 <button type="submit" className="primary-button" disabled={qrLoading}>{qrLoading ? "불러오는 중" : "설정 불러오기"} <ArrowRight size={17} /></button>
               </div>
             </form>
-            <div className="demo-profile"><Sparkles size={17} /><div><strong>빠른 데모 설정</strong>큰 글씨 · 높은 대비 · 쉬운 말 · 아래쪽 큰 버튼 · 음성 안내 · 10초 도움말</div></div>
           </section>
         </div>
       )}
