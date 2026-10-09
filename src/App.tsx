@@ -389,16 +389,16 @@ export default function App() {
           {stage === "start" && (
             <div className="start-screen">
               <section className="hero-panel">
-                <div className="hero-art" aria-hidden="true">
-                  <span className="coffee-steam steam-one" />
-                  <span className="coffee-steam steam-two" />
-                  <span className="coffee-saucer" />
-                  <span className="coffee-handle" />
-                  <span className="coffee-cup"><span className="coffee-surface" /></span>
-                </div>
+                <figure className="hero-art">
+                  <img src="/images/democoffee-welcome-cup.jpg" alt="라떼 아트가 담긴 크림색 커피잔" />
+                  <figcaption className="hero-art-caption">
+                    <span className="hero-art-caption-icon" aria-hidden="true"><Coffee size={17} /></span>
+                    <span><strong>오늘의 한 잔</strong><small>따뜻한 커피 한 잔의 여유</small></span>
+                  </figcaption>
+                </figure>
                 <div className="hero-copy">
-                  <div className="eyebrow">데모커피에 오신 것을 환영합니다</div>
-                  <h1>오늘도 향긋한 한 잔</h1>
+                  <div className="eyebrow">COFFEE · DESSERT</div>
+                  <h1>오늘도<br />향긋한 한 잔</h1>
                   <p className="lede">맛있는 커피와 편안한 시간을 선사합니다.</p>
                   <div className="hero-actions">
                     <button type="button" className={`primary-button ${guideVisible ? "guide-emphasis" : ""}`} id="start-store" onClick={() => chooseOrderType("매장")}><Store size={20} /> 매장 이용 <ArrowRight size={18} /></button>
@@ -679,7 +679,7 @@ export default function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHelpOpen(false); }}>
           <section className="modal help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
             <div className="modal-header">
-              <div><div className="eyebrow">STAFF HELP</div><h2 id="help-title">직원 도움이 필요하신가요?</h2><p>이 화면은 키오스크 흐름을 보여주는 데모입니다. 실제 직원 호출은 연결되어 있지 않아요.</p></div>
+              <div><div className="eyebrow">직원 도움</div><h2 id="help-title">직원 도움이 필요하신가요?</h2><p>직원 호출은 연결되어 있지 않아요. 가까운 직원에게 직접 말씀해 주세요.</p></div>
               <button type="button" className="icon-button" onClick={() => setHelpOpen(false)} aria-label="직원 도움 안내 닫기"><X size={19} /></button>
             </div>
             <div className="help-note"><HandHelping size={22} /><span>가까운 직원에게 직접 말씀해 주시면 도와드릴게요.</span></div>

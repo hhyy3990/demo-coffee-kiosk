@@ -1,1 +1,3 @@
 - [Central QR profile access](qr-profile-integration.md) — resolve profiles through the kiosk server; the public resolver rejects browser cross-origin preflight requests.
+- [Fictional kiosk brand](kiosk-brand-scope.md) — use the demo café identity and avoid real café marks; photos are layout references only.
+- [Mockup preview dependencies](mockup-preview-dependencies.md) — resolve sandbox startup failures from missing packages before retrying its workflow.
