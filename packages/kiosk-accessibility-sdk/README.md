@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.4`
+- SDK API: `0.3.5`
 - 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -24,19 +24,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.4.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.4.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.4.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.5.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -60,7 +60,7 @@ import "@naebangsik/kiosk-accessibility-sdk/styles.css";
 
 현재 화면의 목록을 `getLayoutRegions()`에서 선택적으로 `menuItems`에 등록하면 SDK가 해당 항목과 실제 스크롤 소유 영역을 측정합니다. 추가 항목이 아래에 있고 사용자가 더 내릴 수 있을 때만 SDK가 안내 UI를 표시합니다. 자체 스크롤과 문서 스크롤을 모두 지원하며, 고정 하단 조작부와 등록된 버튼을 피할 수 없는 상태에서는 안내를 가리지 않고 스크롤 불가 진단을 남깁니다.
 
-기본 문구는 `아래에도 메뉴가 있습니다. 화면을 위로 밀어보세요.`입니다. 호스트에서 `menuMessage`를 제공하면 안내 문구만 바뀝니다. 안내는 QR 프로필과 독립적으로 동작하고 자동 음성은 재생하지 않습니다.
+기본 문구는 `아래에도 내용이 있습니다. 화면을 위로 밀어보세요.`입니다. 호스트에서 `menuMessage`를 제공하면 안내 문구만 바뀝니다. 안내는 실제 세로 스크롤이 남아 있을 때만 표시되며, 자동 음성은 재생하지 않습니다.
 
 ```ts
 getLayoutRegions: () => ({
@@ -73,11 +73,13 @@ getLayoutRegions: () => ({
 
 ## 스크롤 안내 선택과 우선순위
 
-`horizontalLists`에는 실제 `overflow-x` 스크롤 컨테이너와 DOM 순서대로 된 항목을 등록합니다. SDK는 스크롤이 가능하고 현재 가려진 항목이 있을 때만 오른쪽/왼쪽 안내를 냅니다. `primaryActions`에는 결제·확인 등 현재 화면의 중요한 버튼만 선택 등록하며, 버튼이 화면 아래에 있고 실제 세로 스크롤이 가능할 때만 안내합니다.
+세로 스크롤 안내는 실제 문서 또는 내부 스크롤 컨테이너의 위치와 남은 스크롤 거리를 기준으로 표시합니다. `primaryActions`에는 화면 아래에 있는 중요한 버튼을 선택 등록할 수 있으며, 실제로 아래로 이동할 수 있을 때만 안내합니다.
 
-동시에 여러 조건이 참이면 현재 단계의 `primaryActions`를 먼저, 다음으로 가로 목록, 마지막으로 세로 메뉴를 표시합니다. 스크롤이나 크기 변경으로 조건이 달라지면 하나의 안내만 갱신합니다. 하단 조작부와 보이는 버튼·메뉴 카드·스마트 길잡이를 피해 화면 아래 안전 공간을 찾고, 공간이 없으면 안내를 숨기며 root의 `data-a11y-scroll-guidance="no-safe-space"`로 진단합니다. 안내는 `pointer-events:none`이며 자동 음성을 재생하지 않습니다.
+안내는 `pointer-events:none`이며 기존 조작을 가로막지 않습니다. 일반 콘텐츠와 일부 겹칠 수 있지만, 등록한 하단 고정 조작부·회피 영역·스마트 길잡이는 피합니다. 세로 이동이 끝나면 숨기고, 다시 위로 이동하면 재표시합니다.
 
-작은 설명은 `getTextTargets()`에, 선택 스위치 등 조작 요소는 기존 `getActions()`에 의미 있는 실제 요소를 등록합니다. SDK는 선택 상태나 label을 변경하지 않습니다. 요소 자체의 hit area 확장은 호스트가 제공해야 합니다.
+SDK는 등록된 root 안의 보이는 텍스트 leaf와 일반 입력 컨트롤을 자동 탐색해 글씨 크기를 조정하며, `getTextTargets()`로 명시적 텍스트 대상을 추가할 수 있습니다. 숨김 요소와 SVG·이미지·canvas·SDK 안내 UI는 제외합니다. 선택 스위치 등 조작 요소는 `getActions()`에 의미 있는 실제 요소를 등록합니다. SDK는 선택 상태나 label을 변경하지 않고, 요소 자체의 hit area 확장은 호스트가 제공합니다.
+
+실제 가로 스크롤 목록에서 다음 위치가 남아 있는 기존 버튼은 `aria-label`에 다음/next와 목록 의미(카테고리·메뉴·항목 등)를 제공하고 `aria-controls`로 해당 목록을 연결하면 SDK가 시각적으로 강조합니다. SDK는 해당 버튼을 만들거나 누르지 않습니다. 가로 스크롤 안내 문구는 표시하지 않습니다.
 
 ## 최소 어댑터와 초기화
 
@@ -202,7 +204,7 @@ sdk.destroy();
 
 ## 공통 확대·제한적 레이아웃 보정
 
-글씨 크기는 어댑터가 반환한 텍스트 요소의 현재 화면 크기별 원본 계산값을 기준으로 1.25배/1.5배 처리합니다. `ResizeObserver`와 창 크기 변경을 함께 감지해 뷰포트 또는 키오스크 루트의 너비가 바뀌면 기존 보정 스타일을 되돌린 뒤 반응형 CSS 기준을 다시 측정합니다. 크기 변경 중 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 원래 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 어댑터 대상을 찾아 현재 프로필을 적용합니다.
+글씨 크기는 root 안에서 탐색한 텍스트와 명시적으로 등록한 대상을 각 요소의 현재 반응형 원본 크기 기준으로 1.25배/1.5배 처리하고, 큰 글씨에서 14px/16px 최소 크기를 적용합니다. `ResizeObserver`와 창 크기 변경을 함께 감지해 뷰포트 또는 키오스크 루트의 너비가 바뀌면 기존 보정 스타일을 되돌린 뒤 반응형 CSS 기준을 다시 측정합니다. 크기 변경 중 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 원래 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 대상을 찾아 현재 프로필을 적용합니다.
 
 대상 바깥의 스타일은 수정하지 않습니다. `getLayoutRegions()`에서 호스트가 명시한 `reflowContainers`, `gridContainers`, `actionGroups`, `scrollArea`만 보정 후보가 됩니다. 텍스트 줄바꿈/높이 유연화, 최소 너비 해제, 가로 넘침 시 그리드 1열 전환을 시도합니다. 고정 하단 조작부와 등록된 스크롤 영역의 실제 교차 높이를 측정해 여백을 더하고, 마지막 등록 액션을 최대 스크롤 위치로 예상했을 때 가림 진단이 해소되지 않으면 적용하지 않습니다. 스크롤 자체가 불가능하거나 안전한 여백을 계산할 수 없는 경우 `failed` 결과를 보고합니다. 버튼 겹침은 의미 ID 쌍으로 진단하며, 보정 전후 진단 결과가 나아지지 않거나 새 문제가 생기면 해당 변경을 되돌립니다. `correctLayout()`은 각 전략과 적용/롤백 결과를 반환하고, 자동 시도 결과는 `getLastLayoutCorrections()`에서 확인할 수 있습니다.
 

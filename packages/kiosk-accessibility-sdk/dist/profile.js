@@ -1,5 +1,5 @@
 export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 2;
-export const ACCESSIBILITY_SDK_VERSION = "0.3.4";
+export const ACCESSIBILITY_SDK_VERSION = "0.3.5";
 export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     textSize: "standard",
     buttonSize: "standard",

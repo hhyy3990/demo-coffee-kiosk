@@ -156,6 +156,16 @@
   line-height: 1;
 }
 
+.kiosk .a11y-next-item-emphasis {
+  outline: 3px solid #8b492c !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px rgba(139,73,44,.2) !important;
+}
+.kiosk.a11y-high-contrast .a11y-next-item-emphasis {
+  outline-color: #111 !important;
+  box-shadow: 0 0 0 5px #fff, 0 0 0 8px #111 !important;
+}
+
 .kiosk .a11y-guide-close:hover,
 .kiosk .a11y-guide-close:focus-visible { background: rgba(83,71,40,.12); }
 

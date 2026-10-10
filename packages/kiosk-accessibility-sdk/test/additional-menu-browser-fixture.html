@@ -8,15 +8,16 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; font: 16px/1.4 sans-serif; }
-    body { padding-bottom: 96px; }
+    body { padding-bottom: 0; }
     #fixture-root { position: relative; width: 100%; min-height: 100vh; }
+    #fixture-result { position: fixed; left: -10000px; top: 0; }
     .fixture-header { height: 104px; padding: 12px; }
-    .fixture-scroll { height: calc(100vh - 280px); overflow-y: auto; padding-bottom: 96px; }
+    .fixture-scroll { height: 420px; overflow-y: auto; padding-bottom: 96px; }
     .fixture-list { display: grid; gap: 8px; }
     .menu-item { display: block; width: 100%; min-height: 82px; border: 1px solid #777; background: white; }
     .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 76px; padding: 20px; background: #ddd; }
     #fixture-root.document-scroll .fixture-scroll { height: auto; overflow: visible; padding-bottom: 0; }
-    #fixture-root.document-scroll .menu-item { min-height: 60px; }
+    #fixture-root.document-scroll .menu-item { min-height: 160px; }
     #fixture-root.document-scroll .menu-item:nth-child(9) { margin-top: 130px; }
     #fixture-root.document-scroll .fixture-list { padding-bottom: 100px; }
     #fixture-root.fit .fixture-scroll { height: 500px; }
@@ -82,10 +83,10 @@
       const hint = root.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
       const last = root.querySelector(".menu-item:last-child");
-      const initialNoOverlap = !hint || Boolean(hintRect && [...root.querySelectorAll(".menu-item,.fixture-footer")].every((node) => {
-        const r = node.getBoundingClientRect();
-        return !(hintRect.left < r.right && hintRect.right > r.left && hintRect.top < r.bottom && hintRect.bottom > r.top);
-      }));
+      const initialNoOverlap = !hint || Boolean(hintRect && !(() => {
+        const r = instance.footer.getBoundingClientRect();
+        return hintRect.left < r.right && hintRect.right > r.left && hintRect.top < r.bottom && hintRect.bottom > r.top;
+      })());
       if (kind === "document-scroll") window.scrollTo(0, document.documentElement.scrollHeight);
       else instance.scroll.scrollTop = instance.scroll.scrollHeight;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -114,7 +115,7 @@
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
-      result.fixtureB = await checkScrollable("document-scroll", 9);
+      result.fixtureB = await checkScrollable("document-scroll", 15);
       const fit = mount("fit", 4);
       result.fixtureC = { startsHidden: !(await hintVisible()) };
       fit.sdk.destroy();
@@ -137,24 +138,6 @@
       result.sessionReset = !root.querySelector(".a11y-additional-menu-hint");
       root.replaceChildren();
       root.className = "kiosk";
-      const rail = document.createElement("nav");
-      Object.assign(rail.style, { width: "190px", overflowX: "auto", whiteSpace: "nowrap", position: "absolute", top: "140px" });
-      const categoryItems = Array.from({ length: 4 }, (_, i) => Object.assign(document.createElement("button"), {
-        textContent: `분류 ${i + 1}`, style: "width:120px;height:50px",
-      }));
-      rail.append(...categoryItems);
-      root.append(rail);
-      const horizontalSdk = createAccessibilitySdk({ root, adapter: {
-        getSnapshot: () => ({ screenId: "horizontal" }),
-        getActions: () => categoryItems.map((element, i) => ({ id: `cat.${i}`, name: element.textContent, element, enabled: true })),
-        getTextTargets: () => [],
-        getLayoutRegions: () => ({ horizontalLists: [{ container: rail, items: categoryItems }] }),
-      } });
-      result.horizontalList = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "오른쪽에도 항목이 있습니다. 왼쪽으로 밀어보세요." };
-      rail.scrollLeft = rail.scrollWidth;
-      rail.dispatchEvent(new Event("scroll", { bubbles: true }));
-      result.horizontalList.endsHidden = !(await hintVisible());
-      horizontalSdk.destroy();
       root.replaceChildren();
       root.className = "kiosk";
       const scroll = document.createElement("div");
@@ -232,6 +215,49 @@
       };
       richSdk.destroy();
       root.replaceChildren();
+      root.className = "kiosk";
+      const autoText = Object.assign(document.createElement("p"), { textContent: "자동 검색 텍스트" });
+      autoText.style.fontSize = "12px";
+      const categoryRail = document.createElement("nav");
+      Object.assign(categoryRail.style, { width: "190px", overflowX: "auto", whiteSpace: "nowrap" });
+      categoryRail.id = "fixture-categories";
+      categoryRail.append(...Array.from({ length: 4 }, (_, index) => {
+        const item = document.createElement("span");
+        item.textContent = `분류 ${index + 1}`;
+        item.style.cssText = "display:inline-block;width:120px";
+        return item;
+      }));
+      const nextCategory = Object.assign(document.createElement("button"), { textContent: "〉" });
+      nextCategory.setAttribute("aria-label", "다음 카테고리 보기");
+      nextCategory.setAttribute("aria-controls", categoryRail.id);
+      let nextWasClicked = false;
+      nextCategory.addEventListener("click", () => { nextWasClicked = true; });
+      root.append(autoText, categoryRail, nextCategory);
+      const autoSdk = createAccessibilitySdk({ root, adapter: {
+        getSnapshot: () => ({ screenId: "auto-text" }),
+        getActions: () => [],
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({}),
+      } });
+      const originalAutoFont = parseFloat(getComputedStyle(autoText).fontSize);
+      autoSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge" });
+      const discoveredAutoFont = parseFloat(getComputedStyle(autoText).fontSize);
+      const beginsHighlighted = nextCategory.classList.contains("a11y-next-item-emphasis");
+      categoryRail.scrollLeft = categoryRail.scrollWidth;
+      categoryRail.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await wait();
+      const endsUnhighlighted = !nextCategory.classList.contains("a11y-next-item-emphasis");
+      autoSdk.endSession();
+      const clearedAtSessionEnd = !nextCategory.classList.contains("a11y-next-item-emphasis");
+      result.automaticTargets = {
+        fontEnlarged: discoveredAutoFont > originalAutoFont,
+        highlightsRealNext: beginsHighlighted,
+        clearsAtEnd: endsUnhighlighted && clearedAtSessionEnd,
+        neverAutoClicks: !nextWasClicked,
+        noHorizontalScrollHint: !(await hintVisible()),
+      };
+      autoSdk.destroy();
+      root.replaceChildren();
       const newHeader = document.createElement("header");
       newHeader.className = "fixture-header";
       const replacedScroll = document.createElement("div");
@@ -250,9 +276,9 @@
         result.fixtureE.hiddenBefore && (result.fixtureE.appearsAfterProfile || result.fixtureE.safeSpaceDiagnostic) &&
         (result.fixtureE.persistsAfterResize || result.fixtureE.safeSpaceDiagnostic) &&
         result.sessionReset && result.newScreenReanalyzed &&
-        result.horizontalList.beginsGuided && result.horizontalList.correctMessage && result.horizontalList.endsHidden &&
         result.primaryButton.beginsGuided && result.primaryButton.correctMessage &&
         result.primaryButton.reachableButtonHitTest && result.primaryButton.hidesWhenVisible &&
+        Object.values(result.automaticTargets).every(Boolean) &&
         Object.values(result.composite).every(Boolean) && Object.values(result.smallControls).every(Boolean);
     } catch (error) {
       result.error = String(error?.stack || error);

@@ -148,11 +148,36 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let interactionCount = 0;
   let lastScrollAt = 0;
   let destroyed = false;
+  let sessionEnded = false;
   let sessionGeneration = 0;
   const sessionCleanups = new Set<SessionCleanup>();
+  const emphasizedNextButtons = new Set<HTMLElement>();
+  const nextItemObserver = typeof MutationObserver === "undefined"
+    ? null
+    : new MutationObserver(refreshNextItemButtons);
   let timer = createIdleTimer(showGuide);
   const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
   const menuHint = createScrollGuidance(root, adapter);
+
+  function refreshNextItemButtons(): void {
+    for (const button of emphasizedNextButtons) button.classList.remove("a11y-next-item-emphasis");
+    emphasizedNextButtons.clear();
+    if (sessionEnded || destroyed) return;
+    if (typeof root.querySelectorAll !== "function") return;
+    const buttons = root.querySelectorAll<HTMLElement>("button[aria-label][aria-controls], [role='button'][aria-label][aria-controls]");
+    for (const button of buttons) {
+      const label = button.getAttribute("aria-label")?.toLocaleLowerCase() ?? "";
+      if (!/(다음|next).*(카테고리|메뉴|항목|category|menu|item)/i.test(label)) continue;
+      if ((button as HTMLButtonElement).disabled || button.getAttribute("aria-disabled") === "true") continue;
+      const controlled = button.getAttribute("aria-controls")?.split(/\s+/)
+        .map((id) => document.getElementById(id))
+        .find((element): element is HTMLElement => element instanceof HTMLElement && root.contains(element));
+      if (!controlled || controlled.scrollWidth <= controlled.clientWidth + 1 ||
+          controlled.scrollLeft >= controlled.scrollWidth - controlled.clientWidth - 1) continue;
+      button.classList.add("a11y-next-item-emphasis");
+      emphasizedNextButtons.add(button);
+    }
+  }
 
   function removeGuide(): void {
     if (guideOverlay) {
@@ -235,6 +260,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   }
 
   function applyProfile(input: unknown): AccessibilityProfile {
+    sessionEnded = false;
+    menuHint.setEnabled(true);
     const previousVoiceGuidance = currentProfile.voiceGuidance;
     currentProfile = validateAccessibilityProfile(input);
     const nextClasses = new Set(accessibilityClasses(currentProfile));
@@ -250,6 +277,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       layoutEnhancer.correctLayout();
     }
     menuHint.refresh();
+    refreshNextItemButtons();
     if (previousVoiceGuidance && !currentProfile.voiceGuidance) cancelSpeech();
     if (!currentProfile.smartGuide) removeGuide();
     scheduleGuide();
@@ -309,6 +337,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     removeGuide();
     cancelSpeech();
     applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+    sessionEnded = true;
+    menuHint.setEnabled(false);
+    refreshNextItemButtons();
     menuHint.clear();
     interactionCount = 0;
     options.onInteractionCount?.(0);
@@ -330,6 +361,15 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
 
   root.addEventListener("pointerdown", recordInteraction);
   root.addEventListener("keydown", recordInteraction);
+  root.addEventListener("scroll", refreshNextItemButtons, true);
+  window.addEventListener("resize", refreshNextItemButtons, { passive: true });
+  nextItemObserver?.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled"],
+  });
+  refreshNextItemButtons();
   if (!("PointerEvent" in window)) root.addEventListener("touchstart", recordInteraction, { passive: true });
   window.addEventListener("scroll", recordScrollInteraction, { passive: true });
 
@@ -352,12 +392,17 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       if (destroyed) return;
       endSession();
       destroyed = true;
+      nextItemObserver?.disconnect();
+      for (const button of emphasizedNextButtons) button.classList.remove("a11y-next-item-emphasis");
+      emphasizedNextButtons.clear();
       timer.dispose();
       removeGuide();
       layoutEnhancer.destroy();
       menuHint.destroy();
       root.removeEventListener("pointerdown", recordInteraction);
       root.removeEventListener("keydown", recordInteraction);
+      root.removeEventListener("scroll", refreshNextItemButtons, true);
+      window.removeEventListener("resize", refreshNextItemButtons);
       root.removeEventListener("touchstart", recordInteraction);
       window.removeEventListener("scroll", recordScrollInteraction);
       for (const className of MANAGED_CLASSES) {

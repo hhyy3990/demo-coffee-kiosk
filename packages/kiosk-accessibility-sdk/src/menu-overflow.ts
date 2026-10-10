@@ -1,7 +1,7 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
 
 export const DEFAULT_ADDITIONAL_MENU_MESSAGE =
-  "아래에도 메뉴가 있습니다. 화면을 위로 밀어보세요.";
+  "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
 
 export interface AdditionalMenuOverflowState {
   itemCount: number;

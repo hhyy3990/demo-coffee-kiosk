@@ -30,13 +30,6 @@ export interface KioskLayoutRegions {
     gridContainers?: readonly HTMLElement[];
     /** Explicitly opted-in groups of adjacent primary controls. */
     actionGroups?: readonly HTMLElement[];
-    /** Horizontally scrollable lists whose visible items have an explicit reading order. */
-    horizontalLists?: readonly {
-        container: HTMLElement;
-        items: readonly HTMLElement[];
-        message?: string;
-        direction?: "ltr" | "rtl";
-    }[];
     /** Important controls that may require vertical scrolling to reach. */
     primaryActions?: readonly {
         element: HTMLElement;

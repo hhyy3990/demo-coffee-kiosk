@@ -25,6 +25,18 @@ function px(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function minimumReadableSize(element: HTMLElement, profile: AccessibilityProfile): number {
+  if (profile.textSize === "standard") return 0;
+  const large = profile.textSize === "large";
+  const heading = /^H[1-6]$/.test(element.tagName) || element.getAttribute("role") === "heading";
+  const control = element.matches("button, input, textarea, select, [role='button'], [role='switch']");
+  const secondary = element.matches("small, .helper, .optional-detail, .product-tag, .eyebrow");
+  if (heading) return large ? 20 : 24;
+  if (control) return large ? 16 : 18;
+  if (secondary) return large ? 12 : 14;
+  return large ? 14 : 16;
+}
+
 export function createLayoutEnhancer(
   root: HTMLElement,
   adapter: AccessibilityAdapter,
@@ -93,10 +105,26 @@ export function createLayoutEnhancer(
   }
 
   function currentTargets(): HTMLElement[] {
-    const set = new Set<HTMLElement>();
-    for (const { element } of adapter.getTextTargets()) if (root.contains(element)) set.add(element);
-    for (const { element } of adapter.getActions()) if (root.contains(element)) set.add(element);
-    return [...set];
+    const explicit = new Set(adapter.getTextTargets().map(({ element }) => element).filter((element) => root.contains(element)));
+    const candidates = new Set<HTMLElement>(explicit);
+    if (typeof root.querySelectorAll !== "function") return [...candidates];
+    const ignored = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IMG", "VIDEO", "IFRAME"]);
+    for (const element of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+      if (ignored.has(element.tagName) || element.closest(".a11y-guide-toast, .a11y-additional-menu-hint, [aria-hidden='true']")) continue;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0 || rect.width <= 0 || rect.height <= 0) continue;
+      const hasText = Array.from(element.childNodes).some((node) =>
+        node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()),
+      );
+      const isValueControl = ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName);
+      if ((hasText || isValueControl) && ![...explicit].some((target) => target !== element && target.contains(element))) {
+        candidates.add(element);
+      }
+    }
+    return [...candidates].filter((element) =>
+      explicit.has(element) || ![...candidates].some((candidate) => candidate !== element && element.contains(candidate)),
+    );
   }
 
   function refreshProfile(): void {
@@ -110,12 +138,16 @@ export function createLayoutEnhancer(
     const profile = getProfile();
     const textScale = TEXT_SCALE[profile.textSize];
     const controlScale = CONTROL_SCALE[profile.buttonSize];
+    for (const { element } of adapter.getActions()) {
+      if (root.contains(element)) captureBaseline(element);
+    }
     for (const element of targets) {
       captureBaseline(element);
       const style = window.getComputedStyle(element);
       const size = baseSizes.get(element)!;
       if (textScale > 1 && size.font > 0) {
-        write(element, "font-size", `${size.font * textScale}px`);
+        const minimum = minimumReadableSize(element, profile);
+        write(element, "font-size", `${Math.max(size.font * textScale, minimum)}px`);
         if (style.lineHeight !== "normal" && px(style.lineHeight) > 0) {
           write(element, "line-height", `${Math.max(px(style.lineHeight) * textScale, size.font * textScale * 1.2)}px`);
         }

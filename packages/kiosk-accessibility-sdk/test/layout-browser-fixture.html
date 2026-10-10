@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SDK 0.3.4 browser layout verification</title>
+  <title>SDK 0.3.5 browser layout verification</title>
   <link rel="stylesheet" href="/packages/kiosk-accessibility-sdk/dist/styles.css">
   <style>
     * { box-sizing: border-box; }
@@ -120,7 +120,7 @@
       return { before, after, repeated, restored, beforeDestroy, destroyed, corrections, explicitCorrection };
     }
     const result = {
-      version: "0.3.4",
+      version: "0.3.5",
       structures: [
         verify(document.querySelector("#structure-a"), [...document.querySelectorAll("#structure-a button")], [
           document.querySelector("#structure-a .menu-grid"),
@@ -129,7 +129,7 @@
       ],
     };
     const [gridCase, overlapCase] = result.structures;
-    const passed = result.version === "0.3.4" &&
+    const passed = result.version === "0.3.5" &&
       result.structures.every((sample) =>
         sample.before.textFont === "16px" &&
         sample.after.textFont === "24px" &&
