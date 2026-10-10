@@ -552,7 +552,7 @@ export default function App() {
                   <button type="button" id="menu-order-confirm" data-a11y-action-id="menu-order-confirm" data-a11y-primary="true" className="primary-button" onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
                 </div>
               )}
-              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" onClick={() => setStage("start")}><ArrowLeft size={17} /> 처음으로</button></div>
+              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" onClick={returnToStart}><ArrowLeft size={17} /> 처음으로</button></div>
             </>
           )}
 
