@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronRight, Clock3, Coffee,
   Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Minus, PackageCheck, Plus,
@@ -111,6 +111,7 @@ export default function App() {
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
   const kioskRootRef = useRef<HTMLDivElement>(null);
+  const previousStageRef = useRef<Stage>(stage);
   const accessibilitySdkRef = useRef<AccessibilitySdk | null>(null);
   const registerAccessibilitySessionCleanup = useCallback((cleanup: SessionCleanup) =>
     accessibilitySdkRef.current?.registerSessionCleanup(cleanup) ?? (() => undefined), []);
@@ -218,6 +219,54 @@ export default function App() {
   useEffect(() => {
     accessibilitySdkRef.current?.applyProfile(preferences);
   }, [preferences]);
+
+  useLayoutEffect(() => {
+    if (previousStageRef.current === stage) return;
+    previousStageRef.current = stage;
+
+    let cancelled = false;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    const cancelForUserInput = () => {
+      cancelled = true;
+    };
+    const resetScroll = () => {
+      if (cancelled) return;
+      const root = kioskRootRef.current;
+      const scrollables = new Set<HTMLElement>();
+      if (document.scrollingElement instanceof HTMLElement) scrollables.add(document.scrollingElement);
+      if (document.documentElement) scrollables.add(document.documentElement);
+      if (document.body) scrollables.add(document.body);
+      if (root) {
+        const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+        for (const element of elements) {
+          if (element.scrollHeight > element.clientHeight + 1 && element.scrollTop !== 0) {
+            scrollables.add(element);
+          }
+        }
+      }
+      for (const element of scrollables) element.scrollTop = 0;
+      window.scrollTo(0, 0);
+    };
+
+    window.addEventListener("wheel", cancelForUserInput, { passive: true, once: true });
+    window.addEventListener("touchstart", cancelForUserInput, { passive: true, once: true });
+    window.addEventListener("pointerdown", cancelForUserInput, { passive: true, once: true });
+    window.addEventListener("keydown", cancelForUserInput, { once: true });
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(resetScroll);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      window.removeEventListener("wheel", cancelForUserInput);
+      window.removeEventListener("touchstart", cancelForUserInput);
+      window.removeEventListener("pointerdown", cancelForUserInput);
+      window.removeEventListener("keydown", cancelForUserInput);
+    };
+  }, [stage]);
 
   useEffect(() => {
     accessibilitySdkRef.current?.setGuideState({
