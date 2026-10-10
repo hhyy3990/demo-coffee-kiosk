@@ -1,10 +1,12 @@
 import {
   createAccessibilitySdk,
+  createQrProfileClient,
   DEFAULT_ACCESSIBILITY_PROFILE,
   validateAccessibilityProfile,
   type AccessibilityAdapter,
   type AccessibilityProfile,
 } from "@naebangsik/kiosk-accessibility-sdk";
+import type { QrScannerHandle } from "@naebangsik/kiosk-accessibility-sdk/qr-scanner";
 
 const root = document.createElement("main");
 const button = document.createElement("button");
@@ -34,3 +36,9 @@ sdk.setGuideState({
 });
 sdk.inspectLayout();
 sdk.destroy();
+const qrClient = createQrProfileClient();
+qrClient.cancel();
+function disposeScanner(scanner: QrScannerHandle | null) {
+  scanner?.destroy();
+}
+disposeScanner(null);

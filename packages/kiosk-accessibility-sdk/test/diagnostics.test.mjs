@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectKioskLayout } from "../src/diagnostics.ts";
+import { sdk } from "./load-sdk.mjs";
+const { inspectKioskLayout } = sdk;
 
 function element({
   id = "",

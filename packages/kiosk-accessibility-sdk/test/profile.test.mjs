@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
+import { sdk } from "./load-sdk.mjs";
+const {
   ACCESSIBILITY_PROFILE_SCHEMA_VERSION,
   DEFAULT_ACCESSIBILITY_PROFILE,
   accessibilityClasses,
   validateAccessibilityProfile,
-} from "../src/profile.ts";
+} = sdk;
 
 test("profile validator preserves the central QR schema and known values", () => {
   const profile = validateAccessibilityProfile({

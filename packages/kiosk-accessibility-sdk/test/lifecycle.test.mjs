@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAccessibilitySdk } from "../src/accessibility-sdk.ts";
+import { sdk } from "./load-sdk.mjs";
+const { createAccessibilitySdk } = sdk;
 
 test("profile application and SDK disposal only change SDK-owned root classes", () => {
   const priorWindow = globalThis.window;

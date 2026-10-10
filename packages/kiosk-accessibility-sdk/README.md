@@ -5,9 +5,9 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.1.0`
+- SDK API: `0.2.0`
 - 프로필 스키마: `1.0.0` (중앙 QR 프로필의 기존 필드와 값 유지)
-- 런타임 의존성: 없음
+- 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
 
 ## 빌드와 패키지 만들기
@@ -23,19 +23,19 @@ npm run sdk:verify-consumer
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.1.0.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.0.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 필드나 값을 임의로 변경하지 마세요. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.1.0.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.0.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.1.0.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.2.0.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -45,6 +45,7 @@ import {
   ACCESSIBILITY_PROFILE_SCHEMA_VERSION,
   ACCESSIBILITY_SDK_VERSION,
   createAccessibilitySdk,
+  createQrProfileClient,
   validateAccessibilityProfile,
   type AccessibilityAdapter,
   type AccessibilityProfile,
@@ -99,13 +100,31 @@ const sdk = createAccessibilitySdk({ root, adapter });
 <footer data-a11y-slot="bottom-controls">...</footer>
 ```
 
-호스트는 기존 same-origin 서버 중계로 QR 프로필을 조회하고 응답 형식에 맞게 프로필 객체를 추출한 뒤 검증·적용합니다. 중앙 공개 resolver를 브라우저에서 직접 호출하지 마세요.
+호스트는 QR 프로필 클라이언트를 사용해 공식 QR URL 또는 raw token을 검증하고, 고정된 same-origin `/api/qr-profile` 경로로만 조회합니다. 카메라 화면을 열 때만 스캐너 모듈을 동적으로 불러옵니다.
 
 ```ts
-const profilePayload: unknown = await loadProfileThroughExistingServerProxy();
-const profile: AccessibilityProfile = validateAccessibilityProfile(profilePayload);
+const qrClient = createQrProfileClient();
+const profile: AccessibilityProfile = await qrClient.resolve(scannedOrTypedValue, "scan");
 sdk.applyProfile(profile);
+
+// 사용자가 QR 모달을 닫으면 진행 중 요청을 취소합니다.
+qrClient.cancel();
 ```
+
+카메라 스캐너는 별도 entrypoint입니다. SDK 기본 entrypoint에서 ZXing 모듈을 가져오지 않으며, QR UI를 표시할 때만 동적 import 하세요.
+
+```ts
+const { mountQrScanner } = await import("@naebangsik/kiosk-accessibility-sdk/qr-scanner");
+const scanner = mountQrScanner({
+  container: scannerElement,
+  onScan: (qrText) => void qrClient.resolve(qrText, "scan"),
+  onCameraUnavailable: (message) => showManualInput(message),
+});
+// QR 화면을 닫거나 언마운트할 때:
+scanner.destroy();
+```
+
+카메라 영상은 브라우저 내에서만 처리됩니다. 서버에는 QR 원문 URL이 아니라 검증된 token만 same-origin 중계 요청에 포함됩니다. 중계 서버와 비밀키는 호스트가 관리합니다.
 
 호스트가 스마트 길잡이 문구와 기존 화면 행동 ID를 결정합니다. SDK는 안내를 표시하고 지정된 요소를 강조할 뿐, 행동을 호출하지 않습니다.
 

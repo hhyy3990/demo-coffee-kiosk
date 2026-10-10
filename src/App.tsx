@@ -12,7 +12,7 @@ import {
   type AccessibilityProfile,
   type AccessibilitySdk,
 } from "@naebangsik/kiosk-accessibility-sdk";
-import { getManualProfileToken, getScannedProfileToken, isValidProfileToken } from "./qrProfile";
+import { createQrProfileClient } from "@naebangsik/kiosk-accessibility-sdk";
 import {
   createCafeAccessibilityAdapter,
   resolveCafeGuide,
@@ -83,36 +83,6 @@ const productDefaultOptions = (product: Product): OrderOptions => ({
   size: "regular",
   cup: "store",
 });
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-function isUnavailableProfileResponse(body: unknown): boolean {
-  if (!isRecord(body)) return true;
-  const candidates: Record<string, unknown>[] = [body];
-  if (isRecord(body.profile)) candidates.push(body.profile);
-  if (isRecord(body.data)) candidates.push(body.data);
-
-  const unavailableStatuses = new Set(["disabled", "inactive", "deactivated", "revoked", "expired", "deleted", "unavailable"]);
-  return candidates.some((candidate) => {
-    const status = typeof candidate.status === "string" ? candidate.status.trim().toLowerCase() : "";
-    return candidate.success === false ||
-      candidate.ok === false ||
-      candidate.active === false ||
-      candidate.enabled === false ||
-      candidate.isActive === false ||
-      candidate.isEnabled === false ||
-      candidate.disabled === true ||
-      candidate.revoked === true ||
-      unavailableStatuses.has(status);
-  });
-}
-
-function extractPreferences(body: unknown): Preferences | null {
-  if (!isRecord(body)) return null;
-  let candidate: unknown = body.preferences;
-  if (!isRecord(candidate) && isRecord(body.profile)) candidate = body.profile.preferences;
-  if (!isRecord(candidate) && isRecord(body.data)) candidate = body.data.preferences;
-  return isRecord(candidate) ? validateAccessibilityProfile(candidate) : null;
-}
-
 export default function App() {
   const [stage, setStage] = useState<Stage>("start");
   const [orderType, setOrderType] = useState<"매장" | "포장">("매장");
@@ -128,6 +98,8 @@ export default function App() {
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const qrProfileClientRef = useRef<ReturnType<typeof createQrProfileClient> | null>(null);
+  if (!qrProfileClientRef.current) qrProfileClientRef.current = createQrProfileClient();
   const [qrMode, setQrMode] = useState<"camera" | "manual">("camera");
   const [qrCameraError, setQrCameraError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
@@ -383,33 +355,13 @@ export default function App() {
     setAccessibilityOpen(false);
     say(preference === "large" ? "큰 글씨와 큰 버튼을 적용했어요." : "고대비 화면을 적용했어요.");
   };
-  const loadProfileToken = async (token: string) => {
-    if (!isValidProfileToken(token)) {
-      setQrError("사용할 수 없는 QR이에요");
-      return;
-    }
+  const loadProfileToken = async (value: string, inputKind: "scan" | "manual") => {
     if (qrRequestInFlightRef.current) return;
-
     qrRequestInFlightRef.current = true;
     setQrLoading(true);
     setQrError("");
     try {
-      const response = await fetch("/api/qr-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        if ([400, 401, 403, 404, 410, 422].includes(response.status)) {
-          throw new Error("사용할 수 없는 QR이에요");
-        }
-        const message = isRecord(body) && typeof body.error === "string" ? body.error : "접근성 설정을 불러오지 못했어요. 다시 시도하거나 데모 설정을 사용해 주세요.";
-        throw new Error(message);
-      }
-      if (isUnavailableProfileResponse(body)) throw new Error("사용할 수 없는 QR이에요");
-      const resolved = extractPreferences(body);
-      if (!resolved) throw new Error("사용할 수 없는 QR이에요");
+      const resolved = await qrProfileClientRef.current!.resolve(value, inputKind);
       setPreferences(resolved);
       setActiveProfile("central");
       setProfileDetailsOpen(false);
@@ -418,28 +370,20 @@ export default function App() {
       setQrCameraError("");
       say("접근성 설정을 불러왔어요.");
     } catch (error) {
-      setQrError(error instanceof Error ? error.message : "설정을 불러오지 못했어요. 네트워크를 확인해 주세요.");
+      if (error instanceof Error && error.name === "AbortError") return;
+      const code = error instanceof Error ? error.message : "";
+      setQrError(code === "QR_UNAVAILABLE" ? "사용할 수 없는 QR이에요" : "접근성 설정을 불러오지 못했어요. 다시 시도하거나 직원에게 도움을 요청해 주세요.");
     } finally {
       qrRequestInFlightRef.current = false;
       setQrLoading(false);
     }
   };
   const submitManualToken = () => {
-    const token = getManualProfileToken(tokenInput);
-    if (!token) {
-      setQrError("사용할 수 없는 QR이에요. 공식 주소 또는 토큰을 확인해 주세요.");
-      return;
-    }
-    void loadProfileToken(token);
+    void loadProfileToken(tokenInput, "manual");
   };
   const handleScannedQr = (value: string) => {
-    const token = getScannedProfileToken(value);
     setQrError("");
-    if (!token) {
-      setQrError("사용할 수 없는 QR이에요");
-      return;
-    }
-    void loadProfileToken(token);
+    void loadProfileToken(value, "scan");
   };
   const handleCameraUnavailable = (message: string) => {
     setQrCameraError(message);
@@ -481,7 +425,12 @@ export default function App() {
     setQrMode("camera");
     setQrOpen(true);
   };
-  const closeQr = () => { if (!qrLoading) setQrOpen(false); };
+  const closeQr = () => {
+    qrProfileClientRef.current?.cancel();
+    qrRequestInFlightRef.current = false;
+    setQrLoading(false);
+    setQrOpen(false);
+  };
   const stageStep = stage === "menu" || stage === "options" ? 1 : stage === "cart" ? 2 : stage === "payment" || stage === "processing" ? 3 : stage === "complete" ? 4 : 0;
   const showQrButton = stage === "cart";
 

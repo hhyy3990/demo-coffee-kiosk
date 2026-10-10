@@ -1,7 +1,7 @@
 {
   "name": "@naebangsik/kiosk-accessibility-sdk",
-  "version": "0.1.0",
-  "description": "Framework-independent accessibility SDK for web kiosks",
+  "version": "0.2.0",
+  "description": "Framework-independent accessibility and QR profile SDK for web kiosks",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -17,6 +17,11 @@
       "default": "./dist/index.js"
     },
     "./styles.css": "./dist/styles.css",
+    "./qr-scanner": {
+      "types": "./dist/qr-scanner.d.ts",
+      "import": "./dist/qr-scanner.js",
+      "default": "./dist/qr-scanner.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -31,6 +36,9 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@zxing/browser": "^0.2.1"
   },
   "engines": {
     "node": ">=18"

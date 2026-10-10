@@ -35,3 +35,11 @@ export {
   type GuideState,
   type IdleTimerDriver,
 } from "./guide.ts";
+export {
+  CENTRAL_QR_ORIGIN,
+  createQrProfileClient,
+  getManualProfileToken,
+  getScannedProfileToken,
+  isValidProfileToken,
+  type QrProfileClient,
+} from "./qr-profile.ts";

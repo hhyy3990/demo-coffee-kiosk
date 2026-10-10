@@ -3,4 +3,5 @@ export { createAccessibilitySdk, } from "./accessibility-sdk.js";
 export {} from "./adapter.js";
 export { inspectKioskLayout, } from "./diagnostics.js";
 export { createIdleTimer, smartGuideDelayMs, } from "./guide.js";
+export { CENTRAL_QR_ORIGIN, createQrProfileClient, getManualProfileToken, getScannedProfileToken, isValidProfileToken, } from "./qr-profile.js";
 //# sourceMappingURL=index.js.map

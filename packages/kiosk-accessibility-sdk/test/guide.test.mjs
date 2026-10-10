@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createIdleTimer, smartGuideDelayMs } from "../src/guide.ts";
+import { sdk } from "./load-sdk.mjs";
+const { createIdleTimer, smartGuideDelayMs } = sdk;
 
 test("guide delays retain the central profile choices", () => {
   assert.equal(smartGuideDelayMs(10), 10_000);
