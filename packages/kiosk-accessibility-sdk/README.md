@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.2.1`
+- SDK API: `0.3.0`
 - 프로필 스키마: `1.0.0` (중앙 QR 프로필의 기존 필드와 값 유지)
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -23,19 +23,19 @@ npm run sdk:verify-consumer
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.1.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.0.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 필드나 값을 임의로 변경하지 마세요. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.1.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.0.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.2.1.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.0.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -84,6 +84,9 @@ const adapter: AccessibilityAdapter = {
   getLayoutRegions: () => ({
     bottomControls: [root.querySelector<HTMLElement>("[data-a11y-slot='bottom-controls']")!],
     scrollArea: root.querySelector<HTMLElement>("[data-a11y-slot='scroll-content']"),
+    reflowContainers: [root.querySelector<HTMLElement>("[data-a11y-slot='scroll-content']")!],
+    gridContainers: [...root.querySelectorAll<HTMLElement>("[data-a11y-grid]")],
+    actionGroups: [...root.querySelectorAll<HTMLElement>("[data-a11y-action-group]")],
   }),
 };
 
@@ -162,7 +165,9 @@ sdk.setGuideState({
   },
 });
 
-const layoutIssues = sdk.inspectLayout(); // 읽기 전용 결과
+const layoutIssues = sdk.inspectLayout(); // 읽기 전용 진단
+const corrections = sdk.correctLayout(); // 명시된 영역에서만 보정 시도, 결과별 되돌림 여부 반환
+const automaticCorrections = sdk.getLastLayoutCorrections(); // 프로필 적용 시 자동 보정 결과
 ```
 
 기존 React 앱에서는 화면 해제 시 `sdk.destroy()`를 호출합니다. `destroy()`는 `endSession()` 정리 후 SDK 이벤트 리스너까지 해제하고 처음의 root 클래스 상태를 복원합니다. 업무 상태는 변경하지 않습니다.
@@ -171,10 +176,12 @@ const layoutIssues = sdk.inspectLayout(); // 읽기 전용 결과
 sdk.destroy();
 ```
 
-## 자동 적용 범위와 한계
+## 공통 확대·제한적 레이아웃 보정
 
-SDK는 글씨·버튼 크기, 고대비 색상 토큰, 표시된 보조 정보의 단순화, 하단 조작 영역 배치 규칙을 제공합니다. 텍스트 잘림·가로 넘침·화면 밖 버튼·하단 영역 가림·작은 터치 영역은 측정해 보고합니다.
+글씨 크기는 어댑터가 반환한 텍스트 요소의 최초 계산값을 기준으로 1.25배/1.5배 처리합니다. 큰 버튼은 어댑터가 제공한 조작 대상만 대상으로 높이를 유연하게 하고 최소 높이·패딩·줄바꿈을 적용합니다. 같은 프로필을 재적용할 때 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 기록한 인라인 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 어댑터 대상을 찾아 현재 프로필을 적용합니다.
 
-각 호스트는 자기 화면 구조에 맞는 반응형 그리드, 실제 스크롤 영역, 하단 영역 오프셋, 선택 가능한 행동 ID와 화면별 안내를 연결해야 합니다. 진단 결과로 DOM을 재배치하거나 AI가 업무 코드를 수정하는 동작은 없습니다. 일부 CSS는 호스트의 변수·마크업 표시에 의존하며, SDK만으로 모든 키오스크 화면을 자동으로 재구성하지 않습니다.
+대상 바깥의 스타일은 수정하지 않습니다. `getLayoutRegions()`에서 호스트가 명시한 `reflowContainers`, `gridContainers`, `actionGroups`, `scrollArea`만 보정 후보가 됩니다. 텍스트 줄바꿈/높이 유연화, 최소 너비 해제, 가로 넘침 시 그리드 1열 전환, 하단 고정 영역만큼 스크롤 여백 확보를 시도한 후 진단 결과가 개선되지 않으면 해당 변경을 되돌립니다. 버튼 겹침은 의미 ID 쌍으로 진단하며, 그리드 열 감소 또는 호스트 등록 조작 그룹의 세로 재배치가 겹침을 줄이지 못하면 롤백합니다. `correctLayout()`은 각 전략과 적용/롤백 결과를 반환하고, 자동 시도 결과는 `getLastLayoutCorrections()`에서 확인할 수 있습니다.
+
+절대 위치 요소, 복잡한 중첩 스크롤, 캔버스/iframe 내부, 호스트 규칙 간 우선순위 충돌 등은 일반 규칙만으로 안전하게 재배치할 수 없습니다. 자동 보정은 감지한 모든 문제의 해결을 보장하지 않으며, 메뉴·업무 버튼을 숨기거나 클릭하지 않습니다. AI 연결은 포함하지 않습니다.
 
 향후 중앙 AI 서비스가 스마트 길잡이 문구를 제공하더라도 응답은 호스트의 현재 화면과 허용된 행동 ID에 한정해야 합니다. 호스트가 응답을 검증한 뒤 `setGuideState`에 전달하며, AI나 SDK가 버튼을 누르거나 업무 상태를 변경하지 않도록 유지합니다. 현재 중앙 AI 연결은 포함되어 있지 않습니다.

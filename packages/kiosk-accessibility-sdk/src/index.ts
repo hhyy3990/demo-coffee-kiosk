@@ -30,6 +30,7 @@ export {
   type AccessibilityIssueType,
   type LayoutDiagnosticOptions,
 } from "./diagnostics.ts";
+export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
 export {
   createIdleTimer,
   smartGuideDelayMs,

@@ -1,5 +1,9 @@
 import type { AccessibilityAdapter, AccessibilityGuideMessage } from "./adapter.ts";
 import { inspectKioskLayout, type AccessibilityDiagnostic } from "./diagnostics.ts";
+import {
+  createLayoutEnhancer,
+  type LayoutCorrectionResult,
+} from "./layout-enhancements.ts";
 import { createIdleTimer, smartGuideDelayMs, type GuideState } from "./guide.ts";
 import {
   ACCESSIBILITY_SDK_VERSION,
@@ -28,6 +32,8 @@ export interface AccessibilitySdk {
   resetIdleTimer(): void;
   speak(text: string): boolean;
   inspectLayout(): AccessibilityDiagnostic[];
+  correctLayout(): LayoutCorrectionResult[];
+  getLastLayoutCorrections(): LayoutCorrectionResult[];
   endSession(): void;
   registerSessionCleanup(cleanup: SessionCleanup): () => void;
   createSessionGuard(): () => boolean;
@@ -145,6 +151,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let sessionGeneration = 0;
   const sessionCleanups = new Set<SessionCleanup>();
   let timer = createIdleTimer(showGuide);
+  const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
 
   function removeGuide(): void {
     if (guideOverlay) {
@@ -231,6 +238,14 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     for (const className of MANAGED_CLASSES) {
       root.classList.toggle(className, nextClasses.has(className));
     }
+    layoutEnhancer.applyProfile();
+    if (
+      currentProfile.textSize !== "standard" ||
+      currentProfile.buttonSize === "large" ||
+      currentProfile.bottomControls
+    ) {
+      layoutEnhancer.correctLayout();
+    }
     if (previousVoiceGuidance && !currentProfile.voiceGuidance) cancelSpeech();
     if (!currentProfile.smartGuide) removeGuide();
     scheduleGuide();
@@ -255,6 +270,14 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const issues = inspectKioskLayout(root, adapter);
     options.onDiagnostics?.(issues);
     return issues;
+  }
+
+  function correctLayout(): LayoutCorrectionResult[] {
+    return layoutEnhancer.correctLayout();
+  }
+
+  function getLastLayoutCorrections(): LayoutCorrectionResult[] {
+    return layoutEnhancer.getLastCorrections();
   }
 
   function endSession(): void {
@@ -314,6 +337,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     resetIdleTimer,
     speak,
     inspectLayout,
+    correctLayout,
+    getLastLayoutCorrections,
     endSession,
     registerSessionCleanup,
     createSessionGuard,
@@ -323,6 +348,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       destroyed = true;
       timer.dispose();
       removeGuide();
+      layoutEnhancer.destroy();
       root.removeEventListener("pointerdown", recordInteraction);
       root.removeEventListener("keydown", recordInteraction);
       root.removeEventListener("touchstart", recordInteraction);

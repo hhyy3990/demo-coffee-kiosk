@@ -70,8 +70,8 @@ test("layout audit reports clipping, page overflow, offscreen and obscured targe
       overflowX: "hidden",
     });
     const smallAction = element({
-      left: 300,
-      top: 100,
+      left: 90,
+      top: 560,
       width: 30,
       height: 36,
     });
@@ -102,6 +102,8 @@ test("layout audit reports clipping, page overflow, offscreen and obscured targe
     assert.ok(types.has("small-touch-target"));
     assert.ok(types.has("action-offscreen"));
     assert.ok(types.has("bottom-control-obscures-action"));
+    assert.ok(types.has("action-overlap"));
+    assert.ok(issues.some((issue) => issue.relatedSemanticId === "cart.pay"));
     assert.ok(issues.every((issue) => issue.screenId === "cafe.cart"));
     assert.ok(issues.every((issue) => !("text" in issue.measurements)));
   } finally {

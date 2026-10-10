@@ -1,4 +1,5 @@
 import { inspectKioskLayout } from "./diagnostics.js";
+import { createLayoutEnhancer, } from "./layout-enhancements.js";
 import { createIdleTimer, smartGuideDelayMs } from "./guide.js";
 import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, } from "./profile.js";
 import { cancelSpeech, speakText } from "./speech.js";
@@ -92,6 +93,7 @@ export function createAccessibilitySdk(options) {
     let sessionGeneration = 0;
     const sessionCleanups = new Set();
     let timer = createIdleTimer(showGuide);
+    const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
     function removeGuide() {
         if (guideOverlay) {
             guideOverlay.remove();
@@ -170,6 +172,12 @@ export function createAccessibilitySdk(options) {
         for (const className of MANAGED_CLASSES) {
             root.classList.toggle(className, nextClasses.has(className));
         }
+        layoutEnhancer.applyProfile();
+        if (currentProfile.textSize !== "standard" ||
+            currentProfile.buttonSize === "large" ||
+            currentProfile.bottomControls) {
+            layoutEnhancer.correctLayout();
+        }
         if (previousVoiceGuidance && !currentProfile.voiceGuidance)
             cancelSpeech();
         if (!currentProfile.smartGuide)
@@ -192,6 +200,12 @@ export function createAccessibilitySdk(options) {
         const issues = inspectKioskLayout(root, adapter);
         options.onDiagnostics?.(issues);
         return issues;
+    }
+    function correctLayout() {
+        return layoutEnhancer.correctLayout();
+    }
+    function getLastLayoutCorrections() {
+        return layoutEnhancer.getLastCorrections();
     }
     function endSession() {
         sessionGeneration += 1;
@@ -248,6 +262,8 @@ export function createAccessibilitySdk(options) {
         resetIdleTimer,
         speak,
         inspectLayout,
+        correctLayout,
+        getLastLayoutCorrections,
         endSession,
         registerSessionCleanup,
         createSessionGuard,
@@ -258,6 +274,7 @@ export function createAccessibilitySdk(options) {
             destroyed = true;
             timer.dispose();
             removeGuide();
+            layoutEnhancer.destroy();
             root.removeEventListener("pointerdown", recordInteraction);
             root.removeEventListener("keydown", recordInteraction);
             root.removeEventListener("touchstart", recordInteraction);

@@ -191,6 +191,10 @@ export function createCafeAccessibilityAdapter(
       return {
         bottomControls,
         scrollArea: root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]'),
+        reflowContainers: [root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')].filter(
+          (element): element is HTMLElement => Boolean(element),
+        ),
+        gridContainers: Array.from(root.querySelectorAll<HTMLElement>(".product-grid, .payment-grid")),
       };
     },
   };

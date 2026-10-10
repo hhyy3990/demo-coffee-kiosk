@@ -36,6 +36,8 @@ sdk.setGuideState({
   message: { title: "Continue", text: "Use the button.", actionId: "independent.confirm" },
 });
 sdk.inspectLayout();
+sdk.correctLayout();
+sdk.getLastLayoutCorrections();
 const isCurrentSession = sdk.createSessionGuard();
 if (isCurrentSession()) sdk.endSession();
 const unregisterCleanup = sdk.registerSessionCleanup(() => qrClient.cancel());

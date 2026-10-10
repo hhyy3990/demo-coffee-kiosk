@@ -1,5 +1,6 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
 import { type AccessibilityDiagnostic } from "./diagnostics.ts";
+import { type LayoutCorrectionResult } from "./layout-enhancements.ts";
 import { type GuideState } from "./guide.ts";
 import { type AccessibilityProfile } from "./profile.ts";
 export interface AccessibilitySdkOptions {
@@ -18,6 +19,8 @@ export interface AccessibilitySdk {
     resetIdleTimer(): void;
     speak(text: string): boolean;
     inspectLayout(): AccessibilityDiagnostic[];
+    correctLayout(): LayoutCorrectionResult[];
+    getLastLayoutCorrections(): LayoutCorrectionResult[];
     endSession(): void;
     registerSessionCleanup(cleanup: SessionCleanup): () => void;
     createSessionGuard(): () => boolean;

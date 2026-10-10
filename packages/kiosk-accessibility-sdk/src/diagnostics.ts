@@ -9,11 +9,13 @@ export type AccessibilityIssueType =
   | "horizontal-overflow"
   | "action-offscreen"
   | "bottom-control-obscures-action"
-  | "small-touch-target";
+  | "small-touch-target"
+  | "action-overlap";
 
 export interface AccessibilityDiagnostic {
   screenId: string;
   semanticId: string;
+  relatedSemanticId?: string;
   issueType: AccessibilityIssueType;
   measurements: Readonly<Record<string, number | boolean>>;
 }
@@ -183,6 +185,26 @@ export function inspectKioskLayout(
         },
       });
       break;
+    }
+  }
+
+  for (let index = 0; index < actions.length; index += 1) {
+    const first = actions[index];
+    const firstRect = first.element.getBoundingClientRect();
+    for (let next = index + 1; next < actions.length; next += 1) {
+      const second = actions[next];
+      const secondRect = second.element.getBoundingClientRect();
+      if (!overlaps(firstRect, secondRect)) continue;
+      issues.push({
+        screenId,
+        semanticId: safeSemanticId(first.id),
+        relatedSemanticId: safeSemanticId(second.id),
+        issueType: "action-overlap",
+        measurements: {
+          overlapWidth: Math.max(0, Math.min(firstRect.right, secondRect.right) - Math.max(firstRect.left, secondRect.left)),
+          overlapHeight: Math.max(0, Math.min(firstRect.bottom, secondRect.bottom) - Math.max(firstRect.top, secondRect.top)),
+        },
+      });
     }
   }
 

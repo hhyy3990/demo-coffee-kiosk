@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SDK 0.3.0 browser layout verification</title>
+  <link rel="stylesheet" href="/packages/kiosk-accessibility-sdk/dist/styles.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 12px; font-family: sans-serif; }
+    .sample { width: 320px; min-height: 250px; border: 1px solid #999; margin-bottom: 12px; }
+    .menu-grid { display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); gap: 4px; }
+    .toolbar { display: flex; gap: 4px; }
+    #structure-b .toolbar { position: relative; height: 48px; }
+    #structure-b button { position: absolute; top: 0; left: 0; }
+    .copy { width: 130px; height: 20px; overflow: hidden; white-space: nowrap; font-size: 16px; }
+    button { height: 28px; padding: 2px 4px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="structure-a" class="sample">
+    <h2 class="copy" data-a11y-text>메뉴를 선택해 주세요</h2>
+    <div class="menu-grid">
+      <button id="a-one">첫 번째 메뉴</button>
+      <button id="a-two">두 번째 메뉴</button>
+    </div>
+  </div>
+  <section id="structure-b" class="sample">
+    <article><p class="copy" data-a11y-text>신청 내용을 확인해 주세요</p></article>
+    <footer class="toolbar">
+      <button id="b-back">이전</button>
+      <button id="b-next">계속</button>
+    </footer>
+  </section>
+  <pre id="result">pending</pre>
+  <script type="module">
+    import {
+      createAccessibilitySdk,
+      DEFAULT_ACCESSIBILITY_PROFILE,
+    } from "/packages/kiosk-accessibility-sdk/dist/index.js";
+    function verify(root, actions, grids) {
+      const text = root.querySelector("[data-a11y-text]");
+      const adapter = {
+        getSnapshot: () => ({ screenId: root.id }),
+        getActions: () => actions.map((element, index) => ({
+          id: `${root.id}.action.${index}`,
+          name: element.textContent || "Action",
+          element,
+          enabled: true,
+        })),
+        getTextTargets: () => [{ id: `${root.id}.text`, element: text }],
+        getLayoutRegions: () => ({
+          bottomControls: [],
+          scrollArea: null,
+          reflowContainers: [root],
+          gridContainers: grids,
+          actionGroups: [...root.querySelectorAll(".toolbar")],
+        }),
+      };
+      const sdk = createAccessibilitySdk({ root, adapter });
+      const before = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+        gridColumns: grids.map((grid) => getComputedStyle(grid).gridTemplateColumns),
+      };
+      const profile = { ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large" };
+      sdk.applyProfile(profile);
+      const after = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+        gridColumns: grids.map((grid) => getComputedStyle(grid).gridTemplateColumns),
+      };
+      sdk.applyProfile(profile);
+      const repeated = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+      };
+      const corrections = sdk.getLastLayoutCorrections();
+      const explicitCorrection = sdk.correctLayout();
+      sdk.endSession();
+      const restored = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+      };
+      sdk.applyProfile(profile);
+      const beforeDestroy = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+      };
+      sdk.destroy();
+      const destroyed = {
+        textFont: getComputedStyle(text).fontSize,
+        buttonHeight: actions[0].getBoundingClientRect().height,
+      };
+      return { before, after, repeated, restored, beforeDestroy, destroyed, corrections, explicitCorrection };
+    }
+    const result = {
+      version: "0.3.0",
+      structures: [
+        verify(document.querySelector("#structure-a"), [...document.querySelectorAll("#structure-a button")], [
+          document.querySelector("#structure-a .menu-grid"),
+        ]),
+        verify(document.querySelector("#structure-b"), [...document.querySelectorAll("#structure-b button")], []),
+      ],
+    };
+    const [gridCase, overlapCase] = result.structures;
+    const passed = result.version === "0.3.0" &&
+      result.structures.every((sample) =>
+        sample.before.textFont === "16px" &&
+        sample.after.textFont === "24px" &&
+        sample.after.buttonHeight >= 48 &&
+        sample.repeated.textFont === sample.after.textFont &&
+        sample.repeated.buttonHeight === sample.after.buttonHeight &&
+        sample.restored.textFont === "16px" &&
+        sample.restored.buttonHeight === 28 &&
+        sample.destroyed.textFont === "16px" &&
+        sample.destroyed.buttonHeight === 28
+      ) &&
+      gridCase.corrections.some((item) => item.strategy === "text-wrap" && item.outcome === "applied") &&
+      gridCase.corrections.some((item) => item.strategy === "reduce-grid-columns" && item.outcome === "applied") &&
+      overlapCase.corrections.some((item) => item.strategy === "stack-action-group" && item.outcome === "reverted");
+    document.querySelector("#result").textContent = JSON.stringify(result);
+    document.body.dataset.testStatus = passed ? "passed" : "failed";
+  </script>
+</body>
+</html>

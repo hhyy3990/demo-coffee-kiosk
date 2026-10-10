@@ -23,6 +23,12 @@ export interface KioskTextTarget {
 export interface KioskLayoutRegions {
   bottomControls?: readonly HTMLElement[];
   scrollArea?: HTMLElement | null;
+  /** Explicitly opted-in containers eligible for min-width/wrapping corrections. */
+  reflowContainers?: readonly HTMLElement[];
+  /** Explicitly opted-in grid containers whose columns may be reduced on overflow. */
+  gridContainers?: readonly HTMLElement[];
+  /** Explicitly opted-in groups of adjacent primary controls. */
+  actionGroups?: readonly HTMLElement[];
 }
 
 export interface AccessibilityAdapter {
