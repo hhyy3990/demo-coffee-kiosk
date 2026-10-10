@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
 const fixtureRoot = resolve(packageRoot, "test/consumer-fixture");
-const tarball = resolve(packageRoot, "releases/naebangsik-kiosk-accessibility-sdk-0.3.5.1.tgz");
+const tarball = resolve(packageRoot, "releases/naebangsik-kiosk-accessibility-sdk-0.3.6.tgz");
 const consumerRoot = await mkdtemp(join(tmpdir(), "kiosk-sdk-consumer-"));
 
 function run(command, args, cwd, env = {}) {
@@ -23,6 +23,13 @@ try {
     ["install", "--prefix", consumerRoot, "--no-audit", "--no-fund", tarball],
     repositoryRoot,
   );
+  const installedPackage = JSON.parse(await readFile(
+    resolve(consumerRoot, "node_modules/@naebangsik/kiosk-accessibility-sdk/package.json"),
+    "utf8",
+  ));
+  if (installedPackage.name !== "@naebangsik/kiosk-accessibility-sdk" || installedPackage.version !== "0.3.6") {
+    throw new Error(`Unexpected installed SDK package: ${installedPackage.name}@${installedPackage.version}`);
+  }
   run(
     resolve(repositoryRoot, "node_modules/.bin/tsc"),
     ["--project", resolve(consumerRoot, "tsconfig.json")],
