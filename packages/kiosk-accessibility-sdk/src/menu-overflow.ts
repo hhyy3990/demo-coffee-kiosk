@@ -245,7 +245,7 @@ export function createAdditionalMenuHint(
     }
     const element = ensureHint();
     const copy = element.querySelector<HTMLElement>(".a11y-additional-menu-copy");
-    const message = regions.menuMessage?.trim() || DEFAULT_ADDITIONAL_MENU_MESSAGE;
+    const message = DEFAULT_ADDITIONAL_MENU_MESSAGE;
     if (copy && copy.textContent !== message) copy.textContent = message;
     place(element);
   }

@@ -1,4 +1,5 @@
-export const DEFAULT_PRIMARY_ACTION_MESSAGE = "아래에 다음 버튼이 있습니다. 화면을 위로 밀어보세요.";
+export const DEFAULT_PRIMARY_ACTION_MESSAGE = "아래에도 버튼이 있습니다. 화면을 위로 밀어보세요.";
+export const DEFAULT_CONTENT_SCROLL_MESSAGE = "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
 function shown(el) {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
     return el.isConnected && s.display !== "none" && s.visibility !== "hidden" &&
@@ -67,13 +68,13 @@ function currentHint(root, adapter) {
                 : (document.documentElement.clientHeight || innerHeight);
         if (rect.bottom > lowerEdge + 1 &&
             ownerCanScrollBelow(owner)) {
-            return { kind: "primary", message: candidate.message || DEFAULT_PRIMARY_ACTION_MESSAGE };
+            return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE };
         }
     }
     if (ownerCanScrollBelow(owner)) {
         return {
             kind: "vertical",
-            message: regions.menuMessage || "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.",
+            message: DEFAULT_CONTENT_SCROLL_MESSAGE,
         };
     }
     return null;
@@ -178,7 +179,21 @@ export function createScrollGuidance(root, adapter) {
         frame = requestAnimationFrame(() => { frame = 0; refresh(); });
     };
     const onScroll = () => refresh();
-    const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(schedule);
+    const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver((records) => {
+        const relevant = records.some((record) => {
+            const target = record.target instanceof Element ? record.target : record.target.parentElement;
+            if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast"))
+                return false;
+            if (record.type === "childList") {
+                const changed = [...record.addedNodes, ...record.removedNodes];
+                if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast")))
+                    return false;
+            }
+            return true;
+        });
+        if (relevant)
+            schedule();
+    });
     observer?.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
     resize?.observe(root);

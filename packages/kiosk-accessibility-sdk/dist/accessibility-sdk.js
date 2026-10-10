@@ -93,6 +93,7 @@ export function createAccessibilitySdk(options) {
     let sessionEnded = false;
     let sessionGeneration = 0;
     const sessionCleanups = new Set();
+    const navigationStates = new Map();
     const emphasizedNextButtons = new Set();
     const nextItemObserver = typeof MutationObserver === "undefined"
         ? null
@@ -101,29 +102,129 @@ export function createAccessibilitySdk(options) {
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
     const menuHint = createScrollGuidance(root, adapter);
     function refreshNextItemButtons() {
-        for (const button of emphasizedNextButtons)
-            button.classList.remove("a11y-next-item-emphasis");
-        emphasizedNextButtons.clear();
         if (sessionEnded || destroyed)
             return;
         if (typeof root.querySelectorAll !== "function")
             return;
-        const buttons = root.querySelectorAll("button[aria-label][aria-controls], [role='button'][aria-label][aria-controls]");
-        for (const button of buttons) {
-            const label = button.getAttribute("aria-label")?.toLocaleLowerCase() ?? "";
-            if (!/(다음|next).*(카테고리|메뉴|항목|category|menu|item)/i.test(label))
+        const regions = adapter.getLayoutRegions();
+        const candidates = new Map();
+        const add = (button, list, direction, key) => {
+            if (!button || !root.contains(button) || !root.contains(list) ||
+                button.disabled || button.getAttribute("aria-disabled") === "true")
+                return;
+            candidates.set(button, { list, direction, key });
+        };
+        for (const [index, nav] of (regions.horizontalNavigation ?? []).entries()) {
+            const key = nav.list.id || `semantic-list-${index}`;
+            const max = Math.max(0, nav.list.scrollWidth - nav.list.clientWidth);
+            if (max <= 1)
                 continue;
-            if (button.disabled || button.getAttribute("aria-disabled") === "true")
+            add(nav.previousButton, nav.list, "backward", key);
+            add(nav.nextButton, nav.list, "forward", key);
+        }
+        const listTerms = "(?:category|menu|item|list|카테고리|메뉴|항목|목록)";
+        for (const button of root.querySelectorAll("button[aria-label][aria-controls], [role='button'][aria-label][aria-controls]")) {
+            const label = `${button.getAttribute("aria-label") ?? ""} ${button.textContent ?? ""}`.toLocaleLowerCase();
+            const direction = new RegExp(`(?:next|다음).*${listTerms}|${listTerms}.*(?:next|다음)`, "i").test(label) ? "forward" :
+                new RegExp(`(?:previous|prev|back|이전).*${listTerms}|${listTerms}.*(?:previous|prev|back|이전)`, "i").test(label) ? "backward" :
+                    null;
+            if (!direction || button.disabled || button.getAttribute("aria-disabled") === "true")
                 continue;
-            const controlled = button.getAttribute("aria-controls")?.split(/\s+/)
+            const list = button.getAttribute("aria-controls")?.split(/\s+/)
                 .map((id) => document.getElementById(id))
                 .find((element) => element instanceof HTMLElement && root.contains(element));
-            if (!controlled || controlled.scrollWidth <= controlled.clientWidth + 1 ||
-                controlled.scrollLeft >= controlled.scrollWidth - controlled.clientWidth - 1)
+            if (!list || list.scrollWidth <= list.clientWidth + 1)
                 continue;
-            button.classList.add("a11y-next-item-emphasis");
-            emphasizedNextButtons.add(button);
+            add(button, list, direction, list.id || "controlled-horizontal-list");
         }
+        const activeKeys = new Set([...candidates.values()].map((item) => item.key));
+        for (const button of emphasizedNextButtons) {
+            if (![...candidates.keys()].includes(button))
+                button.classList.remove("a11y-next-item-emphasis");
+        }
+        emphasizedNextButtons.clear();
+        for (const [button, candidate] of candidates) {
+            const state = navigationStates.get(candidate.key) ?? {
+                seen: new Set(),
+                available: new Set(),
+            };
+            navigationStates.set(candidate.key, state);
+            const max = Math.max(0, candidate.list.scrollWidth - candidate.list.clientWidth);
+            const available = new Set();
+            if (candidate.list.scrollLeft > 1)
+                available.add("backward");
+            if (max - candidate.list.scrollLeft > 1)
+                available.add("forward");
+            if (state.activeDirection && !available.has(state.activeDirection))
+                stopNavigationEmphasis(state);
+            const newlyAvailable = [...available].filter((direction) => !state.available.has(direction) && !state.seen.has(direction));
+            state.available = available;
+            if (!state.activeButton) {
+                const eligible = [
+                    ...newlyAvailable,
+                    ...[...available].filter((direction) => !newlyAvailable.includes(direction) && !state.seen.has(direction)),
+                ];
+                const direction = eligible.includes("backward") ? "backward" : eligible[0];
+                if (direction) {
+                    const matching = [...candidates.entries()].find(([, item]) => item.key === candidate.key && item.direction === direction);
+                    if (matching)
+                        startNavigationEmphasis(state, matching[0], direction);
+                }
+            }
+            if (state.activeButton === button && state.activeDirection === candidate.direction && available.has(candidate.direction)) {
+                button.classList.add("a11y-next-item-emphasis");
+                emphasizedNextButtons.add(button);
+            }
+        }
+        for (const key of navigationStates.keys())
+            if (!activeKeys.has(key))
+                stopNavigationEmphasis(navigationStates.get(key));
+    }
+    function stopNavigationEmphasis(state) {
+        if (state.timer !== undefined)
+            window.clearTimeout(state.timer);
+        state.timer = undefined;
+        state.activeButton?.classList.remove("a11y-next-item-emphasis");
+        state.activeButton = undefined;
+        state.activeDirection = undefined;
+    }
+    function startNavigationEmphasis(state, button, direction) {
+        if (state.activeButton)
+            return;
+        const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+        state.activeButton = button;
+        state.activeDirection = direction;
+        button.classList.add("a11y-next-item-emphasis");
+        emphasizedNextButtons.add(button);
+        state.timer = window.setTimeout(() => {
+            state.seen.add(direction);
+            stopNavigationEmphasis(state);
+            refreshNextItemButtons();
+        }, reduced ? 1600 : 5000);
+    }
+    function onNavigationClick(event) {
+        const target = event.target instanceof Element ? event.target.closest(".a11y-next-item-emphasis, button[aria-controls], [role='button'][aria-controls]") : null;
+        if (!target)
+            return;
+        const regions = adapter.getLayoutRegions();
+        const semantic = (regions.horizontalNavigation ?? []).find((nav) => nav.previousButton === target || nav.nextButton === target);
+        const listId = semantic?.list.id || target.getAttribute("aria-controls")?.split(/\s+/).find((id) => document.getElementById(id) && root.contains(document.getElementById(id))) || "controlled-horizontal-list";
+        const state = navigationStates.get(listId);
+        if (!state)
+            return;
+        const name = `${target.getAttribute("aria-label") ?? ""} ${target.textContent ?? ""}`;
+        const direction = semantic
+            ? semantic.previousButton === target ? "backward" : "forward"
+            : /(?:previous|prev|back|이전).*(?:category|menu|item|list|카테고리|메뉴|항목|목록)|(?:category|menu|item|list|카테고리|메뉴|항목|목록).*(?:previous|prev|back|이전)/i.test(name)
+                ? "backward"
+                : /(?:next|다음).*(?:category|menu|item|list|카테고리|메뉴|항목|목록)|(?:category|menu|item|list|카테고리|메뉴|항목|목록).*(?:next|다음)/i.test(name)
+                    ? "forward"
+                    : null;
+        if (!direction)
+            return;
+        state.seen.add(direction);
+        stopNavigationEmphasis(state);
+        refreshNextItemButtons();
     }
     function removeGuide() {
         if (guideOverlay) {
@@ -267,12 +368,20 @@ export function createAccessibilitySdk(options) {
             delaySeconds: 15,
             message: null,
         };
+        for (const state of navigationStates.values())
+            stopNavigationEmphasis(state);
+        navigationStates.clear();
         removeGuide();
         cancelSpeech();
         applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
         sessionEnded = true;
+        for (const state of navigationStates.values())
+            stopNavigationEmphasis(state);
+        navigationStates.clear();
+        for (const button of emphasizedNextButtons)
+            button.classList.remove("a11y-next-item-emphasis");
+        emphasizedNextButtons.clear();
         menuHint.setEnabled(false);
-        refreshNextItemButtons();
         menuHint.clear();
         interactionCount = 0;
         options.onInteractionCount?.(0);
@@ -292,6 +401,7 @@ export function createAccessibilitySdk(options) {
     root.addEventListener("pointerdown", recordInteraction);
     root.addEventListener("keydown", recordInteraction);
     root.addEventListener("scroll", refreshNextItemButtons, true);
+    root.addEventListener("click", onNavigationClick, true);
     window.addEventListener("resize", refreshNextItemButtons, { passive: true });
     nextItemObserver?.observe(root, {
         childList: true,
@@ -334,6 +444,7 @@ export function createAccessibilitySdk(options) {
             root.removeEventListener("pointerdown", recordInteraction);
             root.removeEventListener("keydown", recordInteraction);
             root.removeEventListener("scroll", refreshNextItemButtons, true);
+            root.removeEventListener("click", onNavigationClick, true);
             window.removeEventListener("resize", refreshNextItemButtons);
             root.removeEventListener("touchstart", recordInteraction);
             window.removeEventListener("scroll", recordScrollInteraction);

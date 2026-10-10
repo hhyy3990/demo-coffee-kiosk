@@ -274,7 +274,20 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
         }
     }
     const observer = typeof MutationObserver !== "undefined" && typeof root.nodeType === "number"
-        ? new MutationObserver(() => {
+        ? new MutationObserver((records) => {
+            const relevant = records.some((record) => {
+                const target = record.target instanceof Element ? record.target : record.target.parentElement;
+                if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast"))
+                    return false;
+                if (record.type === "childList") {
+                    const changed = [...record.addedNodes, ...record.removedNodes];
+                    if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast")))
+                        return false;
+                }
+                return true;
+            });
+            if (!relevant)
+                return;
             refreshProfile();
             const profile = getProfile();
             if (profile.textSize !== "standard" || profile.buttonSize === "large" || profile.bottomControls) {

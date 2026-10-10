@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.5`
+- SDK API: `0.3.5.1`
 - 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -24,19 +24,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.1.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.5.1.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.5.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.5.1.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -60,20 +60,22 @@ import "@naebangsik/kiosk-accessibility-sdk/styles.css";
 
 현재 화면의 목록을 `getLayoutRegions()`에서 선택적으로 `menuItems`에 등록하면 SDK가 해당 항목과 실제 스크롤 소유 영역을 측정합니다. 추가 항목이 아래에 있고 사용자가 더 내릴 수 있을 때만 SDK가 안내 UI를 표시합니다. 자체 스크롤과 문서 스크롤을 모두 지원하며, 고정 하단 조작부와 등록된 버튼을 피할 수 없는 상태에서는 안내를 가리지 않고 스크롤 불가 진단을 남깁니다.
 
-기본 문구는 `아래에도 내용이 있습니다. 화면을 위로 밀어보세요.`입니다. 호스트에서 `menuMessage`를 제공하면 안내 문구만 바뀝니다. 안내는 실제 세로 스크롤이 남아 있을 때만 표시되며, 자동 음성은 재생하지 않습니다.
+기본 문구는 `아래에도 내용이 있습니다. 화면을 위로 밀어보세요.`이며, 등록된 주요 버튼이 화면 아래에 있을 때는 `아래에도 버튼이 있습니다. 화면을 위로 밀어보세요.`를 씁니다. 기존 `menuMessage`와 액션별 안내문은 호환용 입력으로 남아 있지만 공통 문구 정책에 따라 표시하지 않습니다. 안내는 실제 세로 스크롤이 남아 있을 때만 표시되며, 자동 음성은 재생하지 않습니다.
 
 ```ts
 getLayoutRegions: () => ({
   scrollArea: root.querySelector<HTMLElement>("[data-a11y-slot='scroll-content']"),
   bottomControls: [root.querySelector<HTMLElement>("[data-a11y-slot='bottom-controls']")!],
   menuItems: [...root.querySelectorAll<HTMLElement>("[data-a11y-menu-item]")],
-  menuMessage: "아래에도 증명서 메뉴가 있습니다. 화면을 위로 밀어보세요.",
+  // menuMessage is retained for source compatibility; SDK guidance uses shared copy.
 }),
 ```
 
 ## 스크롤 안내 선택과 우선순위
 
-세로 스크롤 안내는 실제 문서 또는 내부 스크롤 컨테이너의 위치와 남은 스크롤 거리를 기준으로 표시합니다. `primaryActions`에는 화면 아래에 있는 중요한 버튼을 선택 등록할 수 있으며, 실제로 아래로 이동할 수 있을 때만 안내합니다.
+세로 스크롤 안내는 실제 문서 또는 내부 스크롤 컨테이너의 위치와 남은 스크롤 거리를 기준으로 표시합니다. `primaryActions`에는 화면 아래에 있는 중요한 버튼을 선택 등록할 수 있으며, 실제로 아래로 이동할 수 있을 때만 공통 버튼 안내를 표시합니다.
+
+기존 수평 목록의 이동 버튼은 `aria-controls`로 실제 가로 스크롤 목록을 연결하고 접근성 이름에 “다음/이전 + 메뉴·항목·목록” 의미를 제공하세요. 식별이 모호한 경우 `horizontalNavigation`에 목록과 두 버튼을 명시적으로 연결할 수 있습니다. SDK는 이미 존재하는 버튼만 최대 5초간 부드럽게 강조하며 누르거나 생성하지 않습니다. 같은 세션에서 이미 안내한 방향은 반복하지 않고, `endSession()`에서 상태와 타이머를 초기화합니다. reduced-motion 환경에서는 정적인 강조를 짧게 표시합니다.
 
 안내는 `pointer-events:none`이며 기존 조작을 가로막지 않습니다. 일반 콘텐츠와 일부 겹칠 수 있지만, 등록한 하단 고정 조작부·회피 영역·스마트 길잡이는 피합니다. 세로 이동이 끝나면 숨기고, 다시 위로 이동하면 재표시합니다.
 

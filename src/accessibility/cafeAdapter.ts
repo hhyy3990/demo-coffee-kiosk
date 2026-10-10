@@ -175,11 +175,16 @@ export function createCafeAccessibilityAdapter(
         menuItems: getState().stage === "menu"
           ? Array.from(root.querySelectorAll<HTMLElement>(".product-card"))
           : [],
-        menuMessage: "아래에도 상품이 있습니다. 화면을 위로 밀어보세요.",
         primaryActions: getState().stage === "payment"
           ? [{
               element: root.querySelector<HTMLElement>("#payment-pay")!,
-              message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요.",
+            }]
+          : [],
+        horizontalNavigation: getState().stage === "menu"
+          ? [{
+              list: root.querySelector<HTMLElement>("#category-nav-list")!,
+              previousButton: root.querySelector<HTMLElement>("#category-nav-list")?.parentElement?.querySelector<HTMLElement>(".category-scroll-button:first-child"),
+              nextButton: root.querySelector<HTMLElement>("#category-nav-list")?.parentElement?.querySelector<HTMLElement>(".category-scroll-button:last-child"),
             }]
           : [],
         reflowContainers: [root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')].filter(

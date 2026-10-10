@@ -9,6 +9,8 @@ The host kiosk remains the only owner of business actions and state. The SDK mus
 
 For menu-overflow guidance, the host explicitly registers the current screen's real menu-item elements and may provide localized wording. The SDK measures the host's actual scroll owner and only presents a non-interactive hint when more registered items are reachable; it must not invent, filter, or reveal business data.
 
+Observers that trigger profile or layout work must ignore SDK-owned hint/guide insertions, removals, and mutations. A floating hint can otherwise be mistaken for host content, causing repeated profile/layout application while scrolling and browser scroll anchoring to shift the user's position.
+
 **Why:** The same accessibility profile should work across unrelated kiosks without making their critical workflows depend on a shared UI package or AI-generated code changes.
 
-**How to apply:** When integrating another kiosk, implement its semantic adapter and host-specific guide rules, then use the SDK only for presentation, timing, voice, and observation. Prefer verified CSS adjustments; do not let diagnostics or AI mutate the DOM or execute actions.
+**How to apply:** When integrating another kiosk, implement its semantic adapter and host-specific guide rules, then use the SDK only for presentation, timing, voice, and observation. Filter SDK-owned nodes at observer boundaries; prefer verified CSS adjustments, and never let diagnostics or AI mutate business DOM or execute actions.

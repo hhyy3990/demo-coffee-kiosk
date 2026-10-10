@@ -77,8 +77,15 @@
     }
     async function hintVisible() { await wait(); return Boolean(root.querySelector(".a11y-additional-menu-hint") && getComputedStyle(root.querySelector(".a11y-additional-menu-hint")).visibility !== "hidden"); }
     async function checkScrollable(kind, count) {
-      const instance = mount(kind, count, kind === "document-scroll" ? "아래에도 증명서 메뉴가 있습니다. 화면을 위로 밀어보세요." : "");
+      const instance = mount(kind, count, "호스트 문구는 공통 문구로 대체되어야 합니다.");
       const startsVisible = await hintVisible();
+      const standardCopy = root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
+      await wait();
+      const testItem = root.querySelector(".menu-item");
+      let contentStyleMutations = 0;
+      const contentObserver = new MutationObserver((records) => { contentStyleMutations += records.length; });
+      contentObserver.observe(testItem, { attributes: true, attributeFilter: ["style"] });
       const noSafeSpaceAtStart = root.dataset.a11yScrollGuidance === "no-safe-space";
       const hint = root.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
@@ -90,11 +97,23 @@
       if (kind === "document-scroll") window.scrollTo(0, document.documentElement.scrollHeight);
       else instance.scroll.scrollTop = instance.scroll.scrollHeight;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
+      const scrollOwner = kind === "document-scroll" ? document.scrollingElement : instance.scroll;
+      const positionAtEnd = scrollOwner.scrollTop;
+      const heightAtEnd = scrollOwner.scrollHeight;
+      const endSamples = [];
+      for (const delay of [100, 500, 1000]) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        endSamples.push({ top: scrollOwner.scrollTop, height: scrollOwner.scrollHeight });
+      }
+      const scrollStable = endSamples.every((sample) =>
+        Math.abs(sample.top - positionAtEnd) <= 1 && sample.height === heightAtEnd,
+      );
       await wait();
-      await wait();
+      contentObserver.disconnect();
       const lastRect = last.getBoundingClientRect();
       const scrollRect = instance.scroll.getBoundingClientRect();
-      const lastReached = lastRect.top >= scrollRect.top - 1 && lastRect.bottom <= scrollRect.bottom + 1;
+      const lastReached = lastRect.top >= 0 && lastRect.bottom <= innerHeight &&
+        (kind === "document-scroll" || (lastRect.top >= scrollRect.top - 1 && lastRect.bottom <= scrollRect.bottom + 1));
       const hidesAtEnd = !root.querySelector(".a11y-additional-menu-hint");
       const endState = analyzeAdditionalMenuOverflow(root, instance.adapter);
       const point = { x: last.getBoundingClientRect().left + 30, y: last.getBoundingClientRect().top + 30 };
@@ -111,7 +130,7 @@
       const clearsOnSessionEnd = !root.querySelector(".a11y-additional-menu-hint");
       instance.sdk.destroy();
       const clearsOnDestroy = !root.querySelector(".a11y-additional-menu-hint");
-      return { startsVisible: startsVisible || noSafeSpaceAtStart, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, clearsOnSessionEnd, clearsOnDestroy };
+      return { startsVisible: startsVisible || noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
@@ -157,7 +176,7 @@
           primaryActions: [{ element: pay, message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." }],
         }),
       } });
-      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." };
+      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있습니다. 화면을 위로 밀어보세요." };
       scroll.scrollTop = scroll.scrollHeight;
       scroll.dispatchEvent(new Event("scroll", { bubbles: true }));
       result.primaryButton.reachableButtonHitTest = document.elementFromPoint(pay.getBoundingClientRect().left + 10, pay.getBoundingClientRect().top + 10) === pay;
@@ -227,12 +246,26 @@
         item.style.cssText = "display:inline-block;width:120px";
         return item;
       }));
+      const previousCategory = Object.assign(document.createElement("button"), { textContent: "〈" });
+      previousCategory.setAttribute("aria-label", "Previous items");
+      previousCategory.setAttribute("aria-controls", categoryRail.id);
+      previousCategory.disabled = true;
       const nextCategory = Object.assign(document.createElement("button"), { textContent: "〉" });
-      nextCategory.setAttribute("aria-label", "다음 카테고리 보기");
+      nextCategory.setAttribute("aria-label", "Next items");
       nextCategory.setAttribute("aria-controls", categoryRail.id);
       let nextWasClicked = false;
-      nextCategory.addEventListener("click", () => { nextWasClicked = true; });
-      root.append(autoText, categoryRail, nextCategory);
+      nextCategory.addEventListener("click", () => {
+        nextWasClicked = true;
+        categoryRail.scrollLeft = categoryRail.scrollWidth;
+        categoryRail.dispatchEvent(new Event("scroll", { bubbles: true }));
+        setTimeout(() => { previousCategory.disabled = false; }, 0);
+      });
+      previousCategory.addEventListener("click", () => {
+        categoryRail.scrollLeft = 0;
+        categoryRail.dispatchEvent(new Event("scroll", { bubbles: true }));
+        setTimeout(() => { previousCategory.disabled = true; }, 0);
+      });
+      root.append(autoText, previousCategory, categoryRail, nextCategory);
       const autoSdk = createAccessibilitySdk({ root, adapter: {
         getSnapshot: () => ({ screenId: "auto-text" }),
         getActions: () => [],
@@ -243,19 +276,59 @@
       autoSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge" });
       const discoveredAutoFont = parseFloat(getComputedStyle(autoText).fontSize);
       const beginsHighlighted = nextCategory.classList.contains("a11y-next-item-emphasis");
-      categoryRail.scrollLeft = categoryRail.scrollWidth;
+      const neverAutoClicked = !nextWasClicked;
+      const reducedMode = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const animationName = getComputedStyle(nextCategory).animationName;
+      const beforeAnimationBox = nextCategory.getBoundingClientRect();
+      await wait();
+      const duringAnimationBox = nextCategory.getBoundingClientRect();
+      const geometryStable = ["width", "height", "left", "top"].every((key) =>
+        Math.abs(beforeAnimationBox[key] - duringAnimationBox[key]) < 0.1,
+      );
+      nextCategory.click();
+      await wait();
+      const rightClickStops = !nextCategory.classList.contains("a11y-next-item-emphasis");
+      const leftStartsAfterRight = previousCategory.classList.contains("a11y-next-item-emphasis");
+      const notBothAtOnce = !(previousCategory.classList.contains("a11y-next-item-emphasis") && nextCategory.classList.contains("a11y-next-item-emphasis"));
+      previousCategory.click();
+      const leftClickStops = !previousCategory.classList.contains("a11y-next-item-emphasis");
+      categoryRail.scrollLeft = 0;
       categoryRail.dispatchEvent(new Event("scroll", { bubbles: true }));
       await wait();
-      const endsUnhighlighted = !nextCategory.classList.contains("a11y-next-item-emphasis");
+      const rightDoesNotRepeat = !nextCategory.classList.contains("a11y-next-item-emphasis");
       autoSdk.endSession();
       const clearedAtSessionEnd = !nextCategory.classList.contains("a11y-next-item-emphasis");
       result.automaticTargets = {
         fontEnlarged: discoveredAutoFont > originalAutoFont,
         highlightsRealNext: beginsHighlighted,
-        clearsAtEnd: endsUnhighlighted && clearedAtSessionEnd,
-        neverAutoClicks: !nextWasClicked,
+        rightClickStops,
+        leftStartsAfterRight,
+        leftClickStops,
+        rightDoesNotRepeat,
+        notBothAtOnce,
+        animationNoLayout: reducedMode ? animationName === "none" : animationName.includes("a11y-next-soft-pulse"),
+        geometryStable,
+        clearsAtEnd: clearedAtSessionEnd && !previousCategory.classList.contains("a11y-next-item-emphasis"),
+        neverAutoClicks: neverAutoClicked,
         noHorizontalScrollHint: !(await hintVisible()),
       };
+      if (innerWidth === 320) {
+        autoSdk.applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+        const timerStarted = nextCategory.classList.contains("a11y-next-item-emphasis");
+        await new Promise((resolve) => setTimeout(resolve, 5100));
+        result.automaticTargets.timerEnds = timerStarted && !nextCategory.classList.contains("a11y-next-item-emphasis");
+      } else if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        autoSdk.applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+        const staticEmphasis = nextCategory.classList.contains("a11y-next-item-emphasis") &&
+          getComputedStyle(nextCategory).animationName === "none";
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+        result.automaticTargets.reducedMotion = staticEmphasis &&
+          !nextCategory.classList.contains("a11y-next-item-emphasis");
+        result.automaticTargets.timerEnds = result.automaticTargets.reducedMotion;
+      } else {
+        result.automaticTargets.timerEnds = true;
+        result.automaticTargets.reducedMotion = true;
+      }
       autoSdk.destroy();
       root.replaceChildren();
       const newHeader = document.createElement("header");

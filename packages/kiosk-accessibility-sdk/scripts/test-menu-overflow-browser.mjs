@@ -9,6 +9,8 @@ async function runFixture(width, height, index) {
     "--headless=new",
     "--no-sandbox",
     "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-zygote",
     `--remote-debugging-port=${port}`,
     `--user-data-dir=/tmp/kiosk-sdk-browser-${globalThis.process.pid}-${port}`,
     "--window-size=1200,2000",
@@ -17,7 +19,7 @@ async function runFixture(width, height, index) {
   let socket;
   try {
     let target;
-    for (let attempt = 0; attempt < 80; attempt += 1) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
       try {
         target = (await (await fetch(`http://127.0.0.1:${port}/json/list`))
           .json()).find((item) => item.type === "page");
@@ -52,7 +54,7 @@ async function runFixture(width, height, index) {
         awaitPromise: true,
         returnByValue: true,
       });
-      if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.text);
+      if (reply.exceptionDetails) throw new Error(JSON.stringify(reply.exceptionDetails));
       return reply.result?.value;
     };
 
@@ -63,12 +65,17 @@ async function runFixture(width, height, index) {
       mobile: width < 700,
       screenOrientation: { type: "portraitPrimary", angle: 0 },
     });
+    if (index === 2) {
+      await send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+      });
+    }
     let report;
     for (let attempt = 0; attempt < 400; attempt += 1) {
       const state = await evaluate(`({
         width: innerWidth,
         height: innerHeight,
-        status: document.body.dataset.testStatus,
+        status: document.body?.dataset.testStatus,
         result: document.querySelector("#fixture-result")?.textContent
       })`);
       if (state.width === width && state.height === height && state.status) {

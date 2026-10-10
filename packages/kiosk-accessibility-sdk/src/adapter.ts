@@ -35,6 +35,12 @@ export interface KioskLayoutRegions {
   actionGroups?: readonly HTMLElement[];
   /** Important controls that may require vertical scrolling to reach. */
   primaryActions?: readonly { element: HTMLElement; message?: string }[];
+  /** Optional semantic mapping when horizontal list controls have ambiguous accessible names. */
+  horizontalNavigation?: readonly {
+    list: HTMLElement;
+    previousButton?: HTMLElement | null;
+    nextButton?: HTMLElement | null;
+  }[];
   /** Host regions that guidance must not cover (for example fixed headers). */
   guidanceAvoidAreas?: readonly HTMLElement[];
 }
