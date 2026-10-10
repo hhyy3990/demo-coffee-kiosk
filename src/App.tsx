@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronRight, Clock3, Coffee,
+  Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronLeft, ChevronRight, Clock3, Coffee,
   Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Minus, PackageCheck, Plus,
   QrCode, RotateCcw, ShoppingBag, Smartphone, Sparkles, Store, Ticket,
   Trash2, Volume2, VolumeX, X,
@@ -130,6 +130,9 @@ export default function App() {
     categoryId: "coffee",
   });
   const productGridRef = useRef<HTMLDivElement>(null);
+  const categoryNavRef = useRef<HTMLElement>(null);
+  const [canScrollCategoryBack, setCanScrollCategoryBack] = useState(false);
+  const [canScrollCategoryForward, setCanScrollCategoryForward] = useState(false);
 
   const say = useCallback((text: string) => {
     accessibilitySdkRef.current?.speak(text);
@@ -139,6 +142,15 @@ export default function App() {
   const subtotal = cart.reduce((sum, line) => sum + (line.product.price + (line.options.size === "large" && line.product.optionsSupported ? 700 : 0)) * line.quantity, 0);
   const total = subtotal;
   const currentProducts = PRODUCTS.filter((product) => product.category === category);
+  const scrollCategoryRail = (direction: -1 | 1) => {
+    const rail = categoryNavRef.current;
+    if (!rail) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    rail.scrollBy({
+      left: direction * Math.max(44, Math.round(rail.clientWidth * 0.72)),
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+  };
 
   cafeStateRef.current = {
     stage,
@@ -219,6 +231,35 @@ export default function App() {
   useEffect(() => {
     accessibilitySdkRef.current?.applyProfile(preferences);
   }, [preferences]);
+
+  useEffect(() => {
+    const rail = categoryNavRef.current;
+    if (!rail || stage !== "menu") {
+      setCanScrollCategoryBack(false);
+      setCanScrollCategoryForward(false);
+      return;
+    }
+
+    const updateScrollButtons = () => {
+      const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      setCanScrollCategoryBack(rail.scrollLeft > 1);
+      setCanScrollCategoryForward(maxScroll - rail.scrollLeft > 1);
+    };
+    updateScrollButtons();
+    rail.addEventListener("scroll", updateScrollButtons, { passive: true });
+    window.addEventListener("resize", updateScrollButtons, { passive: true });
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateScrollButtons);
+    resizeObserver?.observe(rail);
+    Array.from(rail.children).forEach((item) => resizeObserver?.observe(item));
+
+    return () => {
+      rail.removeEventListener("scroll", updateScrollButtons);
+      window.removeEventListener("resize", updateScrollButtons);
+      resizeObserver?.disconnect();
+    };
+  }, [stage]);
 
   useLayoutEffect(() => {
     if (previousStageRef.current === stage) return;
@@ -553,19 +594,41 @@ export default function App() {
                 <div className="steps" aria-label="주문 단계"><span className="store-chip"><Store size={14} /> {orderType} 주문</span><span className="step-dot active" /><span className="step-dot" /><span className="step-dot" /></div>
               </div>
               <div className="menu-layout">
-                <nav className="category-nav" aria-label="메뉴 분류">
-                  {CATEGORY_INFO.map(({ id, label, icon: Icon }) => (
-                    <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
-                      setCategory(id);
-                      setMenuFocusIndex(0);
-                      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-                      requestAnimationFrame(() => document.querySelector(".section-heading")?.scrollIntoView({ behavior, block: "start" }));
-                      say(`${label} 메뉴를 보고 있어요.`);
-                    }} aria-pressed={category === id}>
-                      <Icon size={19} /> {label}
-                    </button>
-                  ))}
-                </nav>
+                <div className="category-nav-controls">
+                  <button
+                    type="button"
+                    className="category-scroll-button"
+                    aria-label="이전 카테고리 보기"
+                    aria-controls="category-nav-list"
+                    onClick={() => scrollCategoryRail(-1)}
+                    disabled={!canScrollCategoryBack}
+                  >
+                    <ChevronLeft size={21} aria-hidden="true" />
+                  </button>
+                  <nav className="category-nav" id="category-nav-list" ref={categoryNavRef} aria-label="메뉴 분류">
+                    {CATEGORY_INFO.map(({ id, label, icon: Icon }) => (
+                      <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
+                        setCategory(id);
+                        setMenuFocusIndex(0);
+                        const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+                        requestAnimationFrame(() => document.querySelector(".section-heading")?.scrollIntoView({ behavior, block: "start" }));
+                        say(`${label} 메뉴를 보고 있어요.`);
+                      }} aria-pressed={category === id}>
+                        <Icon size={19} /> {label}
+                      </button>
+                    ))}
+                  </nav>
+                  <button
+                    type="button"
+                    className="category-scroll-button"
+                    aria-label="다음 카테고리 보기"
+                    aria-controls="category-nav-list"
+                    onClick={() => scrollCategoryRail(1)}
+                    disabled={!canScrollCategoryForward}
+                  >
+                    <ChevronRight size={21} aria-hidden="true" />
+                  </button>
+                </div>
                 <section className="menu-products" aria-label={categoryNames[category]}>
                   <div
                     className="product-grid"

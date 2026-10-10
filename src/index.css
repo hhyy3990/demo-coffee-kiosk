@@ -166,6 +166,8 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .step-dot { width:8px;height:8px;border-radius:50%;background:#c9cbc5; }
 .step-dot.active { background:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
 .menu-layout { display:grid; grid-template-columns:190px minmax(0,1fr); gap:24px; }
+.category-nav-controls { display:contents; }
+.category-scroll-button { display:none; }
 .category-nav { display:flex; flex-direction:column; gap:7px; align-self:start; position:sticky; top:18px; }
 .category-button {
   border:0; background:transparent; color:var(--muted); text-align:left; display:flex; align-items:center; gap:11px; padding:14px 15px; min-height:50px;
@@ -360,7 +362,22 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .access-choice { min-height:68px;gap:10px;padding:10px; }
   .access-choice-icon { width:38px;height:38px; }
   .menu-layout { grid-template-columns:1fr;gap:17px; }
-  .category-nav { position:sticky;top:0;z-index:7;flex-direction:row;overflow-x:auto;padding:8px 0;margin-right:-16px;background:var(--paper);scrollbar-width:thin; }
+  .category-nav-controls {
+    display:flex;align-items:center;gap:4px;min-width:0;position:sticky;top:0;z-index:7;
+    padding:8px 0;margin-right:-16px;background:var(--paper);
+  }
+  .category-nav {
+    position:static;flex:1;min-width:0;flex-direction:row;overflow-x:auto;padding:0;margin:0;
+    background:transparent;scrollbar-width:none;overscroll-behavior-x:contain;
+  }
+  .category-nav::-webkit-scrollbar { display:none; }
+  .category-scroll-button {
+    display:grid;place-items:center;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;
+    padding:0;border:1px solid #d8c9b8;border-radius:12px;background:#fffdf8;color:var(--ink);
+  }
+  .category-scroll-button:disabled { opacity:.42; }
+  .category-scroll-button:focus-visible { outline:3px solid var(--accent);outline-offset:2px; }
+  .kiosk.a11y-high-contrast .category-scroll-button { border:2px solid #211710;background:#fff;color:#211710; }
   .category-button { flex:none;white-space:nowrap;padding:10px 13px;min-height:44px; }
   .category-button.active { box-shadow:inset 0 -3px 0 var(--accent); }
   .product-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
@@ -390,7 +407,7 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 }
 @media (max-width:380px) {
   .shell { padding-left:12px;padding-right:12px; }
-  .category-nav { margin-right:-12px; }
+  .category-nav-controls { margin-right:-12px; }
   .product-grid { grid-template-columns:1fr; }
   .product-card { display:block; }
   .product-card > button { display:grid;grid-template-columns:minmax(92px,30%) minmax(0,1fr);align-items:stretch; }
