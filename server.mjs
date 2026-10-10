@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 const upstreamBase = "https://naebangsikqr.replit.app";
-const profileTokenPattern = /^[A-Za-z0-9._~+\/=-]{1,512}$/;
+const profileTokenPattern = /^[A-Za-z0-9._~+\/=-]{20,128}$/;
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "8kb" }));

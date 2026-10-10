@@ -1,7 +1,7 @@
 import { validateAccessibilityProfile, type AccessibilityProfile } from "./profile.ts";
 
 export const CENTRAL_QR_ORIGIN = "https://naebangsikqr.replit.app";
-const TOKEN_PATTERN = /^[A-Za-z0-9._~+\/=-]{1,512}$/;
+const TOKEN_PATTERN = /^[A-Za-z0-9._~+\/=-]{20,128}$/;
 const PROFILE_ENDPOINT = "/api/qr-profile";
 
 export function isValidProfileToken(value: string): boolean {
@@ -34,18 +34,34 @@ export function getManualProfileToken(value: string): string {
   return isValidProfileToken(trimmed) ? trimmed : "";
 }
 
-function unavailable(body: unknown): boolean {
-  if (!body || typeof body !== "object") return true;
+function profileFromCentralResponse(body: unknown): AccessibilityProfile {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("QR_UNAVAILABLE");
   const record = body as Record<string, unknown>;
-  const candidates = [record, record.profile, record.data].filter(
-    (item): item is Record<string, unknown> => !!item && typeof item === "object",
-  );
-  const inactive = new Set(["disabled", "inactive", "deactivated", "revoked", "expired", "deleted", "unavailable"]);
-  return candidates.some((item) =>
-    item.success === false || item.ok === false || item.active === false || item.enabled === false ||
-    item.isActive === false || item.isEnabled === false || item.disabled === true || item.revoked === true ||
-    (typeof item.status === "string" && inactive.has(item.status.toLowerCase())),
-  );
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2) throw new Error("QR_UNAVAILABLE");
+  if (typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) {
+    throw new Error("QR_UNAVAILABLE");
+  }
+  const preferences = record.preferences;
+  if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) {
+    throw new Error("QR_UNAVAILABLE");
+  }
+  const profileData = preferences as Record<string, unknown>;
+  if (record.schemaVersion === 2 && "simplifiedLayout" in profileData) {
+    throw new Error("QR_UNAVAILABLE");
+  }
+  const validEnums =
+    (profileData.textSize === "standard" || profileData.textSize === "large" || profileData.textSize === "extraLarge") &&
+    (profileData.buttonSize === "standard" || profileData.buttonSize === "large") &&
+    (profileData.contrast === "standard" || profileData.contrast === "high") &&
+    (profileData.guideDelaySeconds === 10 || profileData.guideDelaySeconds === 15 || profileData.guideDelaySeconds === 20);
+  const validBooleans =
+    typeof profileData.easyLanguage === "boolean" &&
+    typeof profileData.bottomControls === "boolean" &&
+    typeof profileData.smartGuide === "boolean" &&
+    typeof profileData.voiceGuidance === "boolean";
+  if (!validEnums || !validBooleans) throw new Error("QR_UNAVAILABLE");
+  const { simplifiedLayout: _legacySimplifiedLayout, ...supportedPreferences } = profileData;
+  return validateAccessibilityProfile(supportedPreferences);
 }
 
 export interface QrProfileClient {
@@ -77,17 +93,10 @@ export function createQrProfileClient(options: { fetcher?: typeof fetch } = {}):
         const body: unknown = await response.json().catch(() => null);
         if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
         if (!response.ok) {
-          if ([400, 401, 403, 404, 410, 422].includes(response.status)) throw new Error("QR_UNAVAILABLE");
+        if ([400, 404].includes(response.status)) throw new Error("QR_UNAVAILABLE");
           throw new Error("PROFILE_LOOKUP_FAILED");
         }
-        if (unavailable(body)) throw new Error("QR_UNAVAILABLE");
-        if (!body || typeof body !== "object") throw new Error("QR_UNAVAILABLE");
-        const record = body as Record<string, unknown>;
-        const profile = record.preferences ??
-          (record.profile && typeof record.profile === "object" ? (record.profile as Record<string, unknown>).preferences : undefined) ??
-          (record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>).preferences : undefined);
-        if (!profile || typeof profile !== "object" || Array.isArray(profile)) throw new Error("QR_UNAVAILABLE");
-        return validateAccessibilityProfile(profile);
+      return profileFromCentralResponse(body);
       } finally {
         if (controller === request) controller = null;
       }

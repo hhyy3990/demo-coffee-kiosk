@@ -174,21 +174,6 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .category-button:hover { background:#eae5da; color:var(--ink); }
 .category-button.active { color:var(--ink); background:#e3e8df; box-shadow:inset 3px 0 0 var(--accent); }
 .menu-products { min-width:0; }
-.menu-browse-tools {
-  position:sticky; top:14px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:12px;
-  margin:0 0 12px; padding:10px 12px; border:1px solid var(--line); border-radius:15px;
-  background:rgba(255,253,249,.96); box-shadow:0 6px 18px rgba(62,43,29,.08); backdrop-filter:blur(10px);
-}
-.menu-browse-note { display:flex; flex-direction:column; gap:3px; min-width:0; margin:0; }
-.menu-browse-note strong { font-size:.88em; line-height:1.35; word-break:keep-all; }
-.menu-browse-note span { color:var(--muted); font-size:.76em; }
-.menu-next-button {
-  min-height:48px; display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:none;
-  padding:0 13px; border:1px solid var(--accent); border-radius:12px; background:var(--card); color:var(--accent-deep);
-  font-size:.84em; font-weight:800; line-height:1.25; white-space:nowrap; word-break:keep-all;
-}
-.menu-next-button:hover:not(:disabled) { background:var(--accent-soft); }
-.menu-next-button:disabled { background:var(--accent-soft); cursor:default; opacity:1; }
 .product-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .product-card {
   min-width:0; scroll-margin-top:150px; scroll-margin-bottom:140px;
@@ -378,11 +363,8 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .category-nav { position:sticky;top:0;z-index:7;flex-direction:row;overflow-x:auto;padding:8px 0;margin-right:-16px;background:var(--paper);scrollbar-width:thin; }
   .category-button { flex:none;white-space:nowrap;padding:10px 13px;min-height:44px; }
   .category-button.active { box-shadow:inset 0 -3px 0 var(--accent); }
-  .menu-browse-tools { top:60px; }
   .product-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
-  .kiosk.a11y-text-large .product-grid, .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid, .kiosk.a11y-simplified .product-grid { grid-template-columns:minmax(0,1fr); }
-  .kiosk.a11y-text-large .menu-browse-tools, .kiosk.a11y-text-extra .menu-browse-tools { flex-direction:column;align-items:stretch; }
-  .kiosk.a11y-text-large .menu-next-button, .kiosk.a11y-text-extra .menu-next-button { width:100%; }
+  .kiosk.a11y-text-large .product-grid, .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid { grid-template-columns:minmax(0,1fr); }
   .product-art { height:112px; }
   .product-meta { padding:12px; }
   .product-name-row { display:block; }
@@ -432,11 +414,6 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 @media (min-width:701px) and (max-width:900px) {
   .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid {
     grid-template-columns:minmax(0,1fr);
-  }
-}
-@media (max-width:900px) {
-  .kiosk.a11y-simplified .product-grid {
-    grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
   }
 }
 @media (min-width:701px) {

@@ -7,8 +7,6 @@ const base = {
   stage: "menu",
   cartItemCount: 0,
   easyLanguage: false,
-  simplifiedLayout: false,
-  menuNavigationActive: false,
   menuIndex: 0,
   menuCount: 5,
   selectedMenuName: "아메리카노",
@@ -39,18 +37,14 @@ test("메뉴 화면에 음료 한 개가 있으면 주문 확인으로 우선 �
 });
 
 test("메뉴 화면에 여러 상품이 있어도 메뉴 선택 대신 주문 확인을 안내한다", () => {
-  const guide = resolveCafeGuide({ ...base, cartItemCount: 2, simplifiedLayout: true, menuNavigationActive: true });
+  const guide = resolveCafeGuide({ ...base, cartItemCount: 2 });
   assert.equal(guide?.actionId, "menu-order-confirm");
   assert.doesNotMatch(guide?.text || "", /메뉴를 골라|다음 메뉴 보기/);
 });
 
-test("단순 화면에서 다음 메뉴 기능을 쓰면 다음 버튼 또는 마지막 메뉴를 가리킨다", () => {
-  const next = resolveCafeGuide({ ...base, simplifiedLayout: true, menuNavigationActive: true, menuIndex: 1 });
-  const last = resolveCafeGuide({ ...base, simplifiedLayout: true, menuNavigationActive: true, menuIndex: 4 });
-  assert.equal(next?.actionId, "menu-next-button");
-  assert.match(next?.text || "", /다음 메뉴 보기/);
-  assert.equal(last?.actionId, "menu-product-4");
-  assert.match(last?.title || "", /마지막 메뉴/);
+test("메뉴 위치에 따라 스마트 길잡이가 현재 보이는 메뉴를 가리킨다", () => {
+  const guide = resolveCafeGuide({ ...base, menuIndex: 3 });
+  assert.equal(guide?.actionId, "menu-product-3");
 });
 
 test("장바구니 화면은 결제 버튼을, 빈 장바구니는 메뉴 버튼을 가리킨다", () => {

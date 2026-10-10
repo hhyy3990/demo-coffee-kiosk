@@ -46,7 +46,6 @@ const profile = validateAccessibilityProfile({
   buttonSize: "large",
   contrast: "high",
   easyLanguage: true,
-  simplifiedLayout: true,
   bottomControls: true,
   smartGuide: true,
   guideDelaySeconds: 10,

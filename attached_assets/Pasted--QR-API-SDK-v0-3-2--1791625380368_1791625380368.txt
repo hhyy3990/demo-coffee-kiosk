@@ -1,0 +1,144 @@
+중앙 '내 방식 QR' 프로젝트에서 실제 서버 코드와 검증 스키마를 확인했습니다. 이제 API 응답 구조가 확인됐으므로 중단했던 **SDK v0.3.2 개발을 재개해 주세요.**
+
+## 1. 중앙 API의 공식 응답 규격
+
+엔드포인트:
+`POST /api/profiles/resolve`
+
+요청:
+```json
+{
+  "token": "<QR 토큰>"
+}
+```
+
+토큰 길이는 20~128자입니다.
+
+성공 응답의 실제 구조는 다음과 같습니다.
+
+```json
+{
+  "schemaVersion": 2,
+  "preferences": {
+    "textSize": "large",
+    "buttonSize": "standard",
+    "contrast": "high",
+    "easyLanguage": false,
+    "bottomControls": false,
+    "smartGuide": false,
+    "guideDelaySeconds": 15,
+    "voiceGuidance": false
+  },
+  "updatedAt": "2026-10-10T00:00:00.000Z"
+}
+```
+
+`schemaVersion`과 `preferences`는 모두 최상위 필드입니다.
+
+설정값의 허용 범위:
+
+- `textSize`: standard | large | extraLarge
+- `buttonSize`: standard | large
+- `contrast`: standard | high
+- `easyLanguage`: boolean
+- `bottomControls`: boolean
+- `smartGuide`: boolean
+- `guideDelaySeconds`: 10 | 15 | 20
+- `voiceGuidance`: boolean
+
+`simplifiedLayout`은 제거된 설정이며 새 응답에는 포함되지 않습니다.
+
+## 2. v1·v2 프로필 읽기 지원
+
+현재 Production 서버는 아직 구형 빌드이고, 기존 프로필들은 schemaVersion 1을 사용합니다.
+
+중앙 서버를 v2로 배포한 이후에도 기존 v1 프로필은 수정 전까지 `schemaVersion: 1`로 응답할 수 있습니다.
+
+따라서 SDK v0.3.2는 다음과 같이 처리해 주세요.
+
+- v2 프로필 정상 지원
+- v1 프로필 읽기 지원
+- v1 응답에 `simplifiedLayout`이 있어도 해당 값은 무시
+- v1·v2 모두 실제 필수 설정값과 자료형 검증
+- SDK의 정식 접근성 타입에는 `simplifiedLayout`을 남기지 않음
+- 알 수 없는 schemaVersion이나 잘못된 필수 설정값은 거부
+- 신규 생성·수정 요청을 SDK가 담당하는 경우에만 schemaVersion 2 사용
+- v1 호환 처리 때문에 삭제된 단순화 UI나 CSS를 복원하지 않음
+
+기존 QR의 URL과 토큰 형식은 변경하지 마세요.
+
+## 3. 화면 단순화 기능 완전 제거
+
+SDK와 데모커피에서 `simplifiedLayout`과 관련된 다음 항목을 정리해 주세요.
+
+- 타입 및 기본값
+- CSS 클래스
+- 레이아웃 단순화 처리
+- 어댑터 조건부 처리
+- 카페 화면 분기
+- 설정 표시 문구
+- 테스트와 문서
+
+중요한 안내나 상품 메뉴가 화면 단순화 때문에 숨겨지던 코드가 있다면 모든 화면에서 정상 표시되도록 복원해 주세요.
+
+기존 큰 글씨·큰 버튼·고대비·하단 조작·쉬운 말·스마트 길잡이·음성 안내 기능은 유지합니다.
+
+## 4. 오류 응답 처리
+
+중앙 API 오류 규격:
+
+- HTTP 400: `{"error":"QR 코드 정보를 확인할 수 없습니다."}`
+- HTTP 404: `{"error":"사용할 수 없는 QR 코드입니다."}`
+- HTTP 500: `{"error":"서버에서 요청을 처리하지 못했습니다."}`
+
+중지된 QR과 존재하지 않는 QR은 모두 404입니다.
+
+성공 응답에는 프로필 ID, 토큰, 관리 코드가 없으며, `schemaVersion`, `preferences`, `updatedAt`만 포함됩니다.
+
+중앙 API 조회 응답은 `Cache-Control: no-store`를 사용합니다.
+
+이 규격을 기준으로 오류 처리 및 검증 테스트를 진행해 주세요.
+
+## 5. 테스트 및 패키징
+
+기존에 요청했던 SDK v0.3.2 개발을 완료하고 아래 항목을 검증해 주세요.
+
+1. v1 프로필 조회 및 적용
+2. v2 프로필 조회 및 적용
+3. v1의 `simplifiedLayout: true` 무시
+4. 화면 단순화 관련 UI·CSS 제거
+5. 기존 카페 메뉴와 필수 안내 전부 표시
+6. 큰 글씨·큰 버튼·고대비 적용
+7. 하단 조작·스마트 길잡이·음성 안내 유지
+8. QR 스캐너와 중앙 조회 흐름 유지
+9. `endSession()` 초기화 유지
+10. 화면 크기 변경 시 확대 크기 재계산
+11. 데모커피 주문·가상 결제 전체 흐름
+12. 독립 소비자 프로젝트에서 tarball 설치·빌드·테스트
+
+가능하면 v1·v2 성공 응답과 400·404·500 오류 응답을 각각 모의 테스트해 주세요.
+
+실제 공개 Production API 테스트와 모의 응답 테스트는 구분해서 보고해 주세요.
+
+## 6. 결과물
+
+SDK 버전을 `0.3.2`로 올리고 다음 패키지를 생성해 주세요.
+
+`naebangsik-kiosk-accessibility-sdk-0.3.2.tgz`
+
+기존 버전 아카이브는 모두 보존해 주세요.
+
+완료 후 다음 사항을 보고해 주세요.
+
+- 수정 파일
+- v1·v2 호환 처리 방식
+- 제거한 화면 단순화 코드
+- 기존 접근성 기능 유지 여부
+- 테스트·빌드 결과
+- 독립 프로젝트 설치 결과
+- 다운로드할 tarball 경로
+- 무인민원발급기 프로젝트에 적용할 때 필요한 변경 사항
+
+**제한사항:** 중앙 프로젝트 수정 금지, 무인민원발급기 수정 금지, SDK 하단 조작 기능 재설계 금지, AI API 연결 금지, Publish 금지.
+
+이제 API 계약이 확인됐으므로 추가적인 추측 없이 작업을 진행해 주세요.

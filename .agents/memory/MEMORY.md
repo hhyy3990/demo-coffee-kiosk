@@ -1,4 +1,4 @@
-- [Central QR profile access](qr-profile-integration.md) — resolve profiles through the kiosk server; the public resolver rejects browser cross-origin preflight requests.
+- [Central QR profile access](qr-profile-integration.md) — use the server relay and keep strict v1/v2 QR schema compatibility during rollout.
 - [Fictional kiosk brand](kiosk-brand-scope.md) — use the demo café identity and avoid real café marks; photos are layout references only.
 - [Mockup preview dependencies](mockup-preview-dependencies.md) — resolve sandbox startup failures from missing packages before retrying its workflow.
 - [Kiosk sticky navigation](kiosk-sticky-layout.md) — use overflow clipping that preserves viewport sticky positioning, and match the category rail to narrow-screen gutters.

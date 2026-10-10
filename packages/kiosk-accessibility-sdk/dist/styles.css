@@ -30,7 +30,6 @@
 
 .kiosk.a11y-easy-language { letter-spacing: .005em; }
 .kiosk.a11y-easy-language .helper { font-size: 1em; }
-.kiosk.a11y-simplified [data-a11y-detail] { display: none !important; }
 
 .kiosk.a11y-bottom-controls [data-a11y-slot="scroll-content"] {
   padding-bottom: var(--a11y-bottom-reserved, 104px);

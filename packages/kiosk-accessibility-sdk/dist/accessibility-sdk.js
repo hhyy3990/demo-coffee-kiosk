@@ -9,7 +9,6 @@ const MANAGED_CLASSES = [
     "a11y-controls-large",
     "a11y-high-contrast",
     "a11y-easy-language",
-    "a11y-simplified",
     "a11y-bottom-controls",
 ];
 function clamp(value, minimum, maximum) {

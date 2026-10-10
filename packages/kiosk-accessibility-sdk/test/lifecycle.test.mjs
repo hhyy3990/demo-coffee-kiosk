@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sdk } from "./load-sdk.mjs";
-const { createAccessibilitySdk } = sdk;
+const { createAccessibilitySdk, DEFAULT_ACCESSIBILITY_PROFILE } = sdk;
 
 test("profile application and SDK disposal only change SDK-owned root classes", () => {
   const priorWindow = globalThis.window;
@@ -42,6 +42,7 @@ test("profile application and SDK disposal only change SDK-owned root classes", 
     });
 
     sdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
       textSize: "extraLarge",
       buttonSize: "large",
       contrast: "high",
@@ -184,8 +185,9 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
   const hostOrder = Object.freeze({ applicationId: "host-owned", step: "review" });
   try {
     h.sdk.applyProfile({
+      ...sdk.DEFAULT_ACCESSIBILITY_PROFILE,
       textSize: "extraLarge", buttonSize: "large", contrast: "high",
-      simplifiedLayout: true, bottomControls: true, smartGuide: true, voiceGuidance: true,
+      bottomControls: true, smartGuide: true, voiceGuidance: true,
     });
     h.sdk.setGuideState({
       enabled: true,
@@ -227,7 +229,7 @@ test("endSession is repeatable, cancels host-registered QR work and allows a fre
   });
   const unregister = h.sdk.registerSessionCleanup(() => client.cancel());
   try {
-    h.sdk.applyProfile({ textSize: "extraLarge", smartGuide: true });
+    h.sdk.applyProfile({ ...sdk.DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", smartGuide: true });
     h.sdk.setGuideState({
       enabled: true,
       paused: false,
@@ -236,14 +238,14 @@ test("endSession is repeatable, cancels host-registered QR work and allows a fre
     });
     const timerBeforeEnd = [...h.timerCallbacks.keys()].at(-1);
     const staleGuard = h.sdk.createSessionGuard();
-    const pending = client.resolve("session-token");
+    const pending = client.resolve("session-token-12345678901234567890");
     h.sdk.endSession();
     assert.ok(h.clearedTimers.has(timerBeforeEnd));
     h.sdk.endSession();
     await assert.rejects(pending, { name: "AbortError" });
     assert.equal(staleGuard(), false);
 
-    h.sdk.applyProfile({ textSize: "large", buttonSize: "large", smartGuide: true });
+    h.sdk.applyProfile({ ...sdk.DEFAULT_ACCESSIBILITY_PROFILE, textSize: "large", buttonSize: "large", smartGuide: true });
     const nextSessionGuard = h.sdk.createSessionGuard();
     assert.equal(nextSessionGuard(), true);
     assert.equal(h.sdk.profile.textSize, "large");

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
 const fixtureRoot = resolve(packageRoot, "test/consumer-fixture");
-const tarball = resolve(packageRoot, "releases/naebangsik-kiosk-accessibility-sdk-0.3.1.tgz");
+const tarball = resolve(packageRoot, "releases/naebangsik-kiosk-accessibility-sdk-0.3.2.tgz");
 const consumerRoot = await mkdtemp(join(tmpdir(), "kiosk-sdk-consumer-"));
 
 function run(command, args, cwd, env = {}) {

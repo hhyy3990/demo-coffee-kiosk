@@ -8,7 +8,6 @@ import {
 import {
   createAccessibilitySdk,
   DEFAULT_ACCESSIBILITY_PROFILE,
-  validateAccessibilityProfile,
   type AccessibilityProfile,
   type AccessibilitySdk,
   type SessionCleanup,
@@ -48,7 +47,6 @@ const DEMO_PREFERENCES: Preferences = {
   buttonSize: "large",
   contrast: "high",
   easyLanguage: true,
-  simplifiedLayout: true,
   bottomControls: true,
   smartGuide: true,
   voiceGuidance: true,
@@ -112,7 +110,6 @@ export default function App() {
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
-  const [menuNavigationActive, setMenuNavigationActive] = useState(false);
   const kioskRootRef = useRef<HTMLDivElement>(null);
   const accessibilitySdkRef = useRef<AccessibilitySdk | null>(null);
   const registerAccessibilitySessionCleanup = useCallback((cleanup: SessionCleanup) =>
@@ -121,8 +118,6 @@ export default function App() {
     stage: "start",
     cartItemCount: 0,
     easyLanguage: false,
-    simplifiedLayout: false,
-    menuNavigationActive: false,
     menuIndex: 0,
     menuCount: 0,
     selectedMenuName: "",
@@ -134,9 +129,6 @@ export default function App() {
     categoryId: "coffee",
   });
   const productGridRef = useRef<HTMLDivElement>(null);
-  const menuBrowseRef = useRef<HTMLDivElement>(null);
-  const programmaticMenuScrollRef = useRef(false);
-  const menuScrollGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const say = useCallback((text: string) => {
     accessibilitySdkRef.current?.speak(text);
@@ -146,14 +138,11 @@ export default function App() {
   const subtotal = cart.reduce((sum, line) => sum + (line.product.price + (line.options.size === "large" && line.product.optionsSupported ? 700 : 0)) * line.quantity, 0);
   const total = subtotal;
   const currentProducts = PRODUCTS.filter((product) => product.category === category);
-  const isLastMenu = menuFocusIndex >= currentProducts.length - 1;
 
   cafeStateRef.current = {
     stage,
     cartItemCount: linesCount,
     easyLanguage: preferences.easyLanguage,
-    simplifiedLayout: preferences.simplifiedLayout,
-    menuNavigationActive,
     menuIndex: menuFocusIndex,
     menuCount: currentProducts.length,
     selectedMenuName: selectedProduct.koreanName,
@@ -173,8 +162,6 @@ export default function App() {
     stage,
     cartItemCount: linesCount,
     easyLanguage: preferences.easyLanguage,
-    simplifiedLayout: preferences.simplifiedLayout,
-    menuNavigationActive,
     menuIndex: menuFocusIndex,
     menuCount: currentProducts.length,
     selectedMenuName: selectedProduct.koreanName,
@@ -187,8 +174,6 @@ export default function App() {
     stage,
     linesCount,
     preferences.easyLanguage,
-    preferences.simplifiedLayout,
-    menuNavigationActive,
     menuFocusIndex,
     currentProducts.length,
     selectedProduct.koreanName,
@@ -261,45 +246,22 @@ export default function App() {
     if (preferences.buttonSize === "large") parts.push("큰 버튼");
     if (preferences.contrast === "high") parts.push("높은 대비");
     if (preferences.easyLanguage) parts.push("쉬운 말");
-    if (preferences.simplifiedLayout) parts.push("간단한 화면");
     if (preferences.bottomControls) parts.push("아래쪽 조작");
     if (preferences.smartGuide) parts.push(`도움말 ${preferences.guideDelaySeconds}초`);
     if (preferences.voiceGuidance) parts.push("음성 안내");
     return parts;
   }, [preferences]);
 
-  const goToNextMenu = () => {
-    if (isLastMenu) return;
-    const nextIndex = menuFocusIndex + 1;
-    setMenuNavigationActive(true);
-    setMenuFocusIndex(nextIndex);
-    programmaticMenuScrollRef.current = true;
-    if (menuScrollGuardRef.current) clearTimeout(menuScrollGuardRef.current);
-    menuScrollGuardRef.current = setTimeout(() => {
-      programmaticMenuScrollRef.current = false;
-      menuScrollGuardRef.current = null;
-    }, 900);
-    requestAnimationFrame(() => {
-      const target = productGridRef.current?.querySelector<HTMLElement>(`[data-menu-index="${nextIndex}"]`);
-      if (!target) return;
-      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-      target.scrollIntoView({ behavior, block: "start" });
-      target.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
-    });
-  };
-
   useEffect(() => {
     if (stage !== "menu") return;
     let animationFrame = 0;
     const updateMenuPosition = () => {
-      if (programmaticMenuScrollRef.current) return;
       if (animationFrame) cancelAnimationFrame(animationFrame);
       animationFrame = requestAnimationFrame(() => {
         animationFrame = 0;
-        if (programmaticMenuScrollRef.current) return;
         const cards = Array.from(productGridRef.current?.querySelectorAll<HTMLElement>(".product-card") ?? []);
         if (!cards.length) return;
-        const browseBottom = menuBrowseRef.current?.getBoundingClientRect().bottom ?? 0;
+        const browseBottom = kioskRootRef.current?.querySelector<HTMLElement>(".category-nav")?.getBoundingClientRect().bottom ?? 0;
         const visibleIndex = cards.findIndex((card) => card.getBoundingClientRect().bottom > Math.max(0, browseBottom) + 8);
         const pageIsScrollable = document.documentElement.scrollHeight > window.innerHeight + 2;
         const atPageBottom = pageIsScrollable && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
@@ -314,9 +276,6 @@ export default function App() {
     return () => {
       window.removeEventListener("scroll", updateMenuPosition);
       if (animationFrame) cancelAnimationFrame(animationFrame);
-      if (menuScrollGuardRef.current) clearTimeout(menuScrollGuardRef.current);
-      menuScrollGuardRef.current = null;
-      programmaticMenuScrollRef.current = false;
     };
   }, [category, currentProducts.length, stage]);
 
@@ -359,7 +318,7 @@ export default function App() {
     setQrError("");
     setQrOpen(false);
     setAccessibilityOpen(false);
-    say("큰 글씨와 쉬운 화면 설정을 적용했어요.");
+    say("큰 글씨와 편한 화면 설정을 적용했어요.");
   };
   const applyQuickPreference = (preference: "large" | "contrast") => {
     setPreferences((current) => preference === "large"
@@ -416,7 +375,6 @@ export default function App() {
     setReceiptChoice(null);
     setOrderType(type);
     setMenuFocusIndex(0);
-    setMenuNavigationActive(false);
     setStage("menu");
     say(`${type} 주문을 선택했어요.`);
   };
@@ -429,7 +387,6 @@ export default function App() {
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
     setProfileDetailsOpen(false);
-    setMenuNavigationActive(false);
     setQrOpen(false);
     setQrLoading(false);
     setTokenInput("");
@@ -552,7 +509,6 @@ export default function App() {
                     <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
                       setCategory(id);
                       setMenuFocusIndex(0);
-                      setMenuNavigationActive(false);
                       const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
                       requestAnimationFrame(() => document.querySelector(".section-heading")?.scrollIntoView({ behavior, block: "start" }));
                       say(`${label} 메뉴를 보고 있어요.`);
@@ -562,23 +518,10 @@ export default function App() {
                   ))}
                 </nav>
                 <section className="menu-products" aria-label={categoryNames[category]}>
-                  {preferences.simplifiedLayout && (
-                    <div className="menu-browse-tools" ref={menuBrowseRef}>
-                      <p className="menu-browse-note" aria-live="polite">
-                        <strong>{isLastMenu ? "이 분류의 메뉴를 모두 확인했어요." : "아래에도 메뉴가 있어요."}</strong>
-                        <span>메뉴 {Math.min(menuFocusIndex + 1, currentProducts.length)} / {currentProducts.length}</span>
-                      </p>
-                      <button type="button" id="menu-next-button" data-a11y-action-id="menu-next-button" data-a11y-primary="true" className="menu-next-button" onClick={goToNextMenu} disabled={isLastMenu}>
-                        <span>{isLastMenu ? "마지막 메뉴예요" : "다음 메뉴 보기"}</span>
-                        {!isLastMenu && <ArrowRight size={18} aria-hidden="true" />}
-                      </button>
-                    </div>
-                  )}
                   <div
                     className="product-grid"
                     ref={productGridRef}
                     data-menu-count={currentProducts.length}
-                    data-simplified={preferences.simplifiedLayout}
                   >
                     {currentProducts.map((product, index) => {
                       const Icon = product.icon;
@@ -593,7 +536,7 @@ export default function App() {
                             <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
                             <div className="product-meta">
                               <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean">{product.koreanName}</div></div><span className="price">{won(product.price)}</span></div>
-                              {!preferences.simplifiedLayout && <div className="product-korean optional-detail" data-a11y-detail data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>}
+                              <div className="product-korean optional-detail" data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>
                               <div className="product-bottom"><span className="product-tag">{product.optionsSupported ? "옵션 선택 가능" : "바로 담기"}</span><span className="add-round" aria-hidden="true"><Plus size={20} /></span></div>
                             </div>
                           </button>

@@ -18,8 +18,6 @@ export interface CafeGuideInput {
   stage: CafeStage;
   cartItemCount: number;
   easyLanguage: boolean;
-  simplifiedLayout: boolean;
-  menuNavigationActive: boolean;
   menuIndex: number;
   menuCount: number;
   selectedMenuName: string;
@@ -59,21 +57,6 @@ export function resolveCafeGuide(input: CafeGuideInput): AccessibilityGuideMessa
     const menuIndex = menuCount === 0
       ? 0
       : Math.max(0, Math.min(Math.floor(input.menuIndex), lastIndex));
-
-    if (menuCount > 0 && input.simplifiedLayout && input.menuNavigationActive) {
-      if (menuIndex < lastIndex) {
-        return message(
-          "다음 메뉴를 확인해 보세요",
-          "다음 메뉴 보기 버튼을 누르면 다음 메뉴로 이동해요.",
-          "menu-next-button",
-        );
-      }
-      return message(
-        "마지막 메뉴예요",
-        `${menuCount}번째 메뉴가 마지막이에요. 원하는 메뉴를 고르거나 다른 분류를 확인해 주세요.`,
-        `menu-product-${lastIndex}`,
-      );
-    }
 
     return message(
       "메뉴를 골라 보세요",
@@ -160,10 +143,8 @@ export function createCafeAccessibilityAdapter(
           cartItemCount: state.cartItemCount,
           categoryId: state.categoryId,
           easyLanguage: state.easyLanguage,
-          simplifiedLayout: state.simplifiedLayout,
           menuIndex: state.menuIndex,
           menuCount: state.menuCount,
-          menuNavigationActive: state.menuNavigationActive,
           selectedMenuName: state.selectedMenuName,
           optionsSupported: state.optionsSupported,
           temperature: state.temperature,

@@ -5,8 +5,8 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.1`
-- 프로필 스키마: `1.0.0` (중앙 QR 프로필의 기존 필드와 값 유지)
+- SDK API: `0.3.2`
+- 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
 
@@ -23,19 +23,19 @@ npm run sdk:verify-consumer
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.1.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.2.tgz
 ```
 
-버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 필드나 값을 임의로 변경하지 마세요. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
+버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.1.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.2.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.1.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.2.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
