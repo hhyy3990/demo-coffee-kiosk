@@ -26,6 +26,7 @@ const profile: AccessibilityProfile = validateAccessibilityProfile({
   textSize: "large",
 });
 const sdk = createAccessibilitySdk({ root, adapter });
+const qrClient = createQrProfileClient();
 
 sdk.applyProfile(profile);
 sdk.setGuideState({
@@ -35,8 +36,11 @@ sdk.setGuideState({
   message: { title: "Continue", text: "Use the button.", actionId: "independent.confirm" },
 });
 sdk.inspectLayout();
+const isCurrentSession = sdk.createSessionGuard();
+if (isCurrentSession()) sdk.endSession();
+const unregisterCleanup = sdk.registerSessionCleanup(() => qrClient.cancel());
+unregisterCleanup();
 sdk.destroy();
-const qrClient = createQrProfileClient();
 qrClient.cancel();
 function disposeScanner(scanner: QrScannerHandle | null) {
   scanner?.destroy();

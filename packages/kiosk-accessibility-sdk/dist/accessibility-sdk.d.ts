@@ -7,7 +7,9 @@ export interface AccessibilitySdkOptions {
     adapter: AccessibilityAdapter;
     onInteractionCount?: (count: number) => void;
     onDiagnostics?: (issues: readonly AccessibilityDiagnostic[]) => void;
+    onSessionCleanupError?: (error: unknown) => void;
 }
+export type SessionCleanup = () => void;
 export interface AccessibilitySdk {
     readonly version: string;
     readonly profile: AccessibilityProfile;
@@ -16,6 +18,9 @@ export interface AccessibilitySdk {
     resetIdleTimer(): void;
     speak(text: string): boolean;
     inspectLayout(): AccessibilityDiagnostic[];
+    endSession(): void;
+    registerSessionCleanup(cleanup: SessionCleanup): () => void;
+    createSessionGuard(): () => boolean;
     destroy(): void;
 }
 export declare function createAccessibilitySdk(options: AccessibilitySdkOptions): AccessibilitySdk;

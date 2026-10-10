@@ -15,7 +15,10 @@ export interface AccessibilitySdkOptions {
   adapter: AccessibilityAdapter;
   onInteractionCount?: (count: number) => void;
   onDiagnostics?: (issues: readonly AccessibilityDiagnostic[]) => void;
+  onSessionCleanupError?: (error: unknown) => void;
 }
+
+export type SessionCleanup = () => void;
 
 export interface AccessibilitySdk {
   readonly version: string;
@@ -25,6 +28,9 @@ export interface AccessibilitySdk {
   resetIdleTimer(): void;
   speak(text: string): boolean;
   inspectLayout(): AccessibilityDiagnostic[];
+  endSession(): void;
+  registerSessionCleanup(cleanup: SessionCleanup): () => void;
+  createSessionGuard(): () => boolean;
   destroy(): void;
 }
 
@@ -136,6 +142,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let interactionCount = 0;
   let lastScrollAt = 0;
   let destroyed = false;
+  let sessionGeneration = 0;
+  const sessionCleanups = new Set<SessionCleanup>();
   let timer = createIdleTimer(showGuide);
 
   function removeGuide(): void {
@@ -249,6 +257,48 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     return issues;
   }
 
+  function endSession(): void {
+    sessionGeneration += 1;
+    timer.cancel();
+    for (const cleanup of [...sessionCleanups]) {
+      try {
+        cleanup();
+      } catch (error) {
+        try {
+          options.onSessionCleanupError?.(error);
+        } catch {
+          // Cleanup reporting must not block the remaining session reset.
+        }
+      }
+    }
+
+    guideState = {
+      enabled: false,
+      paused: true,
+      delaySeconds: 15,
+      message: null,
+    };
+    removeGuide();
+    cancelSpeech();
+    applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+    interactionCount = 0;
+    options.onInteractionCount?.(0);
+  }
+
+  function registerSessionCleanup(cleanup: SessionCleanup): () => void {
+    if (destroyed) {
+      cleanup();
+      return () => undefined;
+    }
+    sessionCleanups.add(cleanup);
+    return () => sessionCleanups.delete(cleanup);
+  }
+
+  function createSessionGuard(): () => boolean {
+    const generation = sessionGeneration;
+    return () => !destroyed && sessionGeneration === generation;
+  }
+
   root.addEventListener("pointerdown", recordInteraction);
   root.addEventListener("keydown", recordInteraction);
   if (!("PointerEvent" in window)) root.addEventListener("touchstart", recordInteraction, { passive: true });
@@ -264,8 +314,12 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     resetIdleTimer,
     speak,
     inspectLayout,
+    endSession,
+    registerSessionCleanup,
+    createSessionGuard,
     destroy() {
       if (destroyed) return;
+      endSession();
       destroyed = true;
       timer.dispose();
       removeGuide();
@@ -273,11 +327,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       root.removeEventListener("keydown", recordInteraction);
       root.removeEventListener("touchstart", recordInteraction);
       window.removeEventListener("scroll", recordScrollInteraction);
-      cancelSpeech();
       for (const className of MANAGED_CLASSES) {
         root.classList.toggle(className, originalManagedClasses.has(className));
       }
       if (addedKioskClass) root.classList.remove("kiosk");
+      sessionCleanups.clear();
     },
   };
 

@@ -6,12 +6,14 @@ interface QrCameraScannerProps {
   onScan: (value: string) => void;
   onCameraUnavailable: (message: string) => void;
   onRestart: () => void;
+  registerSessionCleanup?: (cleanup: () => void) => () => void;
 }
 
 export default function QrCameraScanner({
   disabled = false,
   onScan,
   onCameraUnavailable,
+  registerSessionCleanup,
 }: QrCameraScannerProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const scannerRef = useRef<QrScannerHandle | null>(null);
@@ -20,16 +22,23 @@ export default function QrCameraScanner({
 
   useEffect(() => {
     let cancelled = false;
+    let sessionEnded = false;
     void import("@naebangsik/kiosk-accessibility-sdk/qr-scanner").then(({ mountQrScanner }) => {
-      if (cancelled || !mountRef.current) return;
+      if (cancelled || sessionEnded || !mountRef.current) return;
       scannerRef.current = mountQrScanner({
         container: mountRef.current,
         onScan: (value) => callbacksRef.current.onScan(value),
         onCameraUnavailable: (message) => callbacksRef.current.onCameraUnavailable(message),
       });
     }).catch(() => callbacksRef.current.onCameraUnavailable("카메라 스캔 모듈을 불러오지 못했어요. 주소를 직접 입력해 주세요."));
+    const unregisterSessionCleanup = registerSessionCleanup?.(() => {
+      sessionEnded = true;
+      scannerRef.current?.destroy();
+      scannerRef.current = null;
+    });
     return () => {
       cancelled = true;
+      unregisterSessionCleanup?.();
       scannerRef.current?.destroy();
       scannerRef.current = null;
     };

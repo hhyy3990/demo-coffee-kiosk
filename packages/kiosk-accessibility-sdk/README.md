@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.2.0`
+- SDK API: `0.2.1`
 - 프로필 스키마: `1.0.0` (중앙 QR 프로필의 기존 필드와 값 유지)
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -23,19 +23,19 @@ npm run sdk:verify-consumer
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.0.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.1.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 필드나 값을 임의로 변경하지 마세요. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.0.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.2.1.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.2.0.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.2.1.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -104,12 +104,34 @@ const sdk = createAccessibilitySdk({ root, adapter });
 
 ```ts
 const qrClient = createQrProfileClient();
+const isCurrentSession = sdk.createSessionGuard();
 const profile: AccessibilityProfile = await qrClient.resolve(scannedOrTypedValue, "scan");
-sdk.applyProfile(profile);
+if (isCurrentSession()) sdk.applyProfile(profile);
 
 // 사용자가 QR 모달을 닫으면 진행 중 요청을 취소합니다.
 qrClient.cancel();
 ```
+
+업무가 끝나면 호스트가 먼저 업무별 데이터(주문·발급 단계·입력값)를 초기화하고, 공통 접근성 세션을 종료합니다.
+
+```ts
+const unregisterQrCleanup = sdk.registerSessionCleanup(() => {
+  qrClient.cancel(); // 호스트가 만든 요청만 정리
+  scanner?.destroy(); // 호스트가 만든 스캐너만 정리
+  scanner = null;
+});
+
+function finishKioskTask() {
+  clearHostOrderOrApplicationState();
+  sdk.endSession();
+}
+
+// 호스트가 unmount될 때:
+unregisterQrCleanup();
+sdk.destroy();
+```
+
+`endSession()`은 등록된 정리 콜백, 스마트 길잡이 타이머·안내·강조, 음성, SDK 접근성 클래스와 프로필을 초기화하지만 SDK 인스턴스와 이벤트 리스너는 유지합니다. 새 업무에서 만든 비동기 요청은 시작 전에 `createSessionGuard()`를 캡처하고 응답 적용 전에 확인하세요. 세션 종료 후 콜백은 `false`를 반환합니다. QR 요청·카메라를 SDK가 만들지 않았다면 SDK가 직접 접근하지 않으며, 호스트가 `registerSessionCleanup()`으로 정리할 리소스만 등록합니다.
 
 카메라 스캐너는 별도 entrypoint입니다. SDK 기본 entrypoint에서 ZXing 모듈을 가져오지 않으며, QR UI를 표시할 때만 동적 import 하세요.
 
@@ -143,7 +165,7 @@ sdk.setGuideState({
 const layoutIssues = sdk.inspectLayout(); // 읽기 전용 결과
 ```
 
-기존 React 앱에서는 화면 해제 시 `sdk.destroy()`를 호출합니다. 이는 SDK가 관리하던 프로필 클래스와 안내 UI, 이벤트 리스너를 정리하고 처음의 root 클래스 상태를 복원합니다. 업무 상태는 변경하지 않습니다.
+기존 React 앱에서는 화면 해제 시 `sdk.destroy()`를 호출합니다. `destroy()`는 `endSession()` 정리 후 SDK 이벤트 리스너까지 해제하고 처음의 root 클래스 상태를 복원합니다. 업무 상태는 변경하지 않습니다.
 
 ```ts
 sdk.destroy();

@@ -11,6 +11,7 @@ import {
   validateAccessibilityProfile,
   type AccessibilityProfile,
   type AccessibilitySdk,
+  type SessionCleanup,
 } from "@naebangsik/kiosk-accessibility-sdk";
 import { createQrProfileClient } from "@naebangsik/kiosk-accessibility-sdk";
 import {
@@ -107,12 +108,15 @@ export default function App() {
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
   const qrRequestInFlightRef = useRef(false);
+  const qrRequestGenerationRef = useRef(0);
   const [orderNumber, setOrderNumber] = useState("");
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
   const [menuNavigationActive, setMenuNavigationActive] = useState(false);
   const kioskRootRef = useRef<HTMLDivElement>(null);
   const accessibilitySdkRef = useRef<AccessibilitySdk | null>(null);
+  const registerAccessibilitySessionCleanup = useCallback((cleanup: SessionCleanup) =>
+    accessibilitySdkRef.current?.registerSessionCleanup(cleanup) ?? (() => undefined), []);
   const cafeStateRef = useRef<CafeAdapterState>({
     stage: "start",
     cartItemCount: 0,
@@ -209,7 +213,18 @@ export default function App() {
       },
     });
     accessibilitySdkRef.current = sdk;
+    const unregisterSessionCleanup = sdk.registerSessionCleanup(() => {
+      qrRequestGenerationRef.current += 1;
+      qrRequestInFlightRef.current = false;
+      qrProfileClientRef.current?.cancel();
+      setQrOpen(false);
+      setQrLoading(false);
+      setQrError("");
+      setQrCameraError("");
+    });
     return () => {
+      unregisterSessionCleanup();
+      qrProfileClientRef.current?.cancel();
       sdk.destroy();
       if (accessibilitySdkRef.current === sdk) accessibilitySdkRef.current = null;
     };
@@ -357,11 +372,14 @@ export default function App() {
   };
   const loadProfileToken = async (value: string, inputKind: "scan" | "manual") => {
     if (qrRequestInFlightRef.current) return;
+    const requestGeneration = ++qrRequestGenerationRef.current;
+    const isCurrentSession = accessibilitySdkRef.current?.createSessionGuard() ?? (() => true);
     qrRequestInFlightRef.current = true;
     setQrLoading(true);
     setQrError("");
     try {
       const resolved = await qrProfileClientRef.current!.resolve(value, inputKind);
+      if (!isCurrentSession()) return;
       setPreferences(resolved);
       setActiveProfile("central");
       setProfileDetailsOpen(false);
@@ -374,8 +392,10 @@ export default function App() {
       const code = error instanceof Error ? error.message : "";
       setQrError(code === "QR_UNAVAILABLE" ? "사용할 수 없는 QR이에요" : "접근성 설정을 불러오지 못했어요. 다시 시도하거나 직원에게 도움을 요청해 주세요.");
     } finally {
-      qrRequestInFlightRef.current = false;
-      setQrLoading(false);
+      if (qrRequestGenerationRef.current === requestGeneration) {
+        qrRequestInFlightRef.current = false;
+        setQrLoading(false);
+      }
     }
   };
   const submitManualToken = () => {
@@ -401,6 +421,7 @@ export default function App() {
     say(`${type} 주문을 선택했어요.`);
   };
   const returnToStart = () => {
+    accessibilitySdkRef.current?.endSession();
     setCart([]);
     setReceiptChoice(null);
     setSelectedPayment("card");
@@ -409,8 +430,10 @@ export default function App() {
     setActiveProfile("none");
     setProfileDetailsOpen(false);
     setMenuNavigationActive(false);
+    setQrOpen(false);
+    setQrLoading(false);
+    setTokenInput("");
     setStage("start");
-    say("새 주문을 시작할 수 있어요.");
   };
   const lineDescription = (line: CartLine) => {
     if (!line.product.optionsSupported) return categoryNames[line.product.category];
@@ -780,6 +803,7 @@ export default function App() {
                     onScan={handleScannedQr}
                     onCameraUnavailable={handleCameraUnavailable}
                     onRestart={() => setQrError("")}
+                    registerSessionCleanup={registerAccessibilitySessionCleanup}
                   />
                 </Suspense>
                 <button

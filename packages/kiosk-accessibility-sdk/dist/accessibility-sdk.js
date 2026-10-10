@@ -89,6 +89,8 @@ export function createAccessibilitySdk(options) {
     let interactionCount = 0;
     let lastScrollAt = 0;
     let destroyed = false;
+    let sessionGeneration = 0;
+    const sessionCleanups = new Set();
     let timer = createIdleTimer(showGuide);
     function removeGuide() {
         if (guideOverlay) {
@@ -191,6 +193,46 @@ export function createAccessibilitySdk(options) {
         options.onDiagnostics?.(issues);
         return issues;
     }
+    function endSession() {
+        sessionGeneration += 1;
+        timer.cancel();
+        for (const cleanup of [...sessionCleanups]) {
+            try {
+                cleanup();
+            }
+            catch (error) {
+                try {
+                    options.onSessionCleanupError?.(error);
+                }
+                catch {
+                    // Cleanup reporting must not block the remaining session reset.
+                }
+            }
+        }
+        guideState = {
+            enabled: false,
+            paused: true,
+            delaySeconds: 15,
+            message: null,
+        };
+        removeGuide();
+        cancelSpeech();
+        applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+        interactionCount = 0;
+        options.onInteractionCount?.(0);
+    }
+    function registerSessionCleanup(cleanup) {
+        if (destroyed) {
+            cleanup();
+            return () => undefined;
+        }
+        sessionCleanups.add(cleanup);
+        return () => sessionCleanups.delete(cleanup);
+    }
+    function createSessionGuard() {
+        const generation = sessionGeneration;
+        return () => !destroyed && sessionGeneration === generation;
+    }
     root.addEventListener("pointerdown", recordInteraction);
     root.addEventListener("keydown", recordInteraction);
     if (!("PointerEvent" in window))
@@ -206,9 +248,13 @@ export function createAccessibilitySdk(options) {
         resetIdleTimer,
         speak,
         inspectLayout,
+        endSession,
+        registerSessionCleanup,
+        createSessionGuard,
         destroy() {
             if (destroyed)
                 return;
+            endSession();
             destroyed = true;
             timer.dispose();
             removeGuide();
@@ -216,12 +262,12 @@ export function createAccessibilitySdk(options) {
             root.removeEventListener("keydown", recordInteraction);
             root.removeEventListener("touchstart", recordInteraction);
             window.removeEventListener("scroll", recordScrollInteraction);
-            cancelSpeech();
             for (const className of MANAGED_CLASSES) {
                 root.classList.toggle(className, originalManagedClasses.has(className));
             }
             if (addedKioskClass)
                 root.classList.remove("kiosk");
+            sessionCleanups.clear();
         },
     };
     return sdk;

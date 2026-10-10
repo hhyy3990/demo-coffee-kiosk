@@ -14,6 +14,7 @@ export {
   createAccessibilitySdk,
   type AccessibilitySdk,
   type AccessibilitySdkOptions,
+  type SessionCleanup,
 } from "./accessibility-sdk.ts";
 export {
   type AccessibilityAdapter,
