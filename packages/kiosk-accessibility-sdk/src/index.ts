@@ -32,6 +32,11 @@ export {
 } from "./diagnostics.ts";
 export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
 export {
+  DEFAULT_ADDITIONAL_MENU_MESSAGE,
+  analyzeAdditionalMenuOverflow,
+  type AdditionalMenuOverflowState,
+} from "./menu-overflow.ts";
+export {
   createIdleTimer,
   smartGuideDelayMs,
   type GuideState,

@@ -3,6 +3,7 @@ import type {
   KioskAction,
   KioskTextTarget,
 } from "./adapter.ts";
+import { analyzeAdditionalMenuOverflow } from "./menu-overflow.ts";
 
 export type AccessibilityIssueType =
   | "text-clipped"
@@ -11,7 +12,8 @@ export type AccessibilityIssueType =
   | "bottom-control-obscures-action"
   | "last-scroll-action-obscured"
   | "small-touch-target"
-  | "action-overlap";
+  | "action-overlap"
+  | "menu-overflow-unreachable";
 
 export interface AccessibilityDiagnostic {
   screenId: string;
@@ -163,6 +165,20 @@ export function inspectKioskLayout(
         });
       }
     }
+  }
+
+  const menuOverflow = analyzeAdditionalMenuOverflow(root, adapter);
+  if (menuOverflow.unreachable) {
+    issues.push({
+      screenId,
+      semanticId: "menu.overflow",
+      issueType: "menu-overflow-unreachable",
+      measurements: {
+        hiddenItems: menuOverflow.hiddenCount,
+        scrollable: false,
+        itemCount: menuOverflow.itemCount,
+      },
+    });
   }
 
   for (const action of actions) {

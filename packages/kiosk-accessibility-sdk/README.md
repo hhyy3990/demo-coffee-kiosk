@@ -1,11 +1,11 @@
 # 내 방식 QR 키오스크 접근성 SDK
 
-웹 키오스크용 프레임워크 비종속 TypeScript/JavaScript 패키지입니다. SDK는 프로필 검증, 화면 표현, 무조작 감지, 스마트 길잡이 표시, 브라우저 음성, 읽기 전용 레이아웃 진단만 담당합니다. 주문·결제·진료 등의 업무 상태나 버튼 실행은 각 키오스크가 계속 소유합니다.
+웹 키오스크용 프레임워크 비종속 TypeScript/JavaScript 패키지입니다. SDK는 프로필 검증, 화면 표현, 무조작 감지, 스마트 길잡이, 추가 메뉴 안내, 브라우저 음성, 레이아웃 진단·보정을 담당합니다. 주문·결제·진료 등의 업무 상태나 버튼 실행은 각 키오스크가 계속 소유합니다.
 
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.2`
+- SDK API: `0.3.3`
 - 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -18,24 +18,25 @@
 npm run sdk:build
 npm run sdk:pack
 npm run sdk:verify-consumer
+npm --prefix packages/kiosk-accessibility-sdk run test:browser
 ```
 
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.2.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.3.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.2.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.3.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.2.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.3.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -54,6 +55,21 @@ import "@naebangsik/kiosk-accessibility-sdk/styles.css";
 ```
 
 패키지는 React나 데모커피 파일을 참조하지 않습니다. 브라우저 DOM을 제공하는 웹 키오스크와 ES module을 처리할 수 있는 번들러가 필요합니다. 프로필 검증 유틸리티는 Node.js에서도 사용할 수 있습니다.
+
+## 아래쪽 메뉴 자동 안내
+
+현재 화면의 목록을 `getLayoutRegions()`에서 선택적으로 `menuItems`에 등록하면 SDK가 해당 항목과 실제 스크롤 소유 영역을 측정합니다. 추가 항목이 아래에 있고 사용자가 더 내릴 수 있을 때만 SDK가 안내 UI를 표시합니다. 자체 스크롤과 문서 스크롤을 모두 지원하며, 고정 하단 조작부와 등록된 버튼을 피할 수 없는 상태에서는 안내를 가리지 않고 스크롤 불가 진단을 남깁니다.
+
+기본 문구는 `아래에도 메뉴가 있습니다. 화면을 위로 밀어보세요.`입니다. 호스트에서 `menuMessage`를 제공하면 안내 문구만 바뀝니다. 안내는 QR 프로필과 독립적으로 동작하고 자동 음성은 재생하지 않습니다.
+
+```ts
+getLayoutRegions: () => ({
+  scrollArea: root.querySelector<HTMLElement>("[data-a11y-slot='scroll-content']"),
+  bottomControls: [root.querySelector<HTMLElement>("[data-a11y-slot='bottom-controls']")!],
+  menuItems: [...root.querySelectorAll<HTMLElement>("[data-a11y-menu-item]")],
+  menuMessage: "아래에도 증명서 메뉴가 있습니다. 화면을 위로 밀어보세요.",
+}),
+```
 
 ## 최소 어댑터와 초기화
 

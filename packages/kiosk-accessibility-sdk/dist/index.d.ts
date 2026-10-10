@@ -3,5 +3,6 @@ export { createAccessibilitySdk, type AccessibilitySdk, type AccessibilitySdkOpt
 export { type AccessibilityAdapter, type AccessibilityGuideMessage, type KioskAction, type KioskLayoutRegions, type KioskSnapshot, type KioskTextTarget, } from "./adapter.ts";
 export { inspectKioskLayout, type AccessibilityDiagnostic, type AccessibilityIssueType, type LayoutDiagnosticOptions, } from "./diagnostics.ts";
 export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
+export { DEFAULT_ADDITIONAL_MENU_MESSAGE, analyzeAdditionalMenuOverflow, type AdditionalMenuOverflowState, } from "./menu-overflow.ts";
 export { createIdleTimer, smartGuideDelayMs, type GuideState, type IdleTimerDriver, } from "./guide.ts";
 export { CENTRAL_QR_ORIGIN, createQrProfileClient, getManualProfileToken, getScannedProfileToken, isValidProfileToken, type QrProfileClient, } from "./qr-profile.ts";

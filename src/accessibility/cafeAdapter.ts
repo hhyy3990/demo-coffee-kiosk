@@ -172,6 +172,10 @@ export function createCafeAccessibilityAdapter(
       return {
         bottomControls,
         scrollArea: root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]'),
+        menuItems: getState().stage === "menu"
+          ? Array.from(root.querySelectorAll<HTMLElement>(".product-card"))
+          : [],
+        menuMessage: "아래에도 상품이 있습니다. 화면을 위로 밀어보세요.",
         reflowContainers: [root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')].filter(
           (element): element is HTMLElement => Boolean(element),
         ),

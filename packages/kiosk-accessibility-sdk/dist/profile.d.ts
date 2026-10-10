@@ -1,5 +1,5 @@
 export declare const ACCESSIBILITY_PROFILE_SCHEMA_VERSION: 2;
-export declare const ACCESSIBILITY_SDK_VERSION: "0.3.2";
+export declare const ACCESSIBILITY_SDK_VERSION: "0.3.3";
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
 export type ContrastMode = "standard" | "high";

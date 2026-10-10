@@ -1,3 +1,4 @@
+import { analyzeAdditionalMenuOverflow } from "./menu-overflow.js";
 function safeSemanticId(value) {
     return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/.test(value) ? value : "unmapped";
 }
@@ -118,6 +119,19 @@ export function inspectKioskLayout(root, adapter, options = {}) {
                 });
             }
         }
+    }
+    const menuOverflow = analyzeAdditionalMenuOverflow(root, adapter);
+    if (menuOverflow.unreachable) {
+        issues.push({
+            screenId,
+            semanticId: "menu.overflow",
+            issueType: "menu-overflow-unreachable",
+            measurements: {
+                hiddenItems: menuOverflow.hiddenCount,
+                scrollable: false,
+                itemCount: menuOverflow.itemCount,
+            },
+        });
     }
     for (const action of actions) {
         const rect = action.element.getBoundingClientRect();

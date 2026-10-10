@@ -1,6 +1,6 @@
 {
   "name": "@naebangsik/kiosk-accessibility-sdk",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Framework-independent accessibility and QR profile SDK for web kiosks",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,6 +31,7 @@
   "scripts": {
     "clean": "node ./scripts/clean.mjs",
     "build": "npm run clean && tsc -p tsconfig.build.json && node ./scripts/copy-css.mjs",
+    "test:browser": "node ./scripts/test-menu-overflow-browser.mjs",
     "prepack": "npm run build",
     "pack:artifact": "node ./scripts/ensure-release-dir.mjs && npm pack --pack-destination ./releases"
   },

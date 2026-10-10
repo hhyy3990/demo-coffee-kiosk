@@ -4,6 +4,7 @@ import {
   createLayoutEnhancer,
   type LayoutCorrectionResult,
 } from "./layout-enhancements.ts";
+import { createAdditionalMenuHint } from "./menu-overflow.ts";
 import { createIdleTimer, smartGuideDelayMs, type GuideState } from "./guide.ts";
 import {
   ACCESSIBILITY_SDK_VERSION,
@@ -151,6 +152,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const sessionCleanups = new Set<SessionCleanup>();
   let timer = createIdleTimer(showGuide);
   const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
+  const menuHint = createAdditionalMenuHint(root, adapter);
 
   function removeGuide(): void {
     if (guideOverlay) {
@@ -161,6 +163,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     }
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
+    menuHint.refresh();
   }
 
   function findGuideAction(actionId: string | null) {
@@ -200,6 +203,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     window.addEventListener("resize", updateGuidePosition);
     window.addEventListener("scroll", updateGuidePosition, true);
     speakText(guideState.message.text, currentProfile.voiceGuidance);
+    menuHint.refresh();
   }
 
   function scheduleGuide(): void {
@@ -245,6 +249,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     ) {
       layoutEnhancer.correctLayout();
     }
+    menuHint.refresh();
     if (previousVoiceGuidance && !currentProfile.voiceGuidance) cancelSpeech();
     if (!currentProfile.smartGuide) removeGuide();
     scheduleGuide();
@@ -255,6 +260,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     guideState = { ...state, message: state.message ? { ...state.message } : null };
     removeGuide();
     scheduleGuide();
+    menuHint.refresh();
   }
 
   function resetIdleTimer(): void {
@@ -303,6 +309,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     removeGuide();
     cancelSpeech();
     applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+    menuHint.clear();
     interactionCount = 0;
     options.onInteractionCount?.(0);
   }
@@ -348,6 +355,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       timer.dispose();
       removeGuide();
       layoutEnhancer.destroy();
+      menuHint.destroy();
       root.removeEventListener("pointerdown", recordInteraction);
       root.removeEventListener("keydown", recordInteraction);
       root.removeEventListener("touchstart", recordInteraction);

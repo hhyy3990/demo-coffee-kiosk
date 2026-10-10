@@ -1,5 +1,6 @@
 import { inspectKioskLayout } from "./diagnostics.js";
 import { createLayoutEnhancer, } from "./layout-enhancements.js";
+import { createAdditionalMenuHint } from "./menu-overflow.js";
 import { createIdleTimer, smartGuideDelayMs } from "./guide.js";
 import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, } from "./profile.js";
 import { cancelSpeech, speakText } from "./speech.js";
@@ -93,6 +94,7 @@ export function createAccessibilitySdk(options) {
     const sessionCleanups = new Set();
     let timer = createIdleTimer(showGuide);
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
+    const menuHint = createAdditionalMenuHint(root, adapter);
     function removeGuide() {
         if (guideOverlay) {
             guideOverlay.remove();
@@ -102,6 +104,7 @@ export function createAccessibilitySdk(options) {
         }
         highlightedAction?.classList.remove("a11y-guide-emphasis");
         highlightedAction = null;
+        menuHint.refresh();
     }
     function findGuideAction(actionId) {
         if (!actionId)
@@ -138,6 +141,7 @@ export function createAccessibilitySdk(options) {
         window.addEventListener("resize", updateGuidePosition);
         window.addEventListener("scroll", updateGuidePosition, true);
         speakText(guideState.message.text, currentProfile.voiceGuidance);
+        menuHint.refresh();
     }
     function scheduleGuide() {
         timer.cancel();
@@ -177,6 +181,7 @@ export function createAccessibilitySdk(options) {
             currentProfile.bottomControls) {
             layoutEnhancer.correctLayout();
         }
+        menuHint.refresh();
         if (previousVoiceGuidance && !currentProfile.voiceGuidance)
             cancelSpeech();
         if (!currentProfile.smartGuide)
@@ -188,6 +193,7 @@ export function createAccessibilitySdk(options) {
         guideState = { ...state, message: state.message ? { ...state.message } : null };
         removeGuide();
         scheduleGuide();
+        menuHint.refresh();
     }
     function resetIdleTimer() {
         recordInteraction();
@@ -231,6 +237,7 @@ export function createAccessibilitySdk(options) {
         removeGuide();
         cancelSpeech();
         applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+        menuHint.clear();
         interactionCount = 0;
         options.onInteractionCount?.(0);
     }
@@ -274,6 +281,7 @@ export function createAccessibilitySdk(options) {
             timer.dispose();
             removeGuide();
             layoutEnhancer.destroy();
+            menuHint.destroy();
             root.removeEventListener("pointerdown", recordInteraction);
             root.removeEventListener("keydown", recordInteraction);
             root.removeEventListener("touchstart", recordInteraction);

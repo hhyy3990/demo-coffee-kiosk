@@ -20,6 +20,10 @@ export interface KioskTextTarget {
 export interface KioskLayoutRegions {
     bottomControls?: readonly HTMLElement[];
     scrollArea?: HTMLElement | null;
+    /** Ordered interactive or informational cards that form the current menu/list. */
+    menuItems?: readonly HTMLElement[];
+    /** Optional host wording; detection and presentation remain SDK-owned. */
+    menuMessage?: string;
     /** Explicitly opted-in containers eligible for min-width/wrapping corrections. */
     reflowContainers?: readonly HTMLElement[];
     /** Explicitly opted-in grid containers whose columns may be reduced on overflow. */
