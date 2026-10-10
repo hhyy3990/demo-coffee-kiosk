@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.0`
+- SDK API: `0.3.1`
 - 프로필 스키마: `1.0.0` (중앙 QR 프로필의 기존 필드와 값 유지)
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -23,19 +23,19 @@ npm run sdk:verify-consumer
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.0.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.1.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 필드나 값을 임의로 변경하지 마세요. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.0.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.1.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.0.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.1.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -178,9 +178,9 @@ sdk.destroy();
 
 ## 공통 확대·제한적 레이아웃 보정
 
-글씨 크기는 어댑터가 반환한 텍스트 요소의 최초 계산값을 기준으로 1.25배/1.5배 처리합니다. 큰 버튼은 어댑터가 제공한 조작 대상만 대상으로 높이를 유연하게 하고 최소 높이·패딩·줄바꿈을 적용합니다. 같은 프로필을 재적용할 때 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 기록한 인라인 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 어댑터 대상을 찾아 현재 프로필을 적용합니다.
+글씨 크기는 어댑터가 반환한 텍스트 요소의 현재 화면 크기별 원본 계산값을 기준으로 1.25배/1.5배 처리합니다. `ResizeObserver`와 창 크기 변경을 함께 감지해 뷰포트 또는 키오스크 루트의 너비가 바뀌면 기존 보정 스타일을 되돌린 뒤 반응형 CSS 기준을 다시 측정합니다. 크기 변경 중 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 원래 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 어댑터 대상을 찾아 현재 프로필을 적용합니다.
 
-대상 바깥의 스타일은 수정하지 않습니다. `getLayoutRegions()`에서 호스트가 명시한 `reflowContainers`, `gridContainers`, `actionGroups`, `scrollArea`만 보정 후보가 됩니다. 텍스트 줄바꿈/높이 유연화, 최소 너비 해제, 가로 넘침 시 그리드 1열 전환, 하단 고정 영역만큼 스크롤 여백 확보를 시도한 후 진단 결과가 개선되지 않으면 해당 변경을 되돌립니다. 버튼 겹침은 의미 ID 쌍으로 진단하며, 그리드 열 감소 또는 호스트 등록 조작 그룹의 세로 재배치가 겹침을 줄이지 못하면 롤백합니다. `correctLayout()`은 각 전략과 적용/롤백 결과를 반환하고, 자동 시도 결과는 `getLastLayoutCorrections()`에서 확인할 수 있습니다.
+대상 바깥의 스타일은 수정하지 않습니다. `getLayoutRegions()`에서 호스트가 명시한 `reflowContainers`, `gridContainers`, `actionGroups`, `scrollArea`만 보정 후보가 됩니다. 텍스트 줄바꿈/높이 유연화, 최소 너비 해제, 가로 넘침 시 그리드 1열 전환을 시도합니다. 고정 하단 조작부와 등록된 스크롤 영역의 실제 교차 높이를 측정해 여백을 더하고, 마지막 등록 액션을 최대 스크롤 위치로 예상했을 때 가림 진단이 해소되지 않으면 적용하지 않습니다. 스크롤 자체가 불가능하거나 안전한 여백을 계산할 수 없는 경우 `failed` 결과를 보고합니다. 버튼 겹침은 의미 ID 쌍으로 진단하며, 보정 전후 진단 결과가 나아지지 않거나 새 문제가 생기면 해당 변경을 되돌립니다. `correctLayout()`은 각 전략과 적용/롤백 결과를 반환하고, 자동 시도 결과는 `getLastLayoutCorrections()`에서 확인할 수 있습니다.
 
 절대 위치 요소, 복잡한 중첩 스크롤, 캔버스/iframe 내부, 호스트 규칙 간 우선순위 충돌 등은 일반 규칙만으로 안전하게 재배치할 수 없습니다. 자동 보정은 감지한 모든 문제의 해결을 보장하지 않으며, 메뉴·업무 버튼을 숨기거나 클릭하지 않습니다. AI 연결은 포함하지 않습니다.
 

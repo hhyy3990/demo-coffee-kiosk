@@ -7,9 +7,10 @@ type StyleBaseline = Map<string, StyleEntry>;
 
 export interface LayoutCorrectionResult {
   strategy: "text-wrap" | "release-container-width" | "reduce-grid-columns" | "reserve-scroll-space" | "stack-action-group";
-  outcome: "applied" | "reverted" | "not-needed";
+  outcome: "applied" | "reverted" | "not-needed" | "failed";
   issuesBefore: number;
   issuesAfter: number;
+  reason?: "scroll-unavailable" | "no-safe-inset";
 }
 
 const TEXT_SCALE = { standard: 1, large: 1.25, extraLarge: 1.5 } as const;
@@ -39,6 +40,10 @@ export function createLayoutEnhancer(
   const baseSizes = new WeakMap<HTMLElement, { font: number; height: number; paddingTop: number; paddingBottom: number }>();
   let destroyed = false;
   let lastResults: LayoutCorrectionResult[] = [];
+  let resizeFrame = 0;
+  let lastViewportWidth = window.innerWidth;
+  let lastViewportHeight = window.innerHeight;
+  let lastRootWidth = root.clientWidth;
 
   function remember(element: HTMLElement, property: string): void {
     let baseline = originals.get(element);
@@ -209,12 +214,47 @@ export function createLayoutEnhancer(
         }, (issue) => issue.issueType === "action-overlap"));
       }
     }
-    if (issues.some((issue) => issue.issueType === "bottom-control-obscures-action") && regions.scrollArea) {
-      const height = (regions.bottomControls ?? []).reduce((sum, control) => sum + control.getBoundingClientRect().height, 0);
-      results.push(tryCorrection("reserve-scroll-space", [regions.scrollArea], (element) => {
+    if (issues.some((issue) =>
+      issue.issueType === "bottom-control-obscures-action" ||
+      issue.issueType === "last-scroll-action-obscured",
+    ) && regions.scrollArea) {
+      const area = regions.scrollArea;
+      const areaRect = area.getBoundingClientRect();
+      const safeInset = (regions.bottomControls ?? []).reduce((max, control) => {
+        const rect = control.getBoundingClientRect();
+        const top = Math.max(areaRect.top, rect.top);
+        const bottom = Math.min(areaRect.bottom, rect.bottom);
+        return Math.max(max, bottom - top);
+      }, 0);
+      const lastActionExtra = issues
+        .filter((issue) => issue.issueType === "last-scroll-action-obscured")
+        .reduce((max, issue) => {
+          const blocked = Number(issue.measurements.predictedBottom) - Number(issue.measurements.safeBottom);
+          return Math.max(max, Number.isFinite(blocked) ? blocked + 8 : 0);
+        }, 0);
+      const overflowY = window.getComputedStyle(area).overflowY;
+      if (overflowY === "hidden" || overflowY === "clip" || typeof area.scrollTo !== "function") {
+        results.push({
+          strategy: "reserve-scroll-space",
+          outcome: "failed",
+          issuesBefore: 1,
+          issuesAfter: 1,
+          reason: "scroll-unavailable",
+        });
+      } else if (safeInset <= 0) {
+        results.push({
+          strategy: "reserve-scroll-space",
+          outcome: "failed",
+          issuesBefore: 1,
+          issuesAfter: 1,
+          reason: "no-safe-inset",
+        });
+      } else {
+        results.push(tryCorrection("reserve-scroll-space", [area], (element) => {
         const existing = px(window.getComputedStyle(element).paddingBottom);
-        write(element, "padding-bottom", `${existing + height}px`);
-      }, (issue) => issue.issueType === "bottom-control-obscures-action"));
+        write(element, "padding-bottom", `${existing + Math.max(safeInset, lastActionExtra)}px`);
+      }, (issue) => issue.issueType === "last-scroll-action-obscured" || issue.issueType === "bottom-control-obscures-action"));
+      }
     }
     lastResults = results;
     return [...lastResults];
@@ -236,6 +276,29 @@ export function createLayoutEnhancer(
       })
     : null;
   observer?.observe(root, { childList: true, subtree: true });
+  function scheduleResizeRefresh(): void {
+    if (destroyed || resizeFrame) return;
+    resizeFrame = window.requestAnimationFrame(() => {
+      resizeFrame = 0;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const rootWidth = root.clientWidth;
+      if (width === lastViewportWidth && height === lastViewportHeight && rootWidth === lastRootWidth) return;
+      lastViewportWidth = width;
+      lastViewportHeight = height;
+      restore();
+      refreshProfile();
+      if (getProfile().textSize !== "standard" || getProfile().buttonSize === "large" || getProfile().bottomControls) {
+        correctLayout();
+      }
+      lastRootWidth = root.clientWidth;
+    });
+  }
+  window.addEventListener("resize", scheduleResizeRefresh, { passive: true });
+  const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    if (root.clientWidth !== lastRootWidth) scheduleResizeRefresh();
+  });
+  resizeObserver?.observe(root);
   if (supported()) {
     for (const element of currentTargets()) captureBaseline(element);
   }
@@ -248,6 +311,9 @@ export function createLayoutEnhancer(
     destroy() {
       destroyed = true;
       observer?.disconnect();
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleResizeRefresh);
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
       restore();
     },
   };

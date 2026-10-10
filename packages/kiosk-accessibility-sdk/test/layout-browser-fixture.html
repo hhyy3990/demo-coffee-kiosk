@@ -8,13 +8,31 @@
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 12px; font-family: sans-serif; }
-    .sample { width: 320px; min-height: 250px; border: 1px solid #999; margin-bottom: 12px; }
+    .sample { width: min(100%, 990px); min-height: 250px; border: 1px solid #999; margin-bottom: 12px; }
     .menu-grid { display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); gap: 4px; }
     .toolbar { display: flex; gap: 4px; }
     #structure-b .toolbar { position: relative; height: 48px; }
     #structure-b button { position: absolute; top: 0; left: 0; }
     .copy { width: 130px; height: 20px; overflow: hidden; white-space: nowrap; font-size: 16px; }
     button { height: 28px; padding: 2px 4px; font-size: 14px; }
+    @media (min-width: 800px) {
+      .copy { font-size: 20px; }
+      button { height: 44px; font-size: 18px; }
+    }
+    #structure-c { position: relative; }
+    #structure-c [data-a11y-slot="scroll-content"] {
+      height: 100dvh;
+      overflow-y: auto;
+      padding-bottom: 0 !important;
+    }
+    #structure-c button { display: block; width: 100%; height: 48px; margin-bottom: 28px; }
+    #structure-c [data-a11y-slot="bottom-controls"] {
+      position: fixed;
+      bottom: 0;
+      height: 160px;
+      background: #eee;
+      z-index: 20;
+    }
   </style>
 </head>
 <body>
@@ -31,6 +49,13 @@
       <button id="b-back">이전</button>
       <button id="b-next">계속</button>
     </footer>
+  </section>
+  <section id="structure-c" class="sample kiosk">
+    <div data-a11y-slot="scroll-content">
+      <button>메뉴 1</button><button>메뉴 2</button><button>메뉴 3</button><button>메뉴 4</button>
+      <button>메뉴 5</button><button>메뉴 6</button><button>메뉴 7</button><button id="last-menu">마지막 메뉴</button>
+    </div>
+    <footer data-a11y-slot="bottom-controls">하단 조작부</footer>
   </section>
   <pre id="result">pending</pre>
   <script type="module">
@@ -95,7 +120,7 @@
       return { before, after, repeated, restored, beforeDestroy, destroyed, corrections, explicitCorrection };
     }
     const result = {
-      version: "0.3.0",
+      version: "0.3.1",
       structures: [
         verify(document.querySelector("#structure-a"), [...document.querySelectorAll("#structure-a button")], [
           document.querySelector("#structure-a .menu-grid"),
@@ -104,7 +129,7 @@
       ],
     };
     const [gridCase, overlapCase] = result.structures;
-    const passed = result.version === "0.3.0" &&
+    const passed = result.version === "0.3.1" &&
       result.structures.every((sample) =>
         sample.before.textFont === "16px" &&
         sample.after.textFont === "24px" &&
@@ -121,6 +146,87 @@
       overlapCase.corrections.some((item) => item.strategy === "stack-action-group" && item.outcome === "reverted");
     document.querySelector("#result").textContent = JSON.stringify(result);
     document.body.dataset.testStatus = passed ? "passed" : "failed";
+    const resizeRoot = document.querySelector("#structure-a");
+    const resizeText = resizeRoot.querySelector("[data-a11y-text]");
+    const resizeActions = [...resizeRoot.querySelectorAll("button")];
+    const resizeSdk = createAccessibilitySdk({
+      root: resizeRoot,
+      adapter: {
+        getSnapshot: () => ({ screenId: "resize" }),
+        getActions: () => resizeActions.map((element, index) => ({ id: `resize.${index}`, name: "메뉴", element, enabled: true })),
+        getTextTargets: () => [{ id: "resize.text", element: resizeText }],
+        getLayoutRegions: () => ({ bottomControls: [], scrollArea: null, reflowContainers: [resizeRoot], gridContainers: [], actionGroups: [] }),
+      },
+    });
+    resizeSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large" });
+    window.measureForResize = () => ({
+      width: window.innerWidth,
+      font: getComputedStyle(resizeText).fontSize,
+      button: resizeActions[0].getBoundingClientRect().height,
+    });
+    window.endResizeSession = () => {
+      resizeSdk.endSession();
+      return window.measureForResize();
+    };
+    window.reapplyResizeProfile = () => resizeSdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      textSize: "extraLarge",
+      buttonSize: "large",
+    });
+    document.querySelector("#structure-c").scrollIntoView({ block: "start" });
+    const scrollRoot = document.querySelector("#structure-c");
+    const scrollArea = scrollRoot.querySelector('[data-a11y-slot="scroll-content"]');
+    const footer = scrollRoot.querySelector('[data-a11y-slot="bottom-controls"]');
+    const lastMenu = document.querySelector("#last-menu");
+    for (let index = 8; index < 80; index++) {
+      const item = document.createElement("button");
+      item.textContent = `메뉴 ${index + 1}`;
+      scrollArea.insertBefore(item, lastMenu);
+    }
+    let clicked = 0;
+    lastMenu.addEventListener("click", () => clicked++);
+    scrollArea.scrollTop = scrollArea.scrollHeight;
+    const beforeLastRect = lastMenu.getBoundingClientRect();
+    const beforeFooterRect = footer.getBoundingClientRect();
+    const beforeOverlap = beforeLastRect.bottom > beforeFooterRect.top;
+    scrollArea.scrollTop = 0;
+    const scrollSdk = createAccessibilitySdk({
+      root: scrollRoot,
+      adapter: {
+        getSnapshot: () => ({ screenId: "scroll-test" }),
+        getActions: () => [...scrollRoot.querySelectorAll("button")].map((element, index) => ({ id: `menu.${index}`, name: "메뉴", element, enabled: true })),
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({ bottomControls: [footer], scrollArea, reflowContainers: [], gridContainers: [], actionGroups: [] }),
+      },
+    });
+    const scrollBefore = scrollSdk.inspectLayout();
+    scrollSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, buttonSize: "large", bottomControls: true });
+    scrollArea.scrollTop = scrollArea.scrollHeight;
+    const lastRect = lastMenu.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    const hit = document.elementFromPoint((lastRect.left + lastRect.right) / 2, (lastRect.top + lastRect.bottom) / 2);
+    const hitTargetsLastMenu = Boolean(hit && (hit === lastMenu || lastMenu.contains(hit)));
+    if (hitTargetsLastMenu) lastMenu.click();
+    window.scrollCorrectionResult = {
+      correction: scrollSdk.getLastLayoutCorrections().find((item) => item.strategy === "reserve-scroll-space"),
+      overlapBefore: scrollBefore.some((item) => item.issueType === "last-scroll-action-obscured"),
+      overlapAfter: scrollSdk.inspectLayout().some((item) => item.issueType === "last-scroll-action-obscured"),
+      beforeLastMenuBottom: beforeLastRect.bottom,
+      beforeFooterTop: beforeFooterRect.top,
+      beforeOverlap,
+      lastMenuBottom: lastRect.bottom,
+      footerTop: footerRect.top,
+      hitTargetsLastMenu,
+      clickCount: clicked,
+    };
+    window.scrollCorrectionResult.pass =
+      window.scrollCorrectionResult.correction?.outcome === "applied" &&
+      beforeOverlap &&
+      !window.scrollCorrectionResult.overlapAfter &&
+      lastRect.bottom <= footerRect.top + 1 &&
+      hitTargetsLastMenu &&
+      clicked === 1;
+    document.body.dataset.testStatus = passed && window.scrollCorrectionResult.pass ? "passed" : "failed";
   </script>
 </body>
 </html>

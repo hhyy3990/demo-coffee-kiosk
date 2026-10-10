@@ -1,5 +1,5 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
-export type AccessibilityIssueType = "text-clipped" | "horizontal-overflow" | "action-offscreen" | "bottom-control-obscures-action" | "small-touch-target" | "action-overlap";
+export type AccessibilityIssueType = "text-clipped" | "horizontal-overflow" | "action-offscreen" | "bottom-control-obscures-action" | "last-scroll-action-obscured" | "small-touch-target" | "action-overlap";
 export interface AccessibilityDiagnostic {
     screenId: string;
     semanticId: string;

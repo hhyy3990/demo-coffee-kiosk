@@ -87,6 +87,38 @@ export function inspectKioskLayout(root, adapter, options = {}) {
     const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
     const actions = adapter.getActions().filter((action) => root.contains(action.element) && isVisible(action.element));
     const bottomControls = (regions.bottomControls ?? []).filter((element) => root.contains(element) && isVisible(element));
+    const scrollArea = regions.scrollArea;
+    if (scrollArea && root.contains(scrollArea)) {
+        const scrollActions = actions.filter((action) => scrollArea.contains(action.element));
+        const lastAction = scrollActions.at(-1);
+        const maxScroll = Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+        if (lastAction && maxScroll > 1) {
+            const areaRect = scrollArea.getBoundingClientRect();
+            const predictedRect = lastAction.element.getBoundingClientRect();
+            const predictedBottom = predictedRect.bottom - Math.max(0, maxScroll - scrollArea.scrollTop);
+            const portBottom = areaRect.top + scrollArea.clientTop + scrollArea.clientHeight;
+            const overlayTop = bottomControls
+                .filter((control) => {
+                const rect = control.getBoundingClientRect();
+                const position = window.getComputedStyle(control).position;
+                return (position === "fixed" || position === "sticky") &&
+                    rect.top < portBottom && rect.bottom > areaRect.top;
+            })
+                .reduce((top, control) => Math.min(top, control.getBoundingClientRect().top), portBottom);
+            if (predictedBottom > overlayTop + 1) {
+                issues.push({
+                    screenId,
+                    semanticId: safeSemanticId(lastAction.id),
+                    issueType: "last-scroll-action-obscured",
+                    measurements: {
+                        predictedBottom: Math.round(predictedBottom * 100) / 100,
+                        safeBottom: Math.round(overlayTop * 100) / 100,
+                        maxScroll,
+                    },
+                });
+            }
+        }
+    }
     for (const action of actions) {
         const rect = action.element.getBoundingClientRect();
         if (rect.width < minimumTouchTarget || rect.height < minimumTouchTarget) {
