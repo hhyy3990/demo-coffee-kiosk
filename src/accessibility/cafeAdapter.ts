@@ -176,6 +176,20 @@ export function createCafeAccessibilityAdapter(
           ? Array.from(root.querySelectorAll<HTMLElement>(".product-card"))
           : [],
         menuMessage: "아래에도 상품이 있습니다. 화면을 위로 밀어보세요.",
+        horizontalLists: getState().stage === "menu"
+          ? [{
+              container: root.querySelector<HTMLElement>(".category-nav")!,
+              items: Array.from(root.querySelectorAll<HTMLElement>(".category-nav .category-button")),
+              message: "오른쪽에도 메뉴 종류가 있습니다. 왼쪽으로 밀어보세요.",
+              direction: "ltr" as const,
+            }]
+          : [],
+        primaryActions: getState().stage === "payment"
+          ? [{
+              element: root.querySelector<HTMLElement>("#payment-pay")!,
+              message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요.",
+            }]
+          : [],
         reflowContainers: [root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')].filter(
           (element): element is HTMLElement => Boolean(element),
         ),

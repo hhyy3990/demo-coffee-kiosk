@@ -36,6 +36,7 @@ export {
   analyzeAdditionalMenuOverflow,
   type AdditionalMenuOverflowState,
 } from "./menu-overflow.ts";
+export { DEFAULT_HORIZONTAL_LIST_MESSAGE, DEFAULT_PRIMARY_ACTION_MESSAGE } from "./scroll-guidance.ts";
 export {
   createIdleTimer,
   smartGuideDelayMs,

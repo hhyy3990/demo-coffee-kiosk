@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.3`
+- SDK API: `0.3.4`
 - 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -24,19 +24,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.3.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.4.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.3.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.4.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.3.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.3.4.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -70,6 +70,14 @@ getLayoutRegions: () => ({
   menuMessage: "아래에도 증명서 메뉴가 있습니다. 화면을 위로 밀어보세요.",
 }),
 ```
+
+## 스크롤 안내 선택과 우선순위
+
+`horizontalLists`에는 실제 `overflow-x` 스크롤 컨테이너와 DOM 순서대로 된 항목을 등록합니다. SDK는 스크롤이 가능하고 현재 가려진 항목이 있을 때만 오른쪽/왼쪽 안내를 냅니다. `primaryActions`에는 결제·확인 등 현재 화면의 중요한 버튼만 선택 등록하며, 버튼이 화면 아래에 있고 실제 세로 스크롤이 가능할 때만 안내합니다.
+
+동시에 여러 조건이 참이면 현재 단계의 `primaryActions`를 먼저, 다음으로 가로 목록, 마지막으로 세로 메뉴를 표시합니다. 스크롤이나 크기 변경으로 조건이 달라지면 하나의 안내만 갱신합니다. 하단 조작부와 보이는 버튼·메뉴 카드·스마트 길잡이를 피해 화면 아래 안전 공간을 찾고, 공간이 없으면 안내를 숨기며 root의 `data-a11y-scroll-guidance="no-safe-space"`로 진단합니다. 안내는 `pointer-events:none`이며 자동 음성을 재생하지 않습니다.
+
+작은 설명은 `getTextTargets()`에, 선택 스위치 등 조작 요소는 기존 `getActions()`에 의미 있는 실제 요소를 등록합니다. SDK는 선택 상태나 label을 변경하지 않습니다. 요소 자체의 hit area 확장은 호스트가 제공해야 합니다.
 
 ## 최소 어댑터와 초기화
 

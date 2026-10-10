@@ -115,7 +115,9 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
                 write(element, "padding-top", `${Math.max(8, size.paddingTop * controlScale)}px`);
                 write(element, "padding-bottom", `${Math.max(8, size.paddingBottom * controlScale)}px`);
                 write(element, "white-space", "normal");
-                write(element, "overflow-wrap", "anywhere");
+                // `anywhere` inherits into rich button contents and can split names
+                // character-by-character. Keep natural word breaks as the default.
+                write(element, "overflow-wrap", "break-word");
             }
         }
     }

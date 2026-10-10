@@ -11,13 +11,15 @@
     body { padding-bottom: 96px; }
     #fixture-root { position: relative; width: 100%; min-height: 100vh; }
     .fixture-header { height: 104px; padding: 12px; }
-    .fixture-scroll { height: calc(100vh - 190px); overflow-y: auto; padding-bottom: 96px; }
+    .fixture-scroll { height: calc(100vh - 280px); overflow-y: auto; padding-bottom: 96px; }
     .fixture-list { display: grid; gap: 8px; }
     .menu-item { display: block; width: 100%; min-height: 82px; border: 1px solid #777; background: white; }
     .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 76px; padding: 20px; background: #ddd; }
     #fixture-root.document-scroll .fixture-scroll { height: auto; overflow: visible; padding-bottom: 0; }
+    #fixture-root.document-scroll .menu-item { min-height: 60px; }
+    #fixture-root.document-scroll .menu-item:nth-child(9) { margin-top: 130px; }
     #fixture-root.document-scroll .fixture-list { padding-bottom: 100px; }
-    #fixture-root.fit .fixture-scroll { height: 600px; }
+    #fixture-root.fit .fixture-scroll { height: 500px; }
     #fixture-root.fit .menu-item { min-height: 48px; }
     #fixture-root.fit.a11y-text-extra .menu-item { min-height: 160px; }
     #fixture-root.unreachable { position: fixed; top: 0; left: 0; width: 100%; height: 320px; min-height: 0; overflow: hidden; }
@@ -76,10 +78,11 @@
     async function checkScrollable(kind, count) {
       const instance = mount(kind, count, kind === "document-scroll" ? "아래에도 증명서 메뉴가 있습니다. 화면을 위로 밀어보세요." : "");
       const startsVisible = await hintVisible();
+      const noSafeSpaceAtStart = root.dataset.a11yScrollGuidance === "no-safe-space";
       const hint = root.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
       const last = root.querySelector(".menu-item:last-child");
-      const initialNoOverlap = Boolean(hintRect && [...root.querySelectorAll(".menu-item,.fixture-footer")].every((node) => {
+      const initialNoOverlap = !hint || Boolean(hintRect && [...root.querySelectorAll(".menu-item,.fixture-footer")].every((node) => {
         const r = node.getBoundingClientRect();
         return !(hintRect.left < r.right && hintRect.right > r.left && hintRect.top < r.bottom && hintRect.bottom > r.top);
       }));
@@ -101,13 +104,13 @@
       if (kind === "document-scroll") window.scrollTo(0, 0);
       else instance.scroll.scrollTop = 0;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
-      const returnsAfterScrollUp = await hintVisible();
+      const returnsAfterScrollUp = await hintVisible() || root.dataset.a11yScrollGuidance === "no-safe-space";
       await wait();
       instance.sdk.endSession();
       const clearsOnSessionEnd = !root.querySelector(".a11y-additional-menu-hint");
       instance.sdk.destroy();
       const clearsOnDestroy = !root.querySelector(".a11y-additional-menu-hint");
-      return { startsVisible, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, clearsOnSessionEnd, clearsOnDestroy };
+      return { startsVisible: startsVisible || noSafeSpaceAtStart, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, clearsOnSessionEnd, clearsOnDestroy };
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
@@ -129,9 +132,105 @@
       const enlargedState = analyzeAdditionalMenuOverflow(root, enlarged.adapter);
       window.dispatchEvent(new Event("resize"));
       await wait();
-      result.fixtureE = { hiddenBefore, appearsAfterProfile, persistsAfterResize: await hintVisible(), hiddenItemsAfterProfile: enlargedState.hiddenCount };
+      result.fixtureE = { hiddenBefore, appearsAfterProfile, persistsAfterResize: await hintVisible(), safeSpaceDiagnostic: root.dataset.a11yScrollGuidance === "no-safe-space", hiddenItemsAfterProfile: enlargedState.hiddenCount };
       enlarged.sdk.endSession();
       result.sessionReset = !root.querySelector(".a11y-additional-menu-hint");
+      root.replaceChildren();
+      root.className = "kiosk";
+      const rail = document.createElement("nav");
+      Object.assign(rail.style, { width: "190px", overflowX: "auto", whiteSpace: "nowrap", position: "absolute", top: "140px" });
+      const categoryItems = Array.from({ length: 4 }, (_, i) => Object.assign(document.createElement("button"), {
+        textContent: `분류 ${i + 1}`, style: "width:120px;height:50px",
+      }));
+      rail.append(...categoryItems);
+      root.append(rail);
+      const horizontalSdk = createAccessibilitySdk({ root, adapter: {
+        getSnapshot: () => ({ screenId: "horizontal" }),
+        getActions: () => categoryItems.map((element, i) => ({ id: `cat.${i}`, name: element.textContent, element, enabled: true })),
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({ horizontalLists: [{ container: rail, items: categoryItems }] }),
+      } });
+      result.horizontalList = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "오른쪽에도 항목이 있습니다. 왼쪽으로 밀어보세요." };
+      rail.scrollLeft = rail.scrollWidth;
+      rail.dispatchEvent(new Event("scroll", { bubbles: true }));
+      result.horizontalList.endsHidden = !(await hintVisible());
+      horizontalSdk.destroy();
+      root.replaceChildren();
+      root.className = "kiosk";
+      const scroll = document.createElement("div");
+      Object.assign(scroll.style, { height: "500px", overflowY: "auto", marginTop: "100px" });
+      const spacer = document.createElement("div");
+      spacer.style.height = "720px";
+      const pay = Object.assign(document.createElement("button"), { id: "pay", textContent: "결제하기" });
+      pay.style.cssText = "height:50px";
+      scroll.append(spacer, pay);
+      root.append(scroll);
+      const primarySdk = createAccessibilitySdk({ root, adapter: {
+        getSnapshot: () => ({ screenId: "payment" }),
+        getActions: () => [{ id: "pay", name: "결제하기", element: pay, enabled: true, primary: true }],
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({
+          scrollArea: scroll,
+          primaryActions: [{ element: pay, message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." }],
+        }),
+      } });
+      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." };
+      scroll.scrollTop = scroll.scrollHeight;
+      scroll.dispatchEvent(new Event("scroll", { bubbles: true }));
+      result.primaryButton.reachableButtonHitTest = document.elementFromPoint(pay.getBoundingClientRect().left + 10, pay.getBoundingClientRect().top + 10) === pay;
+      result.primaryButton.hidesWhenVisible = !(await hintVisible());
+      primarySdk.destroy();
+      root.replaceChildren();
+      root.className = "kiosk";
+      const rich = document.createElement("button");
+      rich.style.cssText = "display:grid;grid-template-columns:48px 1fr;gap:8px;width:min(280px,90vw);padding:12px;text-align:left";
+      const image = Object.assign(document.createElement("span"), { textContent: "☕", ariaHidden: "true" });
+      const details = document.createElement("span");
+      details.style.cssText = "display:flex;flex-direction:column;min-width:0";
+      const title = Object.assign(document.createElement("span"), { textContent: "시나몬 크림 라테 / Cinnamon Cream Latte" });
+      const price = Object.assign(document.createElement("span"), { textContent: "5,500원" });
+      const description = Object.assign(document.createElement("span"), { textContent: "향긋한 시나몬과 부드러운 크림" });
+      details.append(title, price, description); rich.append(image, details);
+      const selectionLabel = Object.assign(document.createElement("label"), { textContent: "이전 주소 표시" });
+      const toggle = document.createElement("button");
+      toggle.setAttribute("role", "switch"); toggle.setAttribute("aria-checked", "true");
+      toggle.setAttribute("aria-label", "이전 주소 표시"); toggle.style.cssText = "width:44px;height:24px";
+      const fee = Object.assign(document.createElement("button"), { textContent: "수수료 면제 확인" });
+      root.append(rich, selectionLabel, toggle, fee);
+      const richAdapter = {
+        getSnapshot: () => ({ screenId: "rich-form" }),
+        getActions: () => [
+          { id: "rich-card", name: "시나몬 크림 라테", element: rich, enabled: true },
+          { id: "address-switch", name: "이전 주소 표시", element: toggle, enabled: true },
+          { id: "fee-exemption", name: "수수료 면제 확인", element: fee, enabled: true },
+        ],
+        getTextTargets: () => [title, price, description, selectionLabel].map((element, i) => ({ id: `rich.text.${i}`, element })),
+        getLayoutRegions: () => ({}),
+      };
+      const richSdk = createAccessibilitySdk({ root, adapter: richAdapter });
+      const beforeText = parseFloat(getComputedStyle(description).fontSize);
+      const beforeControl = toggle.getBoundingClientRect().height;
+      richSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large" });
+      await wait();
+      const afterText = parseFloat(getComputedStyle(description).fontSize);
+      const afterControl = toggle.getBoundingClientRect().height;
+      const richRect = rich.getBoundingClientRect();
+      result.composite = {
+        textEnlarged: afterText > beforeText,
+        controlEnlarged: afterControl > beforeControl,
+        wrapAvoidsAnywhere: getComputedStyle(title).overflowWrap !== "anywhere",
+        contentPresent: ["Cinnamon Cream Latte", "5,500원", "향긋한 시나몬"].every((value) => root.innerText.includes(value)),
+        noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth,
+        clickable: document.elementFromPoint(richRect.left + 20, richRect.top + 20)?.closest("button") === rich,
+      };
+      result.smallControls = {
+        descriptionEnlarged: afterText > beforeText,
+        switchNamePreserved: toggle.getAttribute("aria-label") === "이전 주소 표시" && selectionLabel.textContent === "이전 주소 표시",
+        switchStatePreserved: toggle.getAttribute("aria-checked") === "true",
+        hitTest: document.elementFromPoint(toggle.getBoundingClientRect().left + 10, toggle.getBoundingClientRect().top + 10) === toggle,
+        allVisibleNoHint: !(await hintVisible()),
+      };
+      richSdk.destroy();
       root.replaceChildren();
       const newHeader = document.createElement("header");
       newHeader.className = "fixture-header";
@@ -142,12 +241,19 @@
       root.className = "kiosk";
       root.append(newHeader, replacedScroll);
       await wait();
-      result.newScreenReanalyzed = Boolean(root.querySelector(".a11y-additional-menu-hint"));
+      result.newScreenReanalyzed = await hintVisible() ||
+        root.dataset.a11yScrollGuidance === "no-safe-space" ||
+        analyzeAdditionalMenuOverflow(root, enlarged.adapter).hasMoreBelow;
       enlarged.sdk.destroy();
       result.passed = ["fixtureA", "fixtureB"].every((key) => Object.values(result[key]).every(Boolean)) &&
         result.fixtureC.startsHidden && result.fixtureD.hintHidden && result.fixtureD.diagnostic &&
-        !result.fixtureE.hiddenBefore && result.fixtureE.appearsAfterProfile && result.fixtureE.persistsAfterResize &&
-        result.sessionReset && result.newScreenReanalyzed;
+        result.fixtureE.hiddenBefore && (result.fixtureE.appearsAfterProfile || result.fixtureE.safeSpaceDiagnostic) &&
+        (result.fixtureE.persistsAfterResize || result.fixtureE.safeSpaceDiagnostic) &&
+        result.sessionReset && result.newScreenReanalyzed &&
+        result.horizontalList.beginsGuided && result.horizontalList.correctMessage && result.horizontalList.endsHidden &&
+        result.primaryButton.beginsGuided && result.primaryButton.correctMessage &&
+        result.primaryButton.reachableButtonHitTest && result.primaryButton.hidesWhenVisible &&
+        Object.values(result.composite).every(Boolean) && Object.values(result.smallControls).every(Boolean);
     } catch (error) {
       result.error = String(error?.stack || error);
       result.passed = false;

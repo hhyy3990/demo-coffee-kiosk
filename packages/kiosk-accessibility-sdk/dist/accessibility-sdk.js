@@ -1,6 +1,6 @@
 import { inspectKioskLayout } from "./diagnostics.js";
 import { createLayoutEnhancer, } from "./layout-enhancements.js";
-import { createAdditionalMenuHint } from "./menu-overflow.js";
+import { createScrollGuidance } from "./scroll-guidance.js";
 import { createIdleTimer, smartGuideDelayMs } from "./guide.js";
 import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, } from "./profile.js";
 import { cancelSpeech, speakText } from "./speech.js";
@@ -94,7 +94,7 @@ export function createAccessibilitySdk(options) {
     const sessionCleanups = new Set();
     let timer = createIdleTimer(showGuide);
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
-    const menuHint = createAdditionalMenuHint(root, adapter);
+    const menuHint = createScrollGuidance(root, adapter);
     function removeGuide() {
         if (guideOverlay) {
             guideOverlay.remove();

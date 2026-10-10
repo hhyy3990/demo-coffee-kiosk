@@ -4,7 +4,7 @@ import {
   createLayoutEnhancer,
   type LayoutCorrectionResult,
 } from "./layout-enhancements.ts";
-import { createAdditionalMenuHint } from "./menu-overflow.ts";
+import { createScrollGuidance } from "./scroll-guidance.ts";
 import { createIdleTimer, smartGuideDelayMs, type GuideState } from "./guide.ts";
 import {
   ACCESSIBILITY_SDK_VERSION,
@@ -152,7 +152,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const sessionCleanups = new Set<SessionCleanup>();
   let timer = createIdleTimer(showGuide);
   const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
-  const menuHint = createAdditionalMenuHint(root, adapter);
+  const menuHint = createScrollGuidance(root, adapter);
 
   function removeGuide(): void {
     if (guideOverlay) {

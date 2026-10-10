@@ -535,7 +535,7 @@ export default function App() {
                           <button type="button" id={`menu-product-${index}`} data-a11y-action-id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
                             <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
                             <div className="product-meta">
-                              <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean">{product.koreanName}</div></div><span className="price">{won(product.price)}</span></div>
+                              <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean" data-a11y-text data-a11y-id={`cafe.product.${product.id}.name`}>{product.koreanName}</div></div><span className="price" data-a11y-text data-a11y-id={`cafe.product.${product.id}.price`}>{won(product.price)}</span></div>
                               <div className="product-korean optional-detail" data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>
                               <div className="product-bottom"><span className="product-tag">{product.optionsSupported ? "옵션 선택 가능" : "바로 담기"}</span><span className="add-round" aria-hidden="true"><Plus size={20} /></span></div>
                             </div>
