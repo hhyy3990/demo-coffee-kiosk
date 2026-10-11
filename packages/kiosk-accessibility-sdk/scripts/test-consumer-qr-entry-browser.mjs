@@ -125,6 +125,26 @@ try {
             throw new Error(`QR viewport replacement/session reset failed: ${JSON.stringify(replacement)}`);
           }
         }
+        if (percent === null && structure === "inner") {
+          const transitions = await evaluate(
+            `window.qrConsumerTest.verifyScreenTransitions(${width === 320})`,
+          );
+          if (!transitions.pass) {
+            throw new Error(`Consumer screen-change reset/preservation failed: ${JSON.stringify({ width, transitions })}`);
+          }
+        }
+        if (percent !== null && structure === "inner") {
+          const transitions = await evaluate("window.qrConsumerTest.verifyScreenTransitions(false)");
+          if (!transitions.pass) {
+            throw new Error(`Bottom viewport screen-change failed: ${JSON.stringify({ width, height, percent, transitions })}`);
+          }
+        }
+        if (width === 390 && structure === "fixed-controls" && percent === 70) {
+          const transitions = await evaluate("window.qrConsumerTest.verifyScreenTransitions(false)");
+          if (!transitions.pass) {
+            throw new Error(`QR viewport screen-change transition failed: ${JSON.stringify(transitions)}`);
+          }
+        }
 
         const ownerPoint = await evaluate(`(() => {
           const owner = document.body.classList.contains("document-host")
@@ -225,6 +245,12 @@ try {
           if (!overlays.dockless.visible || overlays.dockless.noSafeSpace ||
             !overlays.dockless.qrDockAbsent || !overlays.dockless.controlsStillReachable) {
             throw new Error(`Consumer without QR dock failed: ${JSON.stringify(overlays.dockless)}`);
+          }
+        }
+        if (width === 320 && structure === "inner" && percent === null) {
+          const sessionReset = await evaluate("window.qrConsumerTest.verifySessionScreenReset()");
+          if (!sessionReset.pass) {
+            throw new Error(`Screen notification after endSession failed: ${JSON.stringify(sessionReset)}`);
           }
         }
 

@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.3`
+- SDK API: `0.5.4`
 - 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -176,6 +176,20 @@ const adapter: AccessibilityAdapter = {
 
 const sdk = createAccessibilitySdk({ root, adapter });
 ```
+
+화면이 실제 업무 단계로 바뀐 뒤 호스트는 프레임워크와 관계없이 새 화면 ID를 한 번 전달합니다. `notifyScreenChange()`는 ID가 바뀐 경우에만 이전·현재 스크롤 소유자를 다시 측정하고 초기화합니다. 같은 ID의 재렌더링, 입력 변경, 모달 및 길잡이는 통지하지 않습니다.
+
+```ts
+// DOM을 새 화면으로 갱신한 직후 호출합니다.
+sdk.notifyScreenChange(`service.${hostStep}`);
+
+// React에서는 화면 ID만 dependency로 둡니다.
+useLayoutEffect(() => {
+  sdk.notifyScreenChange(screenId);
+}, [sdk, screenId]);
+```
+
+SDK는 다음 animation frame에서 하단 viewport/QR 도크를 갱신한 다음 문서와 등록된 스크롤 영역 중 실제 소유자를 판정합니다. 안정화는 짧게 제한하고, 도중에 사용자가 입력을 시작하면 늦은 초기화를 취소합니다. `endSession()`은 진행 중인 초기화와 기억한 화면 ID를 지우므로, 호스트는 복귀한 첫 화면을 다시 통지합니다.
 
 마크업에서 같은 의미 ID와 영역을 표시합니다.
 

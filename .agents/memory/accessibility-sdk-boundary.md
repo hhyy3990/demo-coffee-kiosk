@@ -38,3 +38,9 @@ Fixed QR docks and controls can live outside the SDK's registered scroll root. M
 **Why:** A scroll-root clip can make a visible fixed dock disappear from the obstacle set, leaving the hint positioned over it even when the algorithm reports success.
 
 **How to apply:** Treat viewport-fixed obstacles separately from sticky descendants, then verify their real DOM rectangles and menu reachability in Chromium at narrow, short, and kiosk-sized viewports.
+
+Business-screen scroll resets are host-signaled through a stable, distinct screen ID. The SDK should resolve only the registered scroll region and document scroller, reset the previous/current owners after a bounded layout settle, and leave same-screen changes, dialogs, guidance, and resize alone.
+
+**Why:** Frameworks and host workflows know when a real task screen changed; DOM heuristics cannot reliably distinguish that from ordinary content updates, and broad descendant resets disrupt unrelated scrolling.
+
+**How to apply:** Notify once after a committed screen transition. Cancel a pending reset on user input, cancel remembered work on `endSession()`, and test both document and nested scroll ownership with SDK docks and fixed controls.

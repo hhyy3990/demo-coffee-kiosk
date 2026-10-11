@@ -3,6 +3,7 @@ export { createAccessibilitySdk, } from "./accessibility-sdk.js";
 export {} from "./bottom-viewport.js";
 export {} from "./adapter.js";
 export { inspectKioskLayout, } from "./diagnostics.js";
+export {} from "./screen-change.js";
 export { createBottomViewportPoc, } from "./bottom-viewport-poc.js";
 export { createQrEntryDock, } from "./qr-entry-dock.js";
 export { DEFAULT_ADDITIONAL_MENU_MESSAGE, analyzeAdditionalMenuOverflow, } from "./menu-overflow.js";

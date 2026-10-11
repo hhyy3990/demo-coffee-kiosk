@@ -5,6 +5,7 @@ import { createScrollGuidance } from "./scroll-guidance.js";
 import { createIdleTimer, smartGuideDelayMs } from "./guide.js";
 import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, } from "./profile.js";
 import { cancelSpeech, speakText } from "./speech.js";
+import { createScreenChangeController } from "./screen-change.js";
 const MANAGED_CLASSES = [
     "a11y-text-large",
     "a11y-text-extra",
@@ -158,6 +159,7 @@ export function createAccessibilitySdk(options) {
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
     const menuHint = createScrollGuidance(root, adapter);
     const bottomViewport = createBottomViewportController(root, adapter);
+    const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
     function refreshNextItemButtons() {
         if (sessionEnded || destroyed)
             return;
@@ -425,8 +427,12 @@ export function createAccessibilitySdk(options) {
         }
         return applied;
     }
+    function notifyScreenChange(screenId) {
+        return screenChange.notify(screenId);
+    }
     function endSession() {
         sessionGeneration += 1;
+        screenChange.reset();
         timer.cancel();
         for (const cleanup of [...sessionCleanups]) {
             try {
@@ -501,6 +507,7 @@ export function createAccessibilitySdk(options) {
             return { ...currentProfile };
         },
         applyProfile,
+        notifyScreenChange,
         setViewportMode,
         setGuideState,
         resetIdleTimer,
@@ -516,6 +523,7 @@ export function createAccessibilitySdk(options) {
                 return;
             endSession();
             destroyed = true;
+            screenChange.destroy();
             nextItemObserver?.disconnect();
             for (const button of emphasizedNextButtons)
                 button.classList.remove("a11y-next-item-emphasis");

@@ -36,6 +36,10 @@ export {
 } from "./diagnostics.ts";
 export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
 export {
+  type KioskScreenId,
+  type ScreenChangeController,
+} from "./screen-change.ts";
+export {
   createBottomViewportPoc,
   type BottomViewportPocOptions,
   type BottomViewportPocPercent,

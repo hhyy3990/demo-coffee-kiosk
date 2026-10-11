@@ -14,6 +14,8 @@ const percent = ["60", "70", "80"].includes(percentValue) ? Number(percentValue)
 const documentHost = structure === "document";
 const fixedControlsHost = structure === "fixed-controls";
 const documentModeUsesInner = documentHost && percent !== null;
+let screenId = "consumer.menu";
+let useDocumentScroll = documentHost && !documentModeUsesInner;
 document.body.classList.toggle("document-host", documentHost);
 document.body.classList.toggle("fixed-controls-host", fixedControlsHost);
 document.body.dataset.qrScrollOwner = documentModeUsesInner ? "inner" : "document";
@@ -35,14 +37,14 @@ for (let index = 1; index <= 18; index += 1) {
 let qrClicks = 0;
 let lastMenuClicks = 0;
 const adapter = {
-  getSnapshot: () => ({ screenId: "consumer.menu" }),
+  getSnapshot: () => ({ screenId }),
   getActions: () => [...document.querySelectorAll(".menu-item")].map((element, index) => ({
     id: `menu.${index}`, name: element.textContent, element, enabled: true,
   })),
   getTextTargets: () => [],
   getLayoutRegions: () => ({
     bottomControls: fixedControlsHost ? [controls] : [],
-    scrollArea: documentHost && !documentModeUsesInner ? null : content,
+    scrollArea: useDocumentScroll ? null : content,
     guidanceAvoidAreas: [...document.querySelectorAll("[data-a11y-qr-entry-dock]")],
     viewportOverlays: [...document.querySelectorAll(".fixture-modal")],
     menuItems: [...document.querySelectorAll(".menu-item")],
@@ -257,6 +259,130 @@ window.qrConsumerTest = {
         modes[4].mode === null &&
         modes[5].mode?.heightPercent === 60 &&
         modes[0].viewport.height === modes[5].viewport.height,
+    };
+  },
+  async verifyScreenTransitions(switchScrollOwner = false) {
+    if (!sdk) return { pass: false };
+    const settle = async (count = 12) => {
+      for (let index = 0; index < count; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+    };
+    const activeOwner = () => {
+      if (useDocumentScroll) return document.scrollingElement;
+      return content;
+    };
+    const topVisible = () => {
+      const heading = content.querySelector("h1").getBoundingClientRect();
+      const port = useDocumentScroll
+        ? { top: 0, bottom: innerHeight }
+        : content.getBoundingClientRect();
+      return heading.top >= port.top - 1 && heading.top < port.bottom;
+    };
+    screenId = "consumer.start";
+    const first = sdk.notifyScreenChange(screenId);
+    await settle();
+    let owner = activeOwner();
+    owner.scrollTop = 110;
+    await settle(2);
+    screenId = "consumer.task";
+    content.querySelector("h1").textContent = "새 업무 화면 제목";
+    dock.setActive(false);
+    const second = sdk.notifyScreenChange(screenId);
+    await settle();
+    owner = activeOwner();
+    const afterTransition = {
+      oldScrollTop: content.scrollTop,
+      documentScrollTop: document.scrollingElement?.scrollTop ?? 0,
+      activeScrollTop: owner.scrollTop,
+      headingTop: content.querySelector("h1").getBoundingClientRect().top,
+      headingVisible: topVisible(),
+      dockRemoved: !document.querySelector("[data-a11y-qr-entry-dock]"),
+    };
+    owner.scrollTop = 72;
+    const repeated = sdk.notifyScreenChange(screenId);
+    await settle(3);
+    const sameScreenScrollTop = owner.scrollTop;
+    const modal = document.createElement("aside");
+    modal.className = "fixture-modal";
+    root.append(modal);
+    await settle(2);
+    const modalScrollTop = owner.scrollTop;
+    modal.remove();
+    await settle(2);
+    const closedModalScrollTop = owner.scrollTop;
+    screenId = "consumer.user-scroll";
+    const interrupted = sdk.notifyScreenChange(screenId);
+    owner.scrollTop = 46;
+    window.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+    await settle(3);
+    const userScrollPreserved = owner.scrollTop === 46;
+
+    let ownerSwitch = null;
+    if (switchScrollOwner && percent === null) {
+      useDocumentScroll = true;
+      document.body.classList.add("force-document-scroll");
+      screenId = "consumer.long-document";
+      content.querySelector("h1").textContent = "문서 스크롤 화면 제목";
+      await settle(2);
+      document.scrollingElement.scrollTop = 95;
+      const documentChanged = sdk.notifyScreenChange(screenId);
+      await settle();
+      const documentTop = document.scrollingElement.scrollTop;
+
+      useDocumentScroll = false;
+      document.body.classList.remove("force-document-scroll");
+      screenId = "consumer.inner-again";
+      content.querySelector("h1").textContent = "내부 스크롤 화면 제목";
+      await settle(2);
+      content.scrollTop = 88;
+      const innerChanged = sdk.notifyScreenChange(screenId);
+      await settle();
+      ownerSwitch = {
+        documentChanged,
+        documentTop,
+        innerChanged,
+        innerTop: content.scrollTop,
+        titleVisible: topVisible(),
+      };
+    }
+
+    screenId = "consumer.start";
+    content.querySelector("h1").textContent = "독립 키오스크 메뉴";
+    dock.setActive(true);
+    const returned = sdk.notifyScreenChange(screenId);
+    await settle();
+    const homeTitleVisible = topVisible();
+    return {
+      first, second, repeated, afterTransition, sameScreenScrollTop,
+      modalScrollTop, closedModalScrollTop, interrupted, userScrollPreserved,
+      ownerSwitch, returned, homeTitleVisible,
+      pass: first && second && !repeated &&
+        afterTransition.activeScrollTop === 0 && afterTransition.headingVisible &&
+        afterTransition.dockRemoved && sameScreenScrollTop === 72 &&
+        modalScrollTop === 72 && closedModalScrollTop === 72 &&
+        interrupted && userScrollPreserved &&
+        (!switchScrollOwner || !ownerSwitch || (
+          ownerSwitch.documentChanged && ownerSwitch.documentTop === 0 &&
+          ownerSwitch.innerChanged && ownerSwitch.innerTop === 0 && ownerSwitch.titleVisible
+        )) && returned && homeTitleVisible,
+    };
+  },
+  async verifySessionScreenReset() {
+    if (!sdk) return { pass: false };
+    sdk.endSession();
+    screenId = "consumer.start";
+    content.scrollTop = 54;
+    const notified = sdk.notifyScreenChange(screenId);
+    for (let index = 0; index < 12; index += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    return {
+      notified,
+      scrollTop: content.scrollTop,
+      defaultProfileRestored: sdk.profile.textSize === DEFAULT_ACCESSIBILITY_PROFILE.textSize,
+      pass: notified && content.scrollTop === 0 &&
+        sdk.profile.textSize === DEFAULT_ACCESSIBILITY_PROFILE.textSize,
     };
   },
   clickQr() { document.querySelector(".a11y-qr-entry-dock-button").click(); },

@@ -41,6 +41,7 @@ qrDock.destroy();
 const qrClient = createQrProfileClient();
 
 sdk.applyProfile(profile);
+const screenChanged: boolean = sdk.notifyScreenChange("independent.confirm");
 sdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
 sdk.setViewportMode(null);
 sdk.setGuideState({
@@ -54,6 +55,7 @@ sdk.correctLayout();
 sdk.getLastLayoutCorrections();
 const isCurrentSession = sdk.createSessionGuard();
 if (isCurrentSession()) sdk.endSession();
+void screenChanged;
 const unregisterCleanup = sdk.registerSessionCleanup(() => qrClient.cancel());
 unregisterCleanup();
 sdk.destroy();

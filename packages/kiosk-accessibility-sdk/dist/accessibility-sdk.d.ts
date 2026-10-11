@@ -18,6 +18,8 @@ export interface AccessibilitySdk {
     readonly version: string;
     readonly profile: AccessibilityProfile;
     applyProfile(input: unknown): AccessibilityProfile;
+    /** Notify only when the host commits a different business screen. */
+    notifyScreenChange(screenId: string): boolean;
     setViewportMode(config: BottomViewportConfig | null): boolean;
     setGuideState(state: GuideState): void;
     resetIdleTimer(): void;

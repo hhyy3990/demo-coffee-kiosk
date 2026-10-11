@@ -18,6 +18,7 @@ import {
   type AccessibilityProfile,
 } from "./profile.ts";
 import { cancelSpeech, speakText } from "./speech.ts";
+import { createScreenChangeController } from "./screen-change.ts";
 
 export interface AccessibilitySdkOptions {
   root: HTMLElement;
@@ -35,6 +36,8 @@ export interface AccessibilitySdk {
   readonly version: string;
   readonly profile: AccessibilityProfile;
   applyProfile(input: unknown): AccessibilityProfile;
+  /** Notify only when the host commits a different business screen. */
+  notifyScreenChange(screenId: string): boolean;
   setViewportMode(config: BottomViewportConfig | null): boolean;
   setGuideState(state: GuideState): void;
   resetIdleTimer(): void;
@@ -232,6 +235,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
   const menuHint = createScrollGuidance(root, adapter);
   const bottomViewport = createBottomViewportController(root, adapter);
+  const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
 
   function refreshNextItemButtons(): void {
     if (sessionEnded || destroyed) return;
@@ -507,8 +511,13 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     return applied;
   }
 
+  function notifyScreenChange(screenId: string): boolean {
+    return screenChange.notify(screenId);
+  }
+
   function endSession(): void {
     sessionGeneration += 1;
+    screenChange.reset();
     timer.cancel();
     for (const cleanup of [...sessionCleanups]) {
       try {
@@ -581,6 +590,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       return { ...currentProfile };
     },
     applyProfile,
+    notifyScreenChange,
     setViewportMode,
     setGuideState,
     resetIdleTimer,
@@ -595,6 +605,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       if (destroyed) return;
       endSession();
       destroyed = true;
+      screenChange.destroy();
       nextItemObserver?.disconnect();
       for (const button of emphasizedNextButtons) button.classList.remove("a11y-next-item-emphasis");
       emphasizedNextButtons.clear();
