@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import {
   createAccessibilitySdk,
+  createBottomViewportPoc,
   DEFAULT_ACCESSIBILITY_PROFILE,
   type AccessibilityProfile,
   type AccessibilitySdk,
@@ -233,6 +234,35 @@ export default function App() {
   }, [preferences]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const params = new URLSearchParams(window.location.search);
+    const rawPercent = Number(params.get("bottom-poc"));
+    if (rawPercent !== 60 && rawPercent !== 70 && rawPercent !== 80) return;
+    const root = kioskRootRef.current;
+    if (!root) return;
+
+    const experiment = createBottomViewportPoc({
+      root,
+      adapter: cafeAdapter,
+      percent: rawPercent,
+    });
+    const profile = params.get("poc-profile");
+    if (profile && profile !== "standard") {
+      setPreferences((current) => ({
+        ...current,
+        textSize: profile.includes("extra") ? "extraLarge" : profile.includes("large-text") ? "large" : current.textSize,
+        buttonSize: profile.includes("buttons") ? "large" : current.buttonSize,
+        contrast: profile.includes("contrast") ? "high" : current.contrast,
+        easyLanguage: profile.includes("simple"),
+        bottomControls: profile.includes("bottom"),
+        smartGuide: profile.includes("guide"),
+        voiceGuidance: profile.includes("voice"),
+      }));
+    }
+    return () => experiment.destroy();
+  }, [cafeAdapter]);
+
+  useEffect(() => {
     const rail = categoryNavRef.current;
     if (!rail || stage !== "menu") {
       setCanScrollCategoryBack(false);
@@ -353,8 +383,16 @@ export default function App() {
         if (!cards.length) return;
         const browseBottom = kioskRootRef.current?.querySelector<HTMLElement>(".category-nav")?.getBoundingClientRect().bottom ?? 0;
         const visibleIndex = cards.findIndex((card) => card.getBoundingClientRect().bottom > Math.max(0, browseBottom) + 8);
-        const pageIsScrollable = document.documentElement.scrollHeight > window.innerHeight + 2;
-        const atPageBottom = pageIsScrollable && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+        const pocScroller = kioskRootRef.current?.classList.contains("a11y-bottom-viewport-poc-shell")
+          ? kioskRootRef.current
+          : null;
+        const pageIsScrollable = pocScroller
+          ? pocScroller.scrollHeight > pocScroller.clientHeight + 2
+          : document.documentElement.scrollHeight > window.innerHeight + 2;
+        const scrollTop = pocScroller?.scrollTop ?? window.scrollY;
+        const viewportHeight = pocScroller?.clientHeight ?? window.innerHeight;
+        const scrollHeight = pocScroller?.scrollHeight ?? document.documentElement.scrollHeight;
+        const atPageBottom = pageIsScrollable && scrollTop + viewportHeight >= scrollHeight - 2;
         const nextIndex = atPageBottom || visibleIndex === -1 ? cards.length - 1 : Number(cards[visibleIndex].dataset.menuIndex);
         if (!Number.isNaN(nextIndex)) {
           setMenuFocusIndex((current) => current === nextIndex ? current : nextIndex);
@@ -362,9 +400,12 @@ export default function App() {
       });
     };
     window.addEventListener("scroll", updateMenuPosition, { passive: true });
+    const root = kioskRootRef.current;
+    root?.addEventListener("scroll", updateMenuPosition, { passive: true });
     updateMenuPosition();
     return () => {
       window.removeEventListener("scroll", updateMenuPosition);
+      root?.removeEventListener("scroll", updateMenuPosition);
       if (animationFrame) cancelAnimationFrame(animationFrame);
     };
   }, [category, currentProducts.length, stage]);

@@ -3,6 +3,7 @@ export { createAccessibilitySdk, type AccessibilitySdk, type AccessibilitySdkOpt
 export { type AccessibilityAdapter, type AccessibilityGuideMessage, type KioskAction, type KioskLayoutRegions, type KioskSnapshot, type KioskTextTarget, } from "./adapter.ts";
 export { inspectKioskLayout, type AccessibilityDiagnostic, type AccessibilityIssueType, type LayoutDiagnosticOptions, } from "./diagnostics.ts";
 export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
+export { createBottomViewportPoc, type BottomViewportPocOptions, type BottomViewportPocPercent, } from "./bottom-viewport-poc.ts";
 export { DEFAULT_ADDITIONAL_MENU_MESSAGE, analyzeAdditionalMenuOverflow, type AdditionalMenuOverflowState, } from "./menu-overflow.ts";
 export { DEFAULT_CONTENT_SCROLL_MESSAGE, DEFAULT_PRIMARY_ACTION_MESSAGE, } from "./scroll-guidance.ts";
 export { createIdleTimer, smartGuideDelayMs, type GuideState, type IdleTimerDriver, } from "./guide.ts";

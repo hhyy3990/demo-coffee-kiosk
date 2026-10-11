@@ -170,6 +170,7 @@ export function createCafeAccessibilityAdapter(
         ? Array.from(root.querySelectorAll<HTMLElement>('[data-a11y-slot="bottom-controls"]'))
         : [];
       return {
+        viewportOverlays: Array.from(root.querySelectorAll<HTMLElement>(".modal-backdrop")),
         bottomControls,
         scrollArea: root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]'),
         menuItems: getState().stage === "menu"

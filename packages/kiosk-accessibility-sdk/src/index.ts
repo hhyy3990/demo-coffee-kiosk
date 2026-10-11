@@ -32,6 +32,11 @@ export {
 } from "./diagnostics.ts";
 export type { LayoutCorrectionResult } from "./layout-enhancements.ts";
 export {
+  createBottomViewportPoc,
+  type BottomViewportPocOptions,
+  type BottomViewportPocPercent,
+} from "./bottom-viewport-poc.ts";
+export {
   DEFAULT_ADDITIONAL_MENU_MESSAGE,
   analyzeAdditionalMenuOverflow,
   type AdditionalMenuOverflowState,

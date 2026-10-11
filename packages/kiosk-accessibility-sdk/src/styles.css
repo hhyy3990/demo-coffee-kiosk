@@ -6,6 +6,49 @@
   font-size: calc(16px * var(--scale));
 }
 
+/* Development-only experimental viewport shell; opt in through createBottomViewportPoc(). */
+.kiosk.a11y-bottom-viewport-poc-shell {
+  position: fixed !important;
+  z-index: 1;
+  inset-inline: 0;
+  top: calc(100vh - var(--a11y-bottom-poc-height, 70dvh));
+  top: calc(100dvh - var(--a11y-bottom-poc-height, 70dvh));
+  height: var(--a11y-bottom-poc-height, 70dvh);
+  min-height: 0 !important;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 12px;
+  scrollbar-gutter: stable;
+}
+
+.a11y-bottom-viewport-poc-overlay {
+  position: fixed !important;
+  inset-inline: 0;
+  top: calc(100vh - var(--a11y-bottom-poc-height, 70dvh));
+  top: calc(100dvh - var(--a11y-bottom-poc-height, 70dvh));
+  bottom: 0;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto;
+  align-items: start !important;
+  padding-block: 12px !important;
+}
+
+.a11y-bottom-viewport-poc-overlay [role="dialog"] {
+  max-height: var(--a11y-bottom-poc-dialog-max, calc(70dvh - 24px)) !important;
+  overflow-y: auto;
+}
+
+.kiosk.a11y-bottom-viewport-poc-shell .a11y-guide-toast {
+  top: calc(100dvh - var(--a11y-bottom-poc-height, 70dvh) + 12px);
+  max-height: calc(var(--a11y-bottom-poc-height, 70dvh) - 24px);
+}
+
+.kiosk.a11y-bottom-viewport-poc-shell .a11y-additional-menu-hint {
+  max-height: calc(var(--a11y-bottom-poc-height, 70dvh) - 24px);
+}
+
 .kiosk.a11y-text-large { --scale: 1.13; }
 .kiosk.a11y-text-extra { --scale: 1.28; }
 .kiosk.a11y-controls-large { --control: 1.15; }

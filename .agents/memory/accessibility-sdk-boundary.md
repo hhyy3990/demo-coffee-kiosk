@@ -14,3 +14,9 @@ Observers that trigger profile or layout work must ignore SDK-owned hint/guide i
 **Why:** The same accessibility profile should work across unrelated kiosks without making their critical workflows depend on a shared UI package or AI-generated code changes.
 
 **How to apply:** When integrating another kiosk, implement its semantic adapter and host-specific guide rules, then use the SDK only for presentation, timing, voice, and observation. Filter SDK-owned nodes at observer boundaries; prefer verified CSS adjustments, and never let diagnostics or AI mutate business DOM or execute actions.
+
+For a lower-viewport experiment, prefer temporarily styling the existing kiosk root as a fixed, bottom-anchored scroll shell; do not scale or reparent a React tree. Register viewport-fixed overlays explicitly through the adapter and restore all temporary classes and inline styles on cleanup. Validate guidance placement separately: a fixed scroll hint may overlap visible host content even when its position is within the reduced viewport.
+
+**Why:** The same shell worked with both document-scroll and nested-scroll fixture structures while preserving click hit-testing, but the existing SDK hint placement is based on the full viewport and can cover content in a narrow lower viewport.
+
+**How to apply:** Keep this approach experimental until host scroll ownership, fixed/modal overlays, and guidance collision behavior are verified in each target kiosk and on real portrait hardware.

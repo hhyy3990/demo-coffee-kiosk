@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>하단 조작부 PoC fixtures</title>
+    <link rel="stylesheet" href="/src/index.css" />
+    <style>
+      body { min-height:100dvh; padding:12px; background:#eee8df; }
+      .poc-toolbar { position:relative;z-index:30;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;background:#fff;border-radius:12px; }
+      .poc-toolbar select,.poc-toolbar button { min-height:44px;padding:8px 12px; }
+      .poc-status { margin:8px 0;padding:8px 12px;background:#fff;border-radius:10px;font:14px/1.5 sans-serif; }
+      .fixture-kiosk { width:min(100%,850px);margin:0 auto;padding:14px;background:#fffdf9; }
+      .fixture-header { position:sticky;top:0;z-index:3;padding:10px;background:#f1e3d3;border:1px solid #8c6b50; }
+      .fixture-scroll { max-height:52dvh;overflow:auto;padding:8px;border:2px dashed #927454; }
+      .fixture-card { min-height:110px;margin:8px 0;padding:18px;background:#f4eee6;border-radius:12px; }
+      .fixture-actions { position:sticky;bottom:0;z-index:4;display:flex;gap:10px;padding:10px;background:#3d2b1e;color:white; }
+      .fixture-actions button { flex:1;min-height:48px; }
+      .fixture-modal { position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:18px;background:#0008; }
+      .fixture-modal[hidden] { display:none; }
+      .fixture-dialog { max-height:80dvh;overflow:auto;padding:24px;background:white;border-radius:16px; }
+      .fixture-dialog button { min-height:48px; }
+      .fixture-keypad { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0; }
+      .fixture-footer { margin-top:12px;padding:16px;background:#eee2d3;text-align:center; }
+      .fixture-kiosk.a11y-text-extra { font-size:1.28em; }
+      .fixture-kiosk.a11y-controls-large button { min-height:60px; }
+    </style>
+    <script type="module" src="/src/bottomViewportPocFixture.ts"></script>
+  </head>
+  <body>
+    <div class="poc-toolbar" aria-label="PoC test controls">
+      <label>구조
+        <select id="fixture-type"><option value="document">문서 스크롤</option><option value="nested">내부 스크롤 + 고정 조작부</option></select>
+      </label>
+      <label>표시 높이
+        <select id="fixture-ratio"><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option></select>
+      </label>
+      <label><input id="fixture-extra" type="checkbox" /> 아주 큰 글씨</label>
+      <label><input id="fixture-buttons" type="checkbox" /> 큰 버튼</label>
+      <label><input id="fixture-contrast" type="checkbox" /> 고대비</label>
+      <button id="fixture-apply" type="button">비율 적용</button>
+      <button id="fixture-restore" type="button">기본으로 복원</button>
+    </div>
+    <div id="fixture-status" class="poc-status" role="status">기본 화면. 비율과 접근성 조합을 선택해 적용하세요.</div>
+    <main id="document-fixture" class="kiosk fixture-kiosk">
+      <header class="fixture-header">문서 스크롤 구조 · 상단 고정 헤더</header>
+      <h1>독립형 업무 키오스크</h1>
+      <p>긴 업무 단계와 페이지 스크롤을 확인합니다.</p>
+      <div class="fixture-cards"></div>
+      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="document-last-action">마지막 단계 확인</button></div>
+      <div class="fixture-modal" hidden role="presentation"><section class="fixture-dialog" role="dialog" aria-modal="true"><h2>확인 창</h2><p>고정 모달이 하단 표시 영역 안에서 열리는지 확인합니다.</p><div class="fixture-keypad" aria-label="화면 키패드"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><button type="button">6</button><button type="button">7</button><button type="button">8</button><button type="button">9</button><button type="button">지움</button><button type="button">0</button><button type="button">확인</button></div><button type="button" class="close-modal">닫기</button></section></div>
+      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div>
+    </main>
+    <main id="nested-fixture" class="kiosk fixture-kiosk" hidden>
+      <header class="fixture-header">내부 스크롤 구조 · 고정 상단 헤더</header>
+      <h1>독립형 업무 키오스크</h1>
+      <p>내부 목록 스크롤과 하단 고정 조작부를 확인합니다.</p>
+      <div class="fixture-scroll"><div class="fixture-cards"></div></div>
+      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="nested-last-action">마지막 단계 확인</button></div>
+      <div class="fixture-modal" hidden role="presentation"><section class="fixture-dialog" role="dialog" aria-modal="true"><h2>확인 창</h2><p>고정 모달이 하단 표시 영역 안에서 열리는지 확인합니다.</p><div class="fixture-keypad" aria-label="화면 키패드"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><button type="button">6</button><button type="button">7</button><button type="button">8</button><button type="button">9</button><button type="button">지움</button><button type="button">0</button><button type="button">확인</button></div><button type="button" class="close-modal">닫기</button></section></div>
+      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div>
+    </main>
+  </body>
+</html>

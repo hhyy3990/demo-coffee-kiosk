@@ -43,6 +43,8 @@ export interface KioskLayoutRegions {
     }[];
     /** Host regions that guidance must not cover (for example fixed headers). */
     guidanceAvoidAreas?: readonly HTMLElement[];
+    /** Elements rendered as viewport overlays that must follow an experimental bottom viewport. */
+    viewportOverlays?: readonly HTMLElement[];
 }
 export interface AccessibilityAdapter {
     getSnapshot(): KioskSnapshot;
