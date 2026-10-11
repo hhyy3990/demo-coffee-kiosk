@@ -1,5 +1,6 @@
 import {
   createAccessibilitySdk,
+  createQrEntryDock,
   createQrProfileClient,
   DEFAULT_ACCESSIBILITY_PROFILE,
   validateAccessibilityProfile,
@@ -26,9 +27,22 @@ const profile: AccessibilityProfile = validateAccessibilityProfile({
   textSize: "large",
 });
 const sdk = createAccessibilitySdk({ root, adapter });
+const qrDock = createQrEntryDock({
+  root,
+  adapter,
+  active: true,
+  onOpenQr() {},
+  theme: { button: "#704b32", buttonForeground: "#fffaf1" },
+  bottomViewportPercent: 70,
+});
+qrDock.setActive(false);
+qrDock.setActive(true);
+qrDock.destroy();
 const qrClient = createQrProfileClient();
 
 sdk.applyProfile(profile);
+sdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
+sdk.setViewportMode(null);
 sdk.setGuideState({
   enabled: profile.smartGuide,
   paused: false,

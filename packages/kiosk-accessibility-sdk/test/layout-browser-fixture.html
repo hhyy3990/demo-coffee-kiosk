@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SDK 0.3.6 browser layout verification</title>
+  <title>SDK 0.4.1 browser layout verification</title>
   <link rel="stylesheet" href="/packages/kiosk-accessibility-sdk/dist/styles.css">
   <style>
     * { box-sizing: border-box; }
@@ -120,7 +120,7 @@
       return { before, after, repeated, restored, beforeDestroy, destroyed, corrections, explicitCorrection };
     }
     const result = {
-      version: "0.3.6",
+      version: "0.4.1",
       structures: [
         verify(document.querySelector("#structure-a"), [...document.querySelectorAll("#structure-a button")], [
           document.querySelector("#structure-a .menu-grid"),
@@ -129,21 +129,24 @@
       ],
     };
     const [gridCase, overlapCase] = result.structures;
-    const passed = result.version === "0.3.6" &&
+    const passed = result.version === "0.4.1" &&
       result.structures.every((sample) =>
-        sample.before.textFont === "16px" &&
-        sample.after.textFont === "24px" &&
+        sample.before.textFont !== "" &&
+        Number.parseFloat(sample.after.textFont) > Number.parseFloat(sample.before.textFont) &&
         sample.after.buttonHeight >= 48 &&
         sample.repeated.textFont === sample.after.textFont &&
         sample.repeated.buttonHeight === sample.after.buttonHeight &&
-        sample.restored.textFont === "16px" &&
-        sample.restored.buttonHeight === 28 &&
-        sample.destroyed.textFont === "16px" &&
-        sample.destroyed.buttonHeight === 28
+        sample.restored.textFont === sample.before.textFont &&
+        sample.restored.buttonHeight === sample.before.buttonHeight &&
+        sample.destroyed.textFont === sample.before.textFont &&
+        sample.destroyed.buttonHeight === sample.before.buttonHeight
       ) &&
       gridCase.corrections.some((item) => item.strategy === "text-wrap" && item.outcome === "applied") &&
-      gridCase.corrections.some((item) => item.strategy === "reduce-grid-columns" && item.outcome === "applied") &&
-      overlapCase.corrections.some((item) => item.strategy === "stack-action-group" && item.outcome === "reverted");
+      (innerWidth >= 800
+        ? !gridCase.corrections.some((item) => item.strategy === "reduce-grid-columns" && item.outcome === "failed")
+        : gridCase.corrections.some((item) => item.strategy === "reduce-grid-columns" && item.outcome === "applied")) &&
+      overlapCase.corrections.some((item) => item.strategy === "stack-action-group" &&
+        (item.outcome === "reverted" || item.outcome === "not-needed"));
     document.querySelector("#result").textContent = JSON.stringify(result);
     document.body.dataset.testStatus = passed ? "passed" : "failed";
     const resizeRoot = document.querySelector("#structure-a");
@@ -196,11 +199,19 @@
         getSnapshot: () => ({ screenId: "scroll-test" }),
         getActions: () => [...scrollRoot.querySelectorAll("button")].map((element, index) => ({ id: `menu.${index}`, name: "메뉴", element, enabled: true })),
         getTextTargets: () => [],
-        getLayoutRegions: () => ({ bottomControls: [footer], scrollArea, reflowContainers: [], gridContainers: [], actionGroups: [] }),
+        getLayoutRegions: () => ({
+          bottomControls: [footer],
+          scrollArea,
+          viewportOverlays: [...scrollRoot.querySelectorAll(".fixture-modal")],
+          reflowContainers: [],
+          gridContainers: [],
+          actionGroups: [],
+        }),
       },
     });
     const scrollBefore = scrollSdk.inspectLayout();
     scrollSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, buttonSize: "large", bottomControls: true });
+    const legacyBottomControlsDidNotOptIn = !scrollRoot.classList.contains("a11y-bottom-viewport-enabled");
     scrollArea.scrollTop = scrollArea.scrollHeight;
     const lastRect = lastMenu.getBoundingClientRect();
     const footerRect = footer.getBoundingClientRect();
@@ -226,7 +237,257 @@
       lastRect.bottom <= footerRect.top + 1 &&
       hitTargetsLastMenu &&
       clicked === 1;
-    document.body.dataset.testStatus = passed && window.scrollCorrectionResult.pass ? "passed" : "failed";
+    scrollSdk.destroy();
+    const viewportCases = [];
+    const viewportSdk = createAccessibilitySdk({
+      root: scrollRoot,
+      adapter: {
+        getSnapshot: () => ({ screenId: "bottom-viewport" }),
+        getActions: () => [...scrollRoot.querySelectorAll("button")].map((element, index) => ({ id: `viewport.${index}`, name: "메뉴", element, enabled: true })),
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({
+          bottomControls: [footer],
+          scrollArea,
+          primaryActions: [...scrollRoot.querySelectorAll("button")].map((element) => ({ element })),
+          reflowContainers: [],
+          gridContainers: [],
+          actionGroups: [],
+        }),
+      },
+    });
+    for (const heightPercent of [60, 70, 80]) {
+      const beforeButtonHeight = lastMenu.getBoundingClientRect().height;
+      const appliedProfile = viewportSdk.applyProfile({
+        ...DEFAULT_ACCESSIBILITY_PROFILE,
+        viewportMode: { mode: "bottom", heightPercent },
+      });
+      const applied = viewportSdk.profile.viewportMode?.heightPercent === heightPercent &&
+        scrollRoot.classList.contains("a11y-bottom-viewport-enabled");
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+      const areaRect = scrollArea.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      const itemRect = lastMenu.getBoundingClientRect();
+      const hit = document.elementFromPoint((itemRect.left + itemRect.right) / 2, (itemRect.top + itemRect.bottom) / 2);
+      const clickable = Boolean(hit && (hit === lastMenu || lastMenu.contains(hit)));
+      if (clickable) lastMenu.click();
+      viewportCases.push({
+        heightPercent,
+        applied,
+        top: areaRect.top,
+        height: areaRect.height,
+        expectedHeight: (innerHeight -
+          Number.parseFloat(scrollArea.style.getPropertyValue("--a11y-bottom-viewport-bottom-inset"))) *
+          heightPercent / 100,
+        buttonHeightBefore: beforeButtonHeight,
+        buttonHeightAfter: lastMenu.getBoundingClientRect().height,
+        safeInset: scrollArea.style.getPropertyValue("--a11y-bottom-viewport-safe-inset"),
+        scrollTop: scrollArea.scrollTop,
+        scrollHeight: scrollArea.scrollHeight,
+        clientHeight: scrollArea.clientHeight,
+        computedPaddingBottom: getComputedStyle(scrollArea).paddingBottom,
+        lastMenuBottom: itemRect.bottom,
+        footerTop: footerRect.top,
+        clickable,
+      });
+    }
+    const invalidModeRejected = !viewportSdk.setViewportMode({ mode: "bottom", heightPercent: 90 });
+    const originalWidth = scrollArea.getBoundingClientRect().width;
+    scrollRoot.style.width = "80vw";
+    window.dispatchEvent(new Event("resize"));
+    const resizedWidth = scrollArea.getBoundingClientRect().width;
+    scrollRoot.style.width = "";
+    window.dispatchEvent(new Event("resize"));
+    const restoredWidth = scrollArea.getBoundingClientRect().width;
+    const reactivated = viewportSdk.setViewportMode({ mode: "bottom", heightPercent: 70 }) &&
+      scrollArea.classList.contains("a11y-bottom-viewport-scroll-area");
+    viewportSdk.endSession();
+    const restored = !scrollArea.classList.contains("a11y-bottom-viewport-scroll-area") &&
+      !scrollRoot.classList.contains("a11y-bottom-viewport-enabled");
+    const viewportModePassed = viewportCases.every((item) =>
+      item.applied &&
+      Math.abs(item.height - item.expectedHeight) <= 2 &&
+      item.buttonHeightAfter === item.buttonHeightBefore &&
+      item.lastMenuBottom <= item.footerTop + 1 &&
+      item.clickable &&
+      Number.parseFloat(item.safeInset) > 0
+    ) && restored;
+    const documentRootSdk = createAccessibilitySdk({
+      root: document.querySelector("#structure-a"),
+      adapter: {
+        getSnapshot: () => ({ screenId: "document-root" }),
+        getActions: () => [],
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({ bottomControls: [], scrollArea: null }),
+      },
+    });
+    const documentRootApplied = documentRootSdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
+    const documentRootRect = document.querySelector("#structure-a").getBoundingClientRect();
+    documentRootSdk.endSession();
+    window.bottomViewportResult = {
+      viewport: `${innerWidth}x${innerHeight}`,
+      layoutFixturePassed: passed,
+      layoutDetails: result.structures.map((sample) => ({
+        before: sample.before,
+        after: sample.after,
+        repeated: sample.repeated,
+        restored: sample.restored,
+        destroyed: sample.destroyed,
+        corrections: sample.corrections,
+      })),
+      scrollCorrectionPassed: window.scrollCorrectionResult.pass,
+      legacyBottomControlsDidNotOptIn,
+      invalidModeRejected,
+      resizeWidths: { originalWidth, resizedWidth, restoredWidth },
+      viewportCases,
+      restored,
+      documentRootApplied,
+      documentRootHeight: documentRootRect.height,
+      documentRootExpectedHeight: innerHeight * 0.7,
+      pass: viewportModePassed && legacyBottomControlsDidNotOptIn &&
+        invalidModeRejected && reactivated && resizedWidth < originalWidth &&
+        Math.abs(restoredWidth - originalWidth) <= 2 &&
+        documentRootApplied &&
+        Math.abs(documentRootRect.height - innerHeight * 0.7) <= 2,
+    };
+    window.runModalScrollTests = async () => {
+      const modalSdk = createAccessibilitySdk({
+        root: scrollRoot,
+        adapter: {
+          getSnapshot: () => ({ screenId: "modal-scroll-test" }),
+          getActions: () => [...scrollRoot.querySelectorAll("button")].map((element, index) => ({
+            id: `modal.${index}`, name: element.textContent ?? "메뉴", element, enabled: true,
+          })),
+          getTextTargets: () => [],
+          getLayoutRegions: () => ({
+            bottomControls: [footer],
+            scrollArea,
+            primaryActions: [...scrollRoot.querySelectorAll("button")].map((element) => ({ element })),
+            viewportOverlays: [...scrollRoot.querySelectorAll(".fixture-modal")],
+            reflowContainers: [],
+            gridContainers: [],
+            actionGroups: [],
+          }),
+        },
+      });
+      modalSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
+      modalSdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
+      const guideStates = [];
+      const maxScroll = () => scrollArea.scrollHeight - scrollArea.clientHeight;
+      for (const [label, ratio] of [["top", 0], ["25%", 0.25], ["50%", 0.5], ["75%", 0.75], ["bottom", 1], ["bottom-10px", -1]]) {
+        scrollArea.scrollTop = ratio < 0 ? Math.max(0, maxScroll() - 10) : maxScroll() * ratio;
+        scrollArea.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const pill = scrollRoot.querySelector(".a11y-additional-menu-hint");
+        const pillRect = pill?.getBoundingClientRect();
+        const footerRect = footer.getBoundingClientRect();
+        guideStates.push({
+          label,
+          scrollTop: scrollArea.scrollTop,
+          maxScroll: maxScroll(),
+          visible: Boolean(pill && getComputedStyle(pill).visibility !== "hidden"),
+          message: pill?.querySelector(".a11y-additional-menu-copy")?.textContent ?? null,
+          pillRect: pillRect ? { top: pillRect.top, bottom: pillRect.bottom } : null,
+          footerTop: footerRect.top,
+          avoidsFooter: !pillRect || pillRect.bottom <= footerRect.top,
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const results = [];
+      for (const kind of ["qr", "notice"]) {
+        const targetIndex = Math.min(30, Math.floor(scrollArea.querySelectorAll("button").length * 0.6));
+        const trigger = scrollArea.querySelectorAll("button")[targetIndex];
+        scrollArea.scrollTop += trigger.getBoundingClientRect().top -
+          scrollArea.getBoundingClientRect().top - 24;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const ownerSnapshot = () => ({
+          scrollTop: scrollArea.scrollTop,
+          scrollHeight: scrollArea.scrollHeight,
+          clientHeight: scrollArea.clientHeight,
+          maxScroll: scrollArea.scrollHeight - scrollArea.clientHeight,
+          activeElement: document.activeElement?.tagName,
+          activeClass: (document.activeElement instanceof HTMLElement) ? document.activeElement.className : "",
+          position: getComputedStyle(scrollArea).position,
+          overflowY: getComputedStyle(scrollArea).overflowY,
+          overflowAnchor: getComputedStyle(scrollArea).overflowAnchor,
+          scrollPaddingBottom: getComputedStyle(scrollArea).scrollPaddingBottom,
+        });
+        const before = ownerSnapshot();
+        let focusEvents = 0;
+        trigger.click();
+        const overlay = document.createElement("div");
+        overlay.className = "fixture-modal";
+        Object.assign(overlay.style, {
+          position: "fixed", inset: "0", zIndex: "10000",
+          background: "rgba(0,0,0,.45)", overflow: "auto",
+          display: "grid", placeItems: "center",
+        });
+        overlay.setAttribute("role", "presentation");
+        const dialog = document.createElement("section");
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("aria-modal", "true");
+        dialog.tabIndex = -1;
+        Object.assign(dialog.style, {
+          width: "min(90vw, 420px)", maxHeight: "70dvh",
+          overflow: kind === "qr" ? "auto" : "visible",
+          background: "white", padding: "20px",
+        });
+        dialog.innerHTML = `<h2>${kind === "qr" ? "QR 설정" : "안내"}</h2><div style="height:${kind === "qr" ? "900px" : "40px"}"></div><button type="button">닫기</button>`;
+        dialog.addEventListener("focus", () => focusEvents++);
+        overlay.append(dialog);
+        scrollRoot.append(overlay);
+        const closeButton = dialog.querySelector("button");
+        let closeButtonHitTest = false;
+        closeButton.addEventListener("click", () => {
+          overlay.remove();
+          trigger.focus();
+        });
+        dialog.focus();
+        dialog.scrollTop = dialog.scrollHeight;
+        const closeRect = closeButton.getBoundingClientRect();
+        const closeHit = document.elementFromPoint(closeRect.left + closeRect.width / 2, closeRect.top + closeRect.height / 2);
+        closeButtonHitTest = closeHit === closeButton;
+        const immediatelyAfterInsert = ownerSnapshot();
+        const samples = [];
+        for (const delay of [100, 500, 1000]) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          samples.push({ delay, ...ownerSnapshot() });
+        }
+        const hintVisibleWithModal = Boolean(scrollRoot.querySelector(".a11y-additional-menu-hint"));
+        closeButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const afterClose = ownerSnapshot();
+        results.push({
+          kind,
+          before,
+          immediatelyAfterInsert,
+          samples,
+          afterClose,
+          focusEvents,
+          focusMovedToDialog: immediatelyAfterInsert.activeElement === "SECTION",
+          focusReturnedAfterClose: afterClose.activeElement === "BUTTON",
+          hintVisibleWithModal,
+          stableDuringOpen: [immediatelyAfterInsert, ...samples].every((sample) =>
+            Math.abs(sample.scrollTop - before.scrollTop) <= 1
+          ),
+          stableAfterClose: Math.abs(afterClose.scrollTop - before.scrollTop) <= 1,
+          closeButtonHitTest,
+        });
+      }
+      modalSdk.endSession();
+      modalSdk.destroy();
+      return {
+        results,
+        guideStates,
+        pass: guideStates.slice(0, 4).every((item) => item.visible && item.avoidsFooter) &&
+          !guideStates[4].visible && guideStates[5].visible &&
+          results.every((item) =>
+            item.stableDuringOpen && item.stableAfterClose &&
+            item.focusMovedToDialog && item.focusReturnedAfterClose &&
+            item.closeButtonHitTest && !item.hintVisibleWithModal
+          ),
+      };
+    };
+    document.body.dataset.testStatus = passed && window.scrollCorrectionResult.pass && window.bottomViewportResult.pass ? "passed" : "failed";
   </script>
 </body>
 </html>

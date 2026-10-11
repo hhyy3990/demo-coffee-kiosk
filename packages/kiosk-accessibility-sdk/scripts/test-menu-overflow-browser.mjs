@@ -15,7 +15,7 @@ async function runFixture(width, height, index) {
     `--user-data-dir=/tmp/kiosk-sdk-browser-${globalThis.process.pid}-${port}`,
     "--window-size=1200,2000",
     url,
-  ], { stdio: "ignore" });
+  ], { stdio: "ignore", detached: true });
   let socket;
   try {
     let target;
@@ -65,7 +65,7 @@ async function runFixture(width, height, index) {
       mobile: width < 700,
       screenOrientation: { type: "portraitPrimary", angle: 0 },
     });
-    if (index === 2) {
+    if (index === 3) {
       await send("Emulation.setEmulatedMedia", {
         features: [{ name: "prefers-reduced-motion", value: "reduce" }],
       });
@@ -88,12 +88,14 @@ async function runFixture(width, height, index) {
     return { viewport: `${width}x${height}`, ...report };
   } finally {
     try { socket?.close(); } catch {}
-    child.kill("SIGTERM");
+    if (child.pid) {
+      try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+    }
   }
 }
 
 const reports = [];
-for (const [index, [width, height]] of [[320, 844], [390, 844], [1080, 1920]].entries()) {
+for (const [index, [width, height]] of [[320, 844], [360, 667], [390, 844], [1080, 1920]].entries()) {
   reports.push(await runFixture(width, height, index));
 }
 console.log(JSON.stringify(reports, null, 2));

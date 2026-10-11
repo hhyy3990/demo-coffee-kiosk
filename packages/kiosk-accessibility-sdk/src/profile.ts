@@ -1,5 +1,7 @@
-export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 2 as const;
-export const ACCESSIBILITY_SDK_VERSION = "0.3.6" as const;
+import type { BottomViewportConfig } from "./bottom-viewport.ts";
+
+export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 3 as const;
+export const ACCESSIBILITY_SDK_VERSION = "0.5.3" as const;
 
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
@@ -15,7 +17,10 @@ export interface AccessibilityProfile {
   buttonSize: ButtonSize;
   contrast: ContrastMode;
   easyLanguage: boolean;
+  /** Legacy v1/v2 preference. It never implies a bottom viewport. */
   bottomControls: boolean;
+  /** Explicit v3 setting; null means standard full-height layout. */
+  viewportMode: BottomViewportConfig | null;
   smartGuide: boolean;
   voiceGuidance: boolean;
   guideDelaySeconds: GuideDelaySeconds;
@@ -27,6 +32,7 @@ export const DEFAULT_ACCESSIBILITY_PROFILE: Readonly<AccessibilityProfile> = Obj
   contrast: "standard",
   easyLanguage: false,
   bottomControls: false,
+  viewportMode: null,
   smartGuide: false,
   voiceGuidance: false,
   guideDelaySeconds: 15,
@@ -44,6 +50,12 @@ export function validateAccessibilityProfile(input: unknown): AccessibilityProfi
   const contrast: ContrastMode = input.contrast === "high" ? "high" : "standard";
   const guideDelaySeconds: GuideDelaySeconds =
     input.guideDelaySeconds === 10 || input.guideDelaySeconds === 20 ? input.guideDelaySeconds : 15;
+  const requestedViewportPercent = isRecord(input.viewportMode) ? input.viewportMode.heightPercent : null;
+  const viewportMode = isRecord(input.viewportMode) &&
+    input.viewportMode.mode === "bottom" &&
+    (requestedViewportPercent === 60 || requestedViewportPercent === 70 || requestedViewportPercent === 80)
+    ? { mode: "bottom" as const, heightPercent: requestedViewportPercent as 60 | 70 | 80 }
+    : null;
 
   return {
     textSize,
@@ -51,6 +63,7 @@ export function validateAccessibilityProfile(input: unknown): AccessibilityProfi
     contrast,
     easyLanguage: input.easyLanguage === true,
     bottomControls: input.bottomControls === true,
+    viewportMode,
     smartGuide: input.smartGuide === true,
     voiceGuidance: input.voiceGuidance === true,
     guideDelaySeconds,

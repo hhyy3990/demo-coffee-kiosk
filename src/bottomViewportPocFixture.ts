@@ -31,7 +31,7 @@ function updateStatus(): void {
   const last = root.querySelector<HTMLElement>("[id$='last-action']")!;
   const rect = last.getBoundingClientRect();
   const visible = rect.top >= 0 && rect.bottom <= window.innerHeight;
-  const owner = root.querySelector<HTMLElement>("#nested-fixture .fixture-scroll") ??
+  const owner = root.querySelector<HTMLElement>(".fixture-scroll") ??
     root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')!;
   status.textContent = `root=${root.clientHeight}px, scroll=${owner.scrollTop}/${owner.scrollHeight - owner.clientHeight}px, 마지막 조작 화면 내=${visible ? "예" : "아니요"}`;
 }
@@ -61,6 +61,10 @@ document.querySelector("#fixture-apply")?.addEventListener("click", () => {
       getTextTargets: () => [],
       getLayoutRegions: () => ({
         scrollArea,
+        viewportOverlays: Array.from(root.querySelectorAll<HTMLElement>(".fixture-modal")),
+        bottomControls: root.classList.contains("a11y-bottom-controls")
+          ? Array.from(root.querySelectorAll<HTMLElement>('[data-a11y-slot="bottom-controls"]'))
+          : [],
         menuItems: Array.from(root.querySelectorAll<HTMLElement>(".fixture-card")),
         primaryActions: [{ element: lastAction }],
       }),
@@ -70,6 +74,7 @@ document.querySelector("#fixture-apply")?.addEventListener("click", () => {
     textSize: (document.querySelector<HTMLInputElement>("#fixture-extra")!).checked ? "extraLarge" : "standard",
     buttonSize: (document.querySelector<HTMLInputElement>("#fixture-buttons")!).checked ? "large" : "standard",
     contrast: (document.querySelector<HTMLInputElement>("#fixture-contrast")!).checked ? "high" : "standard",
+    bottomControls: fixtureSelect.value === "nested",
   });
   root.classList.toggle("a11y-text-extra", (document.querySelector<HTMLInputElement>("#fixture-extra")!).checked);
   root.classList.toggle("a11y-controls-large", (document.querySelector<HTMLInputElement>("#fixture-buttons")!).checked);

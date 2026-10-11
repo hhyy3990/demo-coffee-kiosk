@@ -1,5 +1,6 @@
-export declare const ACCESSIBILITY_PROFILE_SCHEMA_VERSION: 2;
-export declare const ACCESSIBILITY_SDK_VERSION: "0.3.6";
+import type { BottomViewportConfig } from "./bottom-viewport.ts";
+export declare const ACCESSIBILITY_PROFILE_SCHEMA_VERSION: 3;
+export declare const ACCESSIBILITY_SDK_VERSION: "0.5.3";
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
 export type ContrastMode = "standard" | "high";
@@ -13,7 +14,10 @@ export interface AccessibilityProfile {
     buttonSize: ButtonSize;
     contrast: ContrastMode;
     easyLanguage: boolean;
+    /** Legacy v1/v2 preference. It never implies a bottom viewport. */
     bottomControls: boolean;
+    /** Explicit v3 setting; null means standard full-height layout. */
+    viewportMode: BottomViewportConfig | null;
     smartGuide: boolean;
     voiceGuidance: boolean;
     guideDelaySeconds: GuideDelaySeconds;

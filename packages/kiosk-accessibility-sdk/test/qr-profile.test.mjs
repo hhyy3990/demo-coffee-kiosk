@@ -56,14 +56,84 @@ test("v1 and v2 profiles apply only after strict required-field validation", asy
     });
     const profile = await client.resolve(token);
     assert.equal(profile.textSize, "extraLarge");
+    assert.equal(profile.viewportMode, null);
     assert.equal("simplifiedLayout" in profile, false);
+  }
+});
+
+test("v3 accepts only an explicit viewportMode and normalizes all preferences", async () => {
+  const v3Preferences = {
+    textSize: "extraLarge",
+    buttonSize: "large",
+    contrast: "high",
+    easyLanguage: false,
+    viewportMode: { mode: "bottom", heightPercent: 70 },
+    smartGuide: true,
+    guideDelaySeconds: 10,
+    voiceGuidance: false,
+  };
+  const client = createQrProfileClient({
+    fetcher: async () => new Response(JSON.stringify(centralResponse(3, v3Preferences)), { status: 200 }),
+  });
+  const profile = await client.resolve(token);
+  assert.deepEqual(profile.viewportMode, { mode: "bottom", heightPercent: 70 });
+  assert.equal(profile.bottomControls, false);
+  assert.equal(profile.textSize, "extraLarge");
+  assert.equal(profile.smartGuide, true);
+
+  for (const heightPercent of [60, 70, 80]) {
+    const valid = createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify(centralResponse(3, {
+        ...v3Preferences,
+        viewportMode: { mode: "bottom", heightPercent },
+      })), { status: 200 }),
+    });
+    assert.deepEqual((await valid.resolve(token)).viewportMode, { mode: "bottom", heightPercent });
+  }
+  const nullMode = createQrProfileClient({
+    fetcher: async () => new Response(JSON.stringify(centralResponse(3, {
+      ...v3Preferences,
+      viewportMode: null,
+    })), { status: 200 }),
+  });
+  assert.equal((await nullMode.resolve(token)).viewportMode, null);
+});
+
+test("v3 rejects invalid, missing, string-valued and legacy viewport settings", async () => {
+  const base = {
+    textSize: "extraLarge",
+    buttonSize: "large",
+    contrast: "high",
+    easyLanguage: false,
+    viewportMode: null,
+    smartGuide: true,
+    guideDelaySeconds: 10,
+    voiceGuidance: false,
+  };
+  const invalidPreferences = [
+    { ...base, viewportMode: { mode: "side", heightPercent: 70 } },
+    { ...base, viewportMode: { mode: "bottom", heightPercent: "70" } },
+    { ...base, viewportMode: { mode: "bottom", heightPercent: 50 } },
+    { ...base, viewportMode: { mode: "bottom", heightPercent: 65 } },
+    { ...base, viewportMode: { mode: "bottom", heightPercent: 90 } },
+    { ...base, viewportMode: undefined },
+    { ...base, bottomControls: true },
+    { ...base, simplifiedLayout: true },
+    { ...base, textSize: undefined },
+    { ...base, voiceGuidance: "false" },
+  ];
+  for (const preferences of invalidPreferences) {
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify(centralResponse(3, preferences)), { status: 200 }),
+    });
+    await assert.rejects(client.resolve(token), /QR_UNAVAILABLE/);
   }
 });
 
 test("invalid QR data, unknown schema and unsupported response envelopes fail closed", async () => {
   let requests = 0;
   const unsupportedCases = [
-    { schemaVersion: 3, preferences: goodProfile },
+    { schemaVersion: 4, preferences: goodProfile },
     { schemaVersion: 2, preferences: { ...goodProfile, simplifiedLayout: true } },
     { schemaVersion: 2, preferences: { ...goodProfile, textSize: "huge" } },
     { schemaVersion: 2, profile: { preferences: goodProfile } },

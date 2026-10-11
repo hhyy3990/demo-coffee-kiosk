@@ -9,7 +9,11 @@ function inVisibleViewport(el, root) {
     const r = el.getBoundingClientRect();
     let left = 0, top = 0, right = document.documentElement.clientWidth || innerWidth;
     let bottom = document.documentElement.clientHeight || innerHeight;
+    const fixedToViewport = getComputedStyle(el).position === "fixed" &&
+        (root === document.body || root === document.documentElement);
     for (let p = el.parentElement; p; p = p.parentElement) {
+        if (fixedToViewport && p === root)
+            break;
         const s = getComputedStyle(p), pr = p.getBoundingClientRect();
         if (["auto", "scroll", "hidden", "clip"].includes(s.overflowX)) {
             left = Math.max(left, pr.left + p.clientLeft);
@@ -27,13 +31,16 @@ function inVisibleViewport(el, root) {
 function findVerticalOwner(root, area) {
     const canScroll = (element) => element.scrollHeight > element.clientHeight + 1 &&
         ["auto", "scroll", "overlay"].includes(getComputedStyle(element).overflowY);
+    const doc = document.scrollingElement ?? document.documentElement;
+    const isDocumentElement = (element) => element === document.body || element === document.documentElement || element === doc;
     if (area && root.contains(area) && canScroll(area))
-        return area;
+        return isDocumentElement(area) ? document : area;
     for (const element of [root, ...Array.from(root.querySelectorAll("*"))]) {
+        if (isDocumentElement(element))
+            continue;
         if (canScroll(element))
             return element;
     }
-    const doc = document.scrollingElement ?? document.documentElement;
     const permitted = (value) => value !== "hidden" && value !== "clip";
     if (permitted(getComputedStyle(document.documentElement).overflowY) &&
         (!document.body || permitted(getComputedStyle(document.body).overflowY)) &&
@@ -50,10 +57,48 @@ function ownerCanScrollBelow(owner) {
                 (owner.scrollingElement ?? owner.documentElement).clientHeight - 1
         : owner.scrollTop < owner.scrollHeight - owner.clientHeight - 1;
 }
+function viewportAnchored(element) {
+    const position = getComputedStyle(element).position;
+    return position === "fixed" || position === "sticky";
+}
+function visibleObstacle(element, root) {
+    if (!shown(element))
+        return false;
+    if (getComputedStyle(element).position === "fixed") {
+        const rect = element.getBoundingClientRect();
+        const width = document.documentElement.clientWidth || innerWidth;
+        const height = document.documentElement.clientHeight || innerHeight;
+        return rect.right > 0 && rect.left < width && rect.bottom > 0 && rect.top < height;
+    }
+    return inVisibleViewport(element, root);
+}
+function getGuidanceObstacles(root, regions, hint) {
+    const anchoredActions = (regions.primaryActions ?? [])
+        .map(({ element }) => element)
+        .filter(viewportAnchored);
+    const anchoredControls = (regions.bottomControls ?? []).filter(viewportAnchored);
+    const qrDocks = typeof document !== "undefined"
+        ? Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"))
+        : [];
+    return [
+        ...(regions.viewportOverlays ?? []),
+        ...(regions.guidanceAvoidAreas ?? []),
+        ...qrDocks,
+        ...anchoredActions,
+        ...anchoredControls,
+        ...(typeof root.querySelectorAll === "function"
+            ? Array.from(root.querySelectorAll(".a11y-guide-toast"))
+            : []),
+    ].filter((element) => element !== hint && visibleObstacle(element, root));
+}
 function currentHint(root, adapter) {
     if (typeof document === "undefined" || typeof window === "undefined")
         return null;
     const regions = adapter.getLayoutRegions();
+    const smartGuideVisible = typeof root.querySelectorAll === "function" &&
+        [...root.querySelectorAll(".a11y-guide-toast")].some((element) => element instanceof HTMLElement && shown(element));
+    if ((regions.viewportOverlays ?? []).some(shown) || smartGuideVisible)
+        return null;
     const owner = typeof root.querySelectorAll === "function"
         ? findVerticalOwner(root, regions.scrollArea)
         : null;
@@ -82,10 +127,48 @@ function currentHint(root, adapter) {
     return null;
 }
 function placeHint(hint, root, regions) {
-    if (root.classList.contains("a11y-bottom-viewport-poc-shell")) {
-        hint.style.removeProperty("width");
-        hint.style.removeProperty("left");
-        hint.style.removeProperty("top");
+    if (root.classList.contains("a11y-bottom-viewport-enabled") ||
+        root.classList.contains("a11y-bottom-viewport-poc-shell")) {
+        const vw = document.documentElement.clientWidth || innerWidth;
+        const vh = document.documentElement.clientHeight || innerHeight;
+        const activeArea = regions.scrollArea && root.contains(regions.scrollArea)
+            ? regions.scrollArea
+            : root;
+        const rootRect = activeArea.getBoundingClientRect();
+        const width = Math.min(360, vw - 24);
+        hint.style.width = "max-content";
+        hint.style.maxWidth = `${width}px`;
+        hint.style.left = `${Math.max(12, (vw - width) / 2)}px`;
+        hint.style.top = "0px";
+        hint.style.bottom = "auto";
+        hint.style.visibility = "hidden";
+        const rect = hint.getBoundingClientRect();
+        const left = Math.max(12, (vw - rect.width) / 2);
+        hint.style.left = `${left}px`;
+        const controls = (regions.bottomControls ?? []).filter((el) => viewportAnchored(el) && visibleObstacle(el, root));
+        const lowerEdge = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, rootRect.bottom)) - 8;
+        const upperEdge = Math.max(0, rootRect.top) + 8;
+        const top = lowerEdge - rect.height;
+        if (top < upperEdge || rect.height <= 0) {
+            if (root.dataset)
+                root.dataset.a11yScrollGuidance = "no-safe-space";
+            hint.style.visibility = "hidden";
+            return false;
+        }
+        const obstacles = getGuidanceObstacles(root, regions, hint);
+        const candidate = new DOMRect(left, top, rect.width, rect.height);
+        const blocked = obstacles.some((el) => {
+            const obstacle = el.getBoundingClientRect();
+            return candidate.left < obstacle.right && candidate.right > obstacle.left &&
+                candidate.top < obstacle.bottom && candidate.bottom > obstacle.top;
+        });
+        if (blocked) {
+            if (root.dataset)
+                root.dataset.a11yScrollGuidance = "no-safe-space";
+            hint.style.visibility = "hidden";
+            return false;
+        }
+        hint.style.top = `${top}px`;
         hint.style.visibility = "visible";
         return true;
     }
@@ -97,25 +180,21 @@ function placeHint(hint, root, regions) {
     hint.style.top = "0px";
     hint.style.visibility = "hidden";
     const height = hint.getBoundingClientRect().height;
-    const obstacles = [
-        ...(regions.bottomControls ?? []),
-        ...(regions.guidanceAvoidAreas ?? []),
-        ...(typeof root.querySelectorAll === "function"
-            ? Array.from(root.querySelectorAll(".a11y-guide-toast"))
-            : []),
-    ].filter((el) => {
-        if (el === hint || !shown(el))
-            return false;
-        const r = el.getBoundingClientRect();
-        return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw &&
-            inVisibleViewport(el, root);
-    });
-    const bottomControls = (regions.bottomControls ?? []).filter(shown);
-    const safeBottom = bottomControls.reduce((top, el) => {
+    const obstacles = getGuidanceObstacles(root, regions, hint);
+    const bottomControls = (regions.bottomControls ?? []).filter((element) => viewportAnchored(element) && visibleObstacle(element, root));
+    const bottomDockAndControls = [
+        ...bottomControls,
+        ...obstacles.filter((element) => element.hasAttribute("data-a11y-qr-entry-dock")),
+    ];
+    const safeBottom = bottomDockAndControls.reduce((top, el) => {
         const r = el.getBoundingClientRect();
         return r.top < vh && r.bottom > 0 ? Math.min(top, r.top) : top;
-    }, vh - 12);
-    const positions = [safeBottom - height, vh - height - 12].filter((v, i, a) => a.indexOf(v) === i);
+    }, vh - 12) - 8;
+    const positions = [...new Set([
+            safeBottom - height,
+            vh - height - 12,
+            ...obstacles.map((element) => element.getBoundingClientRect().top - height - 8),
+        ])].filter((top) => top >= 12).sort((a, b) => b - a);
     for (const top of positions) {
         if (top < 12)
             continue;
@@ -137,20 +216,12 @@ function placeHint(hint, root, regions) {
 }
 export function createScrollGuidance(root, adapter) {
     let node = null;
-    const getPocSlot = () => root.classList.contains("a11y-bottom-viewport-poc-shell") &&
-        typeof root.querySelector === "function"
-        ? root.querySelector(".a11y-guidance-slot")
-        : null;
     let frame = 0;
     let destroyed = false;
     let enabled = true;
     const ensureNode = () => {
-        const slot = getPocSlot();
-        if (node) {
-            if (slot && node.parentElement !== slot)
-                slot.append(node);
+        if (node)
             return node;
-        }
         if (typeof document === "undefined")
             return null;
         node = document.createElement("aside");
@@ -159,7 +230,7 @@ export function createScrollGuidance(root, adapter) {
         node.setAttribute("aria-live", "polite");
         node.setAttribute("aria-atomic", "true");
         node.innerHTML = '<span aria-hidden="true">↓</span><span class="a11y-additional-menu-copy"></span>';
-        (slot ?? root).append(node);
+        root.append(node);
         return node;
     };
     const refresh = () => {
@@ -203,11 +274,11 @@ export function createScrollGuidance(root, adapter) {
     const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver((records) => {
         const relevant = records.some((record) => {
             const target = record.target instanceof Element ? record.target : record.target.parentElement;
-            if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot"))
+            if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot, .a11y-qr-entry-dock"))
                 return false;
             if (record.type === "childList") {
                 const changed = [...record.addedNodes, ...record.removedNodes];
-                if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot")))
+                if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot, .a11y-qr-entry-dock")))
                     return false;
             }
             return true;

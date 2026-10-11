@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QR dock SDK host fixtures</title>
+  <link rel="stylesheet" href="/packages/kiosk-accessibility-sdk/dist/styles.css">
+  <style>
+    * { box-sizing:border-box; }
+    html,body { width:100%;height:100%;margin:0;overflow:hidden;font:16px/1.45 sans-serif;background:#f7f2ea; }
+    .kiosk { position:fixed;inset:0;width:100%;height:100dvh;overflow:hidden;background:#fffdf9; }
+    .fixture-shell { width:100%;height:100%;min-height:0;overflow:auto;padding:18px 24px 28px; }
+    .fixture-shell h1 { margin:0 0 12px; }
+    .fixture-item { min-height:88px;width:100%;margin:8px 0;padding:14px;border:1px solid #dfd2c4;border-radius:12px;background:#f7f2ea;text-align:left; }
+    .fixture-controls { position:fixed;z-index:30;inset-inline:0;bottom:0;min-height:100px;display:flex;gap:12px;align-items:center;padding:16px;background:#35281f;color:white; }
+    .fixture-controls button { min-height:52px;flex:1; }
+    html.fixture-document-owner, html.fixture-document-owner body { height:auto;min-height:0;overflow:visible; }
+    html.fixture-document-owner .kiosk { position:static;inset:auto;height:auto;min-height:0;overflow:visible; }
+    html.fixture-document-owner .fixture-shell { height:auto;min-height:0;overflow:visible; }
+  </style>
+</head>
+<body>
+  <main class="kiosk" id="fixture-root">
+    <section class="fixture-shell shell" data-a11y-slot="scroll-content">
+      <h1 id="fixture-title">독립 키오스크 메뉴</h1>
+      <p>화면을 아래로 이동해 마지막 메뉴의 접근성을 확인합니다.</p>
+      <div id="fixture-list"></div>
+    </section>
+    <footer class="fixture-controls" id="fixture-controls" hidden>
+      <button type="button">이전</button>
+      <button type="button">다음 단계</button>
+    </footer>
+  </main>
+  <script type="module">
+    import { createQrEntryDock } from "/packages/kiosk-accessibility-sdk/dist/index.js";
+    const params = new URLSearchParams(location.search);
+    const documentOwner = params.get("structure") === "document";
+    if (documentOwner) document.documentElement.classList.add("fixture-document-owner");
+    const root = documentOwner ? document.documentElement : document.querySelector("#fixture-root");
+    const shell = document.querySelector(".fixture-shell");
+    const controls = document.querySelector("#fixture-controls");
+    const fixed = params.get("structure") === "fixed-controls";
+    const percent = Number(params.get("percent") || 70);
+    if (fixed) controls.hidden = false;
+    const list = document.querySelector("#fixture-list");
+    for (let i = 1; i <= 18; i += 1) {
+      const button = document.createElement("button");
+      button.className = "fixture-item";
+      button.textContent = `메뉴 ${i}`;
+      if (i === 18) button.id = "last-menu";
+      list.append(button);
+    }
+    let opened = 0;
+    const adapter = {
+      getLayoutRegions: () => ({ bottomControls: fixed ? [controls] : [], scrollArea: documentOwner ? null : shell }),
+    };
+    const dock = createQrEntryDock({
+      root,
+      adapter,
+      active: true,
+      bottomViewportPercent: documentOwner ? undefined : [60, 70, 80].includes(percent) ? percent : 70,
+      onOpenQr: () => { opened += 1; },
+    });
+    const tick = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    dock.setActive(false);
+    await tick();
+    const lifecycleRestored = !document.querySelector("[data-a11y-qr-entry-dock]") &&
+      !root.classList.contains("a11y-qr-entry-dock-home");
+    dock.setActive(true);
+    await tick();
+    const scrollOwner = documentOwner ? document.scrollingElement : shell;
+    scrollOwner.scrollTop = scrollOwner.scrollHeight;
+    await tick();
+    document.querySelector(".a11y-qr-entry-dock-button").click();
+    const footer = document.querySelector(".a11y-qr-entry-dock");
+    const last = document.querySelector("#last-menu");
+    const lastRect = last.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    const controlRect = controls.getBoundingClientRect();
+    const safeBottom = documentOwner ? Math.min(innerHeight, footerRect.top) : shellRect.bottom;
+    const expectedControls = fixed ? Math.ceil(controlRect.height) : 0;
+    const expectedHeight = documentOwner
+      ? innerHeight
+      : Math.floor((innerHeight - footerRect.height - expectedControls) * (percent / 100));
+    const result = {
+      structure: documentOwner ? "document" : fixed ? "fixed-controls" : "inner-container",
+      scrollOwner: documentOwner ? document.scrollingElement.tagName : "fixture-shell",
+      documentScrollRange: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      ownerScrollRange: scrollOwner.scrollHeight - scrollOwner.clientHeight,
+      lifecycleRestored,
+      width: innerWidth,
+      height: innerHeight,
+      qrAreaHeight: footerRect.height,
+      contentAreaHeight: root.getBoundingClientRect().height,
+      expectedContentAreaHeight: expectedHeight,
+      lastMenuVisible: lastRect.top >= (documentOwner ? 0 : shellRect.top) && lastRect.bottom <= safeBottom,
+      lastMenuClickable: document.elementFromPoint(
+        Math.max(1, Math.min(innerWidth - 2, lastRect.left + lastRect.width / 2)),
+        Math.max(1, Math.min(innerHeight - 2, lastRect.top + lastRect.height / 2)),
+      ) === last,
+      fixedControlsVisible: !fixed || (!controls.hidden && controlRect.top >= footerRect.bottom - 1),
+      qrButtonMinimumTarget: footer.querySelector("button").getBoundingClientRect().height >= 44,
+      qrCallbackCalled: opened === 1,
+      horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+    };
+    result.pass = result.lifecycleRestored && result.lastMenuVisible && result.lastMenuClickable && result.fixedControlsVisible &&
+      result.qrButtonMinimumTarget && result.qrCallbackCalled && !result.horizontalOverflow &&
+      result.ownerScrollRange > 0 &&
+      Math.abs(result.contentAreaHeight - expectedHeight) < 3;
+    document.body.dataset.testStatus = result.pass ? "passed" : "failed";
+    window.qrEntryPocResult = result;
+    dock.destroy();
+  </script>
+</body>
+</html>

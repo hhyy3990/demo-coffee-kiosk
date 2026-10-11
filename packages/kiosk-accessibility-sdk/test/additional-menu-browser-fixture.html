@@ -12,10 +12,11 @@
     #fixture-root { position: relative; width: 100%; min-height: 100vh; }
     #fixture-result { position: fixed; left: -10000px; top: 0; }
     .fixture-header { height: 104px; padding: 12px; }
-    .fixture-scroll { height: 420px; overflow-y: auto; padding-bottom: 96px; }
+    .fixture-scroll { height: 560px; overflow-y: auto; padding-bottom: 96px; }
     .fixture-list { display: grid; gap: 8px; }
     .menu-item { display: block; width: 100%; min-height: 82px; border: 1px solid #777; background: white; }
-    .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 76px; padding: 20px; background: #ddd; }
+    .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 104px; padding: 20px; background: #ddd; }
+    .fixture-qr-dock { position: fixed; z-index: 10; right: 0; bottom: 104px; left: 0; height: 72px; background: #eee; }
     #fixture-root.document-scroll .fixture-scroll { height: auto; overflow: visible; padding-bottom: 0; }
     #fixture-root.document-scroll .menu-item { min-height: 160px; }
     #fixture-root.document-scroll .menu-item:nth-child(9) { margin-top: 130px; }
@@ -37,6 +38,7 @@
     const result = {};
     const wait = () => new Promise((resolve) => setTimeout(resolve, 100));
     function mount(kind, count, message) {
+      document.querySelector("[data-a11y-qr-entry-dock]")?.remove();
       root.replaceChildren();
       root.className = `kiosk ${kind}`;
       const header = document.createElement("header");
@@ -59,7 +61,12 @@
       footer.className = "fixture-footer";
       footer.dataset.a11ySlot = "bottom-controls";
       footer.textContent = "하단 조작부";
+      const dock = document.createElement("aside");
+      dock.dataset.a11yQrEntryDock = "true";
+      dock.className = "fixture-qr-dock";
+      dock.textContent = "SDK QR 도크";
       root.append(header, scroll, footer);
+      document.body.append(dock);
       const adapter = {
         getSnapshot: () => ({ screenId: `fixture.${kind}` }),
         getActions: () => [...root.querySelectorAll(".menu-item")].map((element, index) => ({
@@ -69,17 +76,18 @@
         getLayoutRegions: () => ({
           scrollArea: scroll,
           bottomControls: [footer],
+          guidanceAvoidAreas: [dock],
           menuItems: [...root.querySelectorAll(".menu-item")],
           ...(message ? { menuMessage: message } : {}),
         }),
       };
-      return { scroll, footer, sdk: createAccessibilitySdk({ root, adapter }), adapter };
+      return { scroll, footer, dock, sdk: createAccessibilitySdk({ root, adapter }), adapter };
     }
     async function hintVisible() { await wait(); return Boolean(root.querySelector(".a11y-additional-menu-hint") && getComputedStyle(root.querySelector(".a11y-additional-menu-hint")).visibility !== "hidden"); }
     async function checkScrollable(kind, count) {
       const instance = mount(kind, count, "호스트 문구는 공통 문구로 대체되어야 합니다.");
       const startsVisible = await hintVisible();
-      const standardCopy = root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
+      const standardCopy = root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있어요";
       instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
       await wait();
       const testItem = root.querySelector(".menu-item");
@@ -89,11 +97,12 @@
       const noSafeSpaceAtStart = root.dataset.a11yScrollGuidance === "no-safe-space";
       const hint = root.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
+      const hintPointerEventsNone = !hint || getComputedStyle(hint).pointerEvents === "none";
       const last = root.querySelector(".menu-item:last-child");
-      const initialNoOverlap = !hint || Boolean(hintRect && !(() => {
-        const r = instance.footer.getBoundingClientRect();
-        return hintRect.left < r.right && hintRect.right > r.left && hintRect.top < r.bottom && hintRect.bottom > r.top;
-      })());
+      const initialNoOverlap = !hint || Boolean(hintRect && [instance.footer, instance.dock].every((obstacle) => {
+        const r = obstacle.getBoundingClientRect();
+        return !(hintRect.left < r.right && hintRect.right > r.left && hintRect.top < r.bottom && hintRect.bottom > r.top);
+      }));
       if (kind === "document-scroll") window.scrollTo(0, document.documentElement.scrollHeight);
       else instance.scroll.scrollTop = instance.scroll.scrollHeight;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -130,7 +139,10 @@
       const clearsOnSessionEnd = !root.querySelector(".a11y-additional-menu-hint");
       instance.sdk.destroy();
       const clearsOnDestroy = !root.querySelector(".a11y-additional-menu-hint");
-      return { startsVisible: startsVisible || noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
+      const dockRect = instance.dock.getBoundingClientRect().toJSON();
+      const controlsRect = instance.footer.getBoundingClientRect().toJSON();
+      instance.dock.remove();
+      return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, initialNoOverlap, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
@@ -154,6 +166,7 @@
       await wait();
       result.fixtureE = { hiddenBefore, appearsAfterProfile, persistsAfterResize: await hintVisible(), safeSpaceDiagnostic: root.dataset.a11yScrollGuidance === "no-safe-space", hiddenItemsAfterProfile: enlargedState.hiddenCount };
       enlarged.sdk.endSession();
+      document.querySelector("[data-a11y-qr-entry-dock]")?.remove();
       result.sessionReset = !root.querySelector(".a11y-additional-menu-hint");
       root.replaceChildren();
       root.className = "kiosk";
@@ -176,7 +189,7 @@
           primaryActions: [{ element: pay, message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." }],
         }),
       } });
-      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있습니다. 화면을 위로 밀어보세요." };
+      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있어요" };
       scroll.scrollTop = scroll.scrollHeight;
       scroll.dispatchEvent(new Event("scroll", { bubbles: true }));
       result.primaryButton.reachableButtonHitTest = document.elementFromPoint(pay.getBoundingClientRect().left + 10, pay.getBoundingClientRect().top + 10) === pay;
@@ -344,7 +357,11 @@
         root.dataset.a11yScrollGuidance === "no-safe-space" ||
         analyzeAdditionalMenuOverflow(root, enlarged.adapter).hasMoreBelow;
       enlarged.sdk.destroy();
-      result.passed = ["fixtureA", "fixtureB"].every((key) => Object.values(result[key]).every(Boolean)) &&
+      const guidancePassed = (item) => item.startsVisible && !item.noSafeSpaceAtStart &&
+        item.standardCopy && item.hidesAtEnd && item.returnsAfterScrollUp && item.lastReached &&
+        item.clickable && item.clicked && item.initialNoOverlap && item.hintPointerEventsNone &&
+        item.scrollStable && item.contentStyleMutations.unchanged && item.clearsOnSessionEnd && item.clearsOnDestroy;
+      result.passed = guidancePassed(result.fixtureA) && guidancePassed(result.fixtureB) &&
         result.fixtureC.startsHidden && result.fixtureD.hintHidden && result.fixtureD.diagnostic &&
         result.fixtureE.hiddenBefore && (result.fixtureE.appearsAfterProfile || result.fixtureE.safeSpaceDiagnostic) &&
         (result.fixtureE.persistsAfterResize || result.fixtureE.safeSpaceDiagnostic) &&

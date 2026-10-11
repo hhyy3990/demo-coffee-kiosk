@@ -37,7 +37,9 @@ export function getManualProfileToken(value: string): string {
 function profileFromCentralResponse(body: unknown): AccessibilityProfile {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("QR_UNAVAILABLE");
   const record = body as Record<string, unknown>;
-  if (record.schemaVersion !== 1 && record.schemaVersion !== 2) throw new Error("QR_UNAVAILABLE");
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== 3) {
+    throw new Error("QR_UNAVAILABLE");
+  }
   if (typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) {
     throw new Error("QR_UNAVAILABLE");
   }
@@ -46,7 +48,7 @@ function profileFromCentralResponse(body: unknown): AccessibilityProfile {
     throw new Error("QR_UNAVAILABLE");
   }
   const profileData = preferences as Record<string, unknown>;
-  if (record.schemaVersion === 2 && "simplifiedLayout" in profileData) {
+  if (record.schemaVersion >= 2 && "simplifiedLayout" in profileData) {
     throw new Error("QR_UNAVAILABLE");
   }
   const validEnums =
@@ -56,12 +58,29 @@ function profileFromCentralResponse(body: unknown): AccessibilityProfile {
     (profileData.guideDelaySeconds === 10 || profileData.guideDelaySeconds === 15 || profileData.guideDelaySeconds === 20);
   const validBooleans =
     typeof profileData.easyLanguage === "boolean" &&
-    typeof profileData.bottomControls === "boolean" &&
     typeof profileData.smartGuide === "boolean" &&
     typeof profileData.voiceGuidance === "boolean";
   if (!validEnums || !validBooleans) throw new Error("QR_UNAVAILABLE");
-  const { simplifiedLayout: _legacySimplifiedLayout, ...supportedPreferences } = profileData;
-  return validateAccessibilityProfile(supportedPreferences);
+  if (record.schemaVersion < 3) {
+    if (typeof profileData.bottomControls !== "boolean") throw new Error("QR_UNAVAILABLE");
+    const { simplifiedLayout: _legacySimplifiedLayout, ...supportedPreferences } = profileData;
+    return validateAccessibilityProfile({ ...supportedPreferences, viewportMode: null });
+  }
+  if ("bottomControls" in profileData || "simplifiedLayout" in profileData) throw new Error("QR_UNAVAILABLE");
+  const viewportMode = profileData.viewportMode;
+  const validViewportMode = viewportMode === null ||
+    (viewportMode !== null && typeof viewportMode === "object" && !Array.isArray(viewportMode) &&
+      (viewportMode as Record<string, unknown>).mode === "bottom" &&
+      [60, 70, 80].includes((viewportMode as Record<string, unknown>).heightPercent as number));
+  if (!validViewportMode) throw new Error("QR_UNAVAILABLE");
+  if (typeof profileData.textSize !== "string" ||
+      typeof profileData.buttonSize !== "string" ||
+      typeof profileData.contrast !== "string" ||
+      typeof profileData.guideDelaySeconds !== "number" ||
+      !("viewportMode" in profileData)) {
+    throw new Error("QR_UNAVAILABLE");
+  }
+  return validateAccessibilityProfile({ ...profileData, bottomControls: false });
 }
 
 export interface QrProfileClient {

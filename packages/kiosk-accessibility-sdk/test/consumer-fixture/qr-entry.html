@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Installed SDK QR dock layout test</title>
+  </head>
+  <body>
+    <main id="kiosk-root" class="kiosk">
+      <section class="content" data-a11y-slot="scroll-content">
+        <h1>독립 키오스크 메뉴</h1>
+        <p>패키지에 포함된 SDK 스타일과 QR 도크를 검증합니다.</p>
+        <div id="menu-list"></div>
+      </section>
+      <footer class="bottom-controls" data-a11y-slot="bottom-controls">
+        <button type="button">이전 단계</button>
+        <button type="button">다음 단계</button>
+      </footer>
+    </main>
+    <script type="module" src="/src/qr-entry.js"></script>
+  </body>
+</html>

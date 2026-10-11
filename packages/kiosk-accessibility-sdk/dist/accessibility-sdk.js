@@ -1,3 +1,4 @@
+import { createBottomViewportController, } from "./bottom-viewport.js";
 import { inspectKioskLayout } from "./diagnostics.js";
 import { createLayoutEnhancer, } from "./layout-enhancements.js";
 import { createScrollGuidance } from "./scroll-guidance.js";
@@ -15,9 +16,55 @@ const MANAGED_CLASSES = [
 function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
 }
-function positionGuide(overlay, target) {
+function positionGuide(overlay, target, root, regions) {
     if (!target || !target.isConnected)
-        return;
+        return false;
+    if (root?.classList.contains("a11y-bottom-viewport-enabled") ||
+        root?.classList.contains("a11y-bottom-viewport-poc-shell")) {
+        const vw = document.documentElement.clientWidth || innerWidth;
+        const vh = document.documentElement.clientHeight || innerHeight;
+        const shell = (regions?.scrollArea && root.contains(regions.scrollArea)
+            ? regions.scrollArea
+            : root).getBoundingClientRect();
+        const controls = (regions?.bottomControls ?? []).filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
+        const safeBottom = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.bottom)) - 8;
+        const safeTop = Math.max(0, shell.top) + 8;
+        const availableHeight = safeBottom - safeTop;
+        if (availableHeight < 96)
+            return false;
+        overlay.style.position = "fixed";
+        overlay.style.left = `${Math.max(12, (vw - Math.min(500, vw - 24)) / 2)}px`;
+        overlay.style.top = `${safeTop}px`;
+        overlay.style.bottom = "auto";
+        overlay.style.width = `min(500px, calc(100vw - 24px))`;
+        overlay.style.maxHeight = `${availableHeight}px`;
+        overlay.style.overflowY = "auto";
+        overlay.style.visibility = "hidden";
+        const height = overlay.getBoundingClientRect().height;
+        const action = target.getBoundingClientRect();
+        const minimum = safeTop;
+        const maximum = safeBottom - height;
+        const positions = [action.top - height - 12, action.bottom + 12];
+        const obstacles = [
+            ...(regions?.primaryActions ?? []).map(({ element }) => element),
+            ...(regions?.viewportOverlays ?? []),
+            ...(regions?.guidanceAvoidAreas ?? []),
+            ...controls,
+        ].filter((el) => el !== overlay && el.isConnected &&
+            getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
+            el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+        const top = positions.find((candidate) => candidate >= minimum && candidate <= maximum &&
+            !obstacles.some((el) => {
+                const rect = el.getBoundingClientRect();
+                return 12 < rect.right && vw - 12 > rect.left &&
+                    candidate < rect.bottom && candidate + height > rect.top;
+            }));
+        if (top === undefined)
+            return false;
+        overlay.style.top = `${top}px`;
+        overlay.style.visibility = "visible";
+        return true;
+    }
     const targetRect = target.getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
     const margin = 12;
@@ -41,6 +88,7 @@ function positionGuide(overlay, target) {
     const left = clamp(targetRect.left + (targetRect.width - overlayRect.width) / 2, margin, Math.max(margin, window.innerWidth - overlayRect.width - margin));
     overlay.style.left = `${left}px`;
     overlay.style.top = `${top}px`;
+    return true;
 }
 function createGuideOverlay(root, message, onClose) {
     const aside = document.createElement("aside");
@@ -70,7 +118,8 @@ function createGuideOverlay(root, message, onClose) {
         onClose();
     });
     aside.append(icon, copy, close);
-    const slot = typeof root.querySelector === "function"
+    const slot = !root.classList.contains("a11y-bottom-viewport-poc-shell") &&
+        typeof root.querySelector === "function"
         ? root.querySelector(".a11y-guidance-slot")
         : null;
     (slot ?? root).append(aside);
@@ -100,10 +149,15 @@ export function createAccessibilitySdk(options) {
     const emphasizedNextButtons = new Set();
     const nextItemObserver = typeof MutationObserver === "undefined"
         ? null
-        : new MutationObserver(refreshNextItemButtons);
+        : new MutationObserver(() => {
+            refreshNextItemButtons();
+            if (guideOverlay)
+                updateGuidePosition();
+        });
     let timer = createIdleTimer(showGuide);
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
     const menuHint = createScrollGuidance(root, adapter);
+    const bottomViewport = createBottomViewportController(root, adapter);
     function refreshNextItemButtons() {
         if (sessionEnded || destroyed)
             return;
@@ -253,7 +307,9 @@ export function createAccessibilitySdk(options) {
         if (!guideOverlay || !guideState.message?.actionId)
             return;
         const action = findGuideAction(guideState.message.actionId);
-        positionGuide(guideOverlay, action?.element ?? null);
+        if (!positionGuide(guideOverlay, action?.element ?? null, root, adapter.getLayoutRegions())) {
+            removeGuide();
+        }
     }
     function showGuide() {
         if (destroyed ||
@@ -276,7 +332,10 @@ export function createAccessibilitySdk(options) {
             removeGuide();
             scheduleGuide();
         });
-        positionGuide(guideOverlay, target);
+        if (!positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
+            removeGuide();
+            return;
+        }
         window.addEventListener("resize", updateGuidePosition);
         window.addEventListener("scroll", updateGuidePosition, true);
         speakText(guideState.message.text, currentProfile.voiceGuidance);
@@ -322,6 +381,9 @@ export function createAccessibilitySdk(options) {
             currentProfile.bottomControls) {
             layoutEnhancer.correctLayout();
         }
+        // The QR profile is the source of truth for the viewport mode. Applying
+        // v1/v2 normalizes it to null, while v3 applies its explicit setting here.
+        setViewportMode(currentProfile.viewportMode);
         menuHint.refresh();
         refreshNextItemButtons();
         if (previousVoiceGuidance && !currentProfile.voiceGuidance)
@@ -354,6 +416,15 @@ export function createAccessibilitySdk(options) {
     function getLastLayoutCorrections() {
         return layoutEnhancer.getLastCorrections();
     }
+    function setViewportMode(config) {
+        const applied = bottomViewport.apply(config);
+        if (applied) {
+            menuHint.refresh();
+            if (guideOverlay)
+                updateGuidePosition();
+        }
+        return applied;
+    }
     function endSession() {
         sessionGeneration += 1;
         timer.cancel();
@@ -381,6 +452,7 @@ export function createAccessibilitySdk(options) {
         navigationStates.clear();
         removeGuide();
         cancelSpeech();
+        bottomViewport.apply(null);
         applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
         sessionEnded = true;
         for (const state of navigationStates.values())
@@ -411,11 +483,13 @@ export function createAccessibilitySdk(options) {
     root.addEventListener("scroll", refreshNextItemButtons, true);
     root.addEventListener("click", onNavigationClick, true);
     window.addEventListener("resize", refreshNextItemButtons, { passive: true });
+    if (options.viewportMode)
+        setViewportMode(options.viewportMode);
     nextItemObserver?.observe(root, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled"],
+        attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled", "hidden", "aria-hidden"],
     });
     refreshNextItemButtons();
     if (!("PointerEvent" in window))
@@ -427,6 +501,7 @@ export function createAccessibilitySdk(options) {
             return { ...currentProfile };
         },
         applyProfile,
+        setViewportMode,
         setGuideState,
         resetIdleTimer,
         speak,
@@ -448,6 +523,7 @@ export function createAccessibilitySdk(options) {
             timer.dispose();
             removeGuide();
             layoutEnhancer.destroy();
+            bottomViewport.destroy();
             menuHint.destroy();
             root.removeEventListener("pointerdown", recordInteraction);
             root.removeEventListener("keydown", recordInteraction);

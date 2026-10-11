@@ -1,4 +1,5 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
+import { type BottomViewportConfig } from "./bottom-viewport.ts";
 import { type AccessibilityDiagnostic } from "./diagnostics.ts";
 import { type LayoutCorrectionResult } from "./layout-enhancements.ts";
 import { type GuideState } from "./guide.ts";
@@ -6,6 +7,8 @@ import { type AccessibilityProfile } from "./profile.ts";
 export interface AccessibilitySdkOptions {
     root: HTMLElement;
     adapter: AccessibilityAdapter;
+    /** Explicit opt-in; never inferred from the central QR profile. */
+    viewportMode?: BottomViewportConfig;
     onInteractionCount?: (count: number) => void;
     onDiagnostics?: (issues: readonly AccessibilityDiagnostic[]) => void;
     onSessionCleanupError?: (error: unknown) => void;
@@ -15,6 +18,7 @@ export interface AccessibilitySdk {
     readonly version: string;
     readonly profile: AccessibilityProfile;
     applyProfile(input: unknown): AccessibilityProfile;
+    setViewportMode(config: BottomViewportConfig | null): boolean;
     setGuideState(state: GuideState): void;
     resetIdleTimer(): void;
     speak(text: string): boolean;

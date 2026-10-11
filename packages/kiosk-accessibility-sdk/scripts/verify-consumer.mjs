@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
 const fixtureRoot = resolve(packageRoot, "test/consumer-fixture");
-const tarball = resolve(packageRoot, "releases/naebangsik-kiosk-accessibility-sdk-0.3.6.tgz");
+const packageJson = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
+const tarball = process.env.KIOSK_SDK_TARBALL
+  ? resolve(process.env.KIOSK_SDK_TARBALL)
+  : resolve(packageRoot, `releases/naebangsik-kiosk-accessibility-sdk-${packageJson.version}.tgz`);
 const consumerRoot = await mkdtemp(join(tmpdir(), "kiosk-sdk-consumer-"));
 
 function run(command, args, cwd, env = {}) {
@@ -27,7 +30,7 @@ try {
     resolve(consumerRoot, "node_modules/@naebangsik/kiosk-accessibility-sdk/package.json"),
     "utf8",
   ));
-  if (installedPackage.name !== "@naebangsik/kiosk-accessibility-sdk" || installedPackage.version !== "0.3.6") {
+  if (installedPackage.name !== packageJson.name || installedPackage.version !== packageJson.version) {
     throw new Error(`Unexpected installed SDK package: ${installedPackage.name}@${installedPackage.version}`);
   }
   run(
@@ -44,6 +47,12 @@ try {
     resolve(repositoryRoot, "node_modules/.bin/vite"),
     ["build", consumerRoot, "--outDir", resolve(consumerRoot, "build")],
     repositoryRoot,
+  );
+  run(
+    process.execPath,
+    [resolve(packageRoot, "scripts/test-consumer-qr-entry-browser.mjs")],
+    repositoryRoot,
+    { KIOSK_SDK_CONSUMER_ROOT: consumerRoot },
   );
   console.log("Standalone tarball install, SDK consumer tests, declaration typecheck, and production build passed.");
 } finally {

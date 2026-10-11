@@ -17,6 +17,10 @@ export {
   type SessionCleanup,
 } from "./accessibility-sdk.ts";
 export {
+  type BottomViewportConfig,
+  type BottomViewportHeightPercent,
+} from "./bottom-viewport.ts";
+export {
   type AccessibilityAdapter,
   type AccessibilityGuideMessage,
   type KioskAction,
@@ -36,6 +40,12 @@ export {
   type BottomViewportPocOptions,
   type BottomViewportPocPercent,
 } from "./bottom-viewport-poc.ts";
+export {
+  createQrEntryDock,
+  type QrEntryDockController,
+  type QrEntryDockOptions,
+  type QrEntryDockTheme,
+} from "./qr-entry-dock.ts";
 export {
   DEFAULT_ADDITIONAL_MENU_MESSAGE,
   analyzeAdditionalMenuOverflow,

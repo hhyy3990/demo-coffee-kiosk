@@ -5,8 +5,8 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.3.6`
-- 중앙 QR 프로필: v1·v2 읽기 지원, 신규 정식 프로필 스키마 v2
+- SDK API: `0.5.3`
+- 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
 
@@ -19,24 +19,25 @@ npm run sdk:build
 npm run sdk:pack
 npm run sdk:verify-consumer
 npm --prefix packages/kiosk-accessibility-sdk run test:browser
+npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 ```
 
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.6.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.3.tgz
 ```
 
-버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1 응답은 레거시 `simplifiedLayout`을 무시하며, v2 응답은 제거된 필드가 없는 정식 설정만 허용합니다. 두 버전 모두 최상위 `schemaVersion`과 `preferences`를 요구하고 알 수 없는 버전·누락되거나 잘못된 필수 값은 거부합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
+버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1·v2는 기존 설정을 읽고 `viewportMode`를 `null`로 정규화하므로 레거시 `bottomControls`로 하단 모드를 추측하지 않습니다. v3는 최상위 `schemaVersion`, `updatedAt`, `preferences`를 요구하며 `preferences.viewportMode`는 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`이어야 합니다. 문자열 비율, 지원하지 않는 값, v3의 레거시 `bottomControls`/`simplifiedLayout` 필드는 거부합니다. QR 프로필이 적용되면 SDK가 검증한 `viewportMode`를 기존 공통 레이아웃 경로에 자동 반영합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.3.6.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.3.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.3.6.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.3.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -47,6 +48,7 @@ import {
   ACCESSIBILITY_SDK_VERSION,
   createAccessibilitySdk,
   createQrProfileClient,
+  type BottomViewportConfig,
   validateAccessibilityProfile,
   type AccessibilityAdapter,
   type AccessibilityProfile,
@@ -54,13 +56,67 @@ import {
 import "@naebangsik/kiosk-accessibility-sdk/styles.css";
 ```
 
+## 첫 화면 전용 QR 도크
+
+`createQrEntryDock()`은 호스트가 명시적으로 `active`를 켠 동안만 SDK 소유 QR 버튼을 화면 아래에 표시합니다. 호스트는 QR 화면 열기 콜백과 현재 레이아웃 어댑터를 제공하고, 화면이 바뀌면 `setActive(false)`로 도크를 제거합니다. SDK는 화면 이름을 추측하거나 호스트 DOM을 옮기지 않습니다. 고정 하단 버튼은 어댑터의 `getLayoutRegions().bottomControls`에 등록해야 안전한 공간을 계산할 수 있습니다.
+
+```ts
+import { createQrEntryDock } from "@naebangsik/kiosk-accessibility-sdk";
+
+const dock = createQrEntryDock({
+  root,
+  adapter,
+  active: isWelcomeScreen,
+  onOpenQr: openExistingQrDialog,
+  theme: { button: "#704b32", buttonForeground: "#fffaf1" },
+});
+
+// 호스트 화면 상태가 바뀔 때 호출
+dock.setActive(isWelcomeScreen);
+// 호스트가 종료될 때
+dock.destroy();
+```
+
+첫 화면에서 `bottomViewportPercent: 60 | 70 | 80`을 선택적으로 전달하면, 비율은 QR 도크와 등록된 고정 조작부를 제외한 남은 높이를 기준으로 계산됩니다. 주문 화면의 기존 방법 B는 기존 SDK `setViewportMode()`로 따로 관리합니다. QR 도크는 접근성 프로필 적용/해제와 독립적이므로 QR을 적용해도 유지되고, 호스트가 첫 화면을 떠날 때 제거해야 합니다. 주문 또는 진료 등 업무 상태와 QR 모달 진입 권한은 계속 호스트가 관리합니다.
+
+## 방법 B: 아래쪽 표시 영역
+
+방법 B는 페이지나 글씨를 축소하지 않고, 등록한 화면 루트를 고정 QR 도크와 등록된 하단 조작부를 제외한 가용 높이의 아래쪽 60%, 70%, 80% 스크롤 영역으로 표시합니다. 기존 중앙 QR 프로필 v1/v2의 `bottomControls` 값으로는 활성화되지 않습니다. v3 QR 프로필의 `preferences.viewportMode`가 SDK 적용 시 자동 반영되며, 개발·호스트 제어를 위해 공개 `setViewportMode()`도 유지합니다.
+
+```ts
+import type { BottomViewportConfig } from "@naebangsik/kiosk-accessibility-sdk";
+
+const mode: BottomViewportConfig = { mode: "bottom", heightPercent: 70 };
+const sdk = createAccessibilitySdk({ root, adapter, viewportMode: mode });
+
+// 같은 인스턴스에서 비율 변경 또는 해제
+sdk.setViewportMode({ mode: "bottom", heightPercent: 60 });
+sdk.setViewportMode(null);
+```
+
+일반 QR 적용 흐름에서는 호스트가 기존 중앙 API 응답을 `createQrProfileClient().resolve(...)`로 검증한 뒤 그 결과를 `sdk.applyProfile(profile)`에 전달하면 됩니다. SDK는 v3 응답을 검증하고 `viewportMode`를 같은 내부 레이아웃 경로에 적용합니다. 호스트가 QR 적용 경로에서 별도로 `setViewportMode()`를 호출할 필요는 없습니다. v1/v2 응답은 `viewportMode: null`로 정규화됩니다.
+
+허용 비율은 `60 | 70 | 80`뿐입니다. 잘못된 값은 TypeScript 타입에서 거부되고 런타임에서도 화면을 바꾸지 않고 `false`를 반환합니다. 모드 해제와 `endSession()`은 SDK가 추가한 클래스 및 CSS 사용자 속성을 복원하며, 주문·발급 등 호스트 상태는 변경하지 않습니다.
+
+`getLayoutRegions().scrollArea`가 root 안에 있으면 그 영역을 스크롤 대상으로 사용합니다. 이를 등록하지 않으면 root 자체가 대상으로 사용됩니다. 실제 문서 스크롤의 경우 root를 업무 화면 전체를 담는 루트로 등록해야 합니다. 고정 버튼은 기존 `bottomControls` 배열로, SDK가 만든 첫 화면 QR 도크는 SDK가 직접 측정합니다. QR 카메라·키패드·모달은 `viewportOverlays`로 선택 등록하세요. 특별한 고정 요소나 복잡한 중첩 스크롤의 의미가 불분명하면 SDK가 추측하지 않습니다.
+
+```ts
+getLayoutRegions: () => ({
+  scrollArea: root.querySelector<HTMLElement>("[data-a11y-slot='scroll-content']"),
+  bottomControls: [...root.querySelectorAll<HTMLElement>("[data-a11y-slot='bottom-controls']")],
+  viewportOverlays: [...root.querySelectorAll<HTMLElement>("[data-a11y-viewport-overlay]")],
+}),
+```
+
+SDK는 기존 DOM 자식을 옮기지 않으며, 업무 버튼을 실행·삭제·숨김 처리하지 않습니다. CSS가 화면 자체를 축소하는 방식은 쓰지 않습니다. root가 화면 외부에 있거나, transform/contain/복잡한 중첩 스크롤이 fixed positioning을 가로막는 구조는 별도 검증이 필요합니다.
+
 패키지는 React나 데모커피 파일을 참조하지 않습니다. 브라우저 DOM을 제공하는 웹 키오스크와 ES module을 처리할 수 있는 번들러가 필요합니다. 프로필 검증 유틸리티는 Node.js에서도 사용할 수 있습니다.
 
 ## 아래쪽 메뉴 자동 안내
 
 현재 화면의 목록을 `getLayoutRegions()`에서 선택적으로 `menuItems`에 등록하면 SDK가 해당 항목과 실제 스크롤 소유 영역을 측정합니다. 추가 항목이 아래에 있고 사용자가 더 내릴 수 있을 때만 SDK가 안내 UI를 표시합니다. 자체 스크롤과 문서 스크롤을 모두 지원하며, 고정 하단 조작부와 등록된 버튼을 피할 수 없는 상태에서는 안내를 가리지 않고 스크롤 불가 진단을 남깁니다.
 
-기본 문구는 `아래에도 내용이 있습니다. 화면을 위로 밀어보세요.`이며, 등록된 주요 버튼이 화면 아래에 있을 때는 `아래에도 버튼이 있습니다. 화면을 위로 밀어보세요.`를 씁니다. 기존 `menuMessage`와 액션별 안내문은 호환용 입력으로 남아 있지만 공통 문구 정책에 따라 표시하지 않습니다. 안내는 실제 세로 스크롤이 남아 있을 때만 표시되며, 자동 음성은 재생하지 않습니다.
+기본 문구는 `아래에도 내용이 있어요`이며, 등록된 주요 버튼이 화면 아래에 있을 때는 `아래에도 버튼이 있어요`를 씁니다. 기존 `menuMessage`와 액션별 안내문은 호환용 입력으로 남아 있지만 공통 문구 정책에 따라 표시하지 않습니다. 안내는 실제 세로 스크롤이 남아 있을 때만 표시되며, 자동 음성은 재생하지 않습니다.
 
 ```ts
 getLayoutRegions: () => ({
