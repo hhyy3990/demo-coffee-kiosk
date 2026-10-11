@@ -88,7 +88,7 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
             return [...candidates];
         const ignored = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IMG", "VIDEO", "IFRAME"]);
         for (const element of Array.from(root.querySelectorAll("*"))) {
-            if (ignored.has(element.tagName) || element.closest(".a11y-guide-toast, .a11y-additional-menu-hint, [aria-hidden='true']"))
+            if (ignored.has(element.tagName) || element.closest(".a11y-guide-toast, .a11y-additional-menu-hint, .a11y-guidance-slot, [aria-hidden='true']"))
                 continue;
             const style = window.getComputedStyle(element);
             const rect = element.getBoundingClientRect();
@@ -277,11 +277,11 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
         ? new MutationObserver((records) => {
             const relevant = records.some((record) => {
                 const target = record.target instanceof Element ? record.target : record.target.parentElement;
-                if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast"))
+                if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot"))
                     return false;
                 if (record.type === "childList") {
                     const changed = [...record.addedNodes, ...record.removedNodes];
-                    if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast")))
+                    if (changed.length && changed.every((item) => item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot")))
                         return false;
                 }
                 return true;

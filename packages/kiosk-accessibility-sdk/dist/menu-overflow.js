@@ -1,4 +1,4 @@
-export const DEFAULT_ADDITIONAL_MENU_MESSAGE = "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
+export const DEFAULT_ADDITIONAL_MENU_MESSAGE = "아래에도 내용이 있어요";
 function visible(element) {
     const style = window.getComputedStyle(element);
     const rect = element.getBoundingClientRect();

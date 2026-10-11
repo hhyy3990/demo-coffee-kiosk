@@ -43,22 +43,22 @@
     </div>
     <div id="fixture-status" class="poc-status" role="status">기본 화면. 비율과 접근성 조합을 선택해 적용하세요.</div>
     <main id="document-fixture" class="kiosk fixture-kiosk">
-      <header class="fixture-header">문서 스크롤 구조 · 상단 고정 헤더</header>
+      <div class="fixture-content" data-a11y-slot="scroll-content"><header class="fixture-header">문서 스크롤 구조 · 상단 고정 헤더</header>
       <h1>독립형 업무 키오스크</h1>
       <p>긴 업무 단계와 페이지 스크롤을 확인합니다.</p>
       <div class="fixture-cards"></div>
-      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="document-last-action">마지막 단계 확인</button></div>
+      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="document-last-action" data-a11y-primary="true">마지막 단계 확인</button></div>
       <div class="fixture-modal" hidden role="presentation"><section class="fixture-dialog" role="dialog" aria-modal="true"><h2>확인 창</h2><p>고정 모달이 하단 표시 영역 안에서 열리는지 확인합니다.</p><div class="fixture-keypad" aria-label="화면 키패드"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><button type="button">6</button><button type="button">7</button><button type="button">8</button><button type="button">9</button><button type="button">지움</button><button type="button">0</button><button type="button">확인</button></div><button type="button" class="close-modal">닫기</button></section></div>
-      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div>
+      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div></div>
     </main>
     <main id="nested-fixture" class="kiosk fixture-kiosk" hidden>
-      <header class="fixture-header">내부 스크롤 구조 · 고정 상단 헤더</header>
+      <div class="fixture-content" data-a11y-slot="scroll-content"><header class="fixture-header">내부 스크롤 구조 · 고정 상단 헤더</header>
       <h1>독립형 업무 키오스크</h1>
       <p>내부 목록 스크롤과 하단 고정 조작부를 확인합니다.</p>
       <div class="fixture-scroll"><div class="fixture-cards"></div></div>
-      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="nested-last-action">마지막 단계 확인</button></div>
+      <div class="fixture-actions"><button type="button">이전</button><button type="button" id="nested-last-action" data-a11y-primary="true">마지막 단계 확인</button></div>
       <div class="fixture-modal" hidden role="presentation"><section class="fixture-dialog" role="dialog" aria-modal="true"><h2>확인 창</h2><p>고정 모달이 하단 표시 영역 안에서 열리는지 확인합니다.</p><div class="fixture-keypad" aria-label="화면 키패드"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><button type="button">6</button><button type="button">7</button><button type="button">8</button><button type="button">9</button><button type="button">지움</button><button type="button">0</button><button type="button">확인</button></div><button type="button" class="close-modal">닫기</button></section></div>
-      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div>
+      <div class="fixture-footer"><button type="button" class="open-modal">모달 열기</button></div></div>
     </main>
   </body>
 </html>

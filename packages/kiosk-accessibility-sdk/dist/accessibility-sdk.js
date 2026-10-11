@@ -70,7 +70,10 @@ function createGuideOverlay(root, message, onClose) {
         onClose();
     });
     aside.append(icon, copy, close);
-    root.append(aside);
+    const slot = typeof root.querySelector === "function"
+        ? root.querySelector(".a11y-guidance-slot")
+        : null;
+    (slot ?? root).append(aside);
     return aside;
 }
 export function createAccessibilitySdk(options) {
@@ -227,6 +230,7 @@ export function createAccessibilitySdk(options) {
         refreshNextItemButtons();
     }
     function removeGuide() {
+        const hadGuide = guideOverlay !== null;
         if (guideOverlay) {
             guideOverlay.remove();
             guideOverlay = null;
@@ -235,7 +239,10 @@ export function createAccessibilitySdk(options) {
         }
         highlightedAction?.classList.remove("a11y-guide-emphasis");
         highlightedAction = null;
-        menuHint.refresh();
+        if (hadGuide) {
+            menuHint.setEnabled(true);
+            menuHint.refresh();
+        }
     }
     function findGuideAction(actionId) {
         if (!actionId)
@@ -260,6 +267,7 @@ export function createAccessibilitySdk(options) {
         if (!action || !target || !root.contains(target))
             return;
         removeGuide();
+        menuHint.setEnabled(false);
         highlightedAction = action.highlightElement ?? target;
         highlightedAction.classList.add("a11y-guide-emphasis");
         guideOverlay = createGuideOverlay(root, guideState.message, () => {
@@ -301,7 +309,7 @@ export function createAccessibilitySdk(options) {
     }
     function applyProfile(input) {
         sessionEnded = false;
-        menuHint.setEnabled(true);
+        menuHint.setEnabled(guideOverlay === null);
         const previousVoiceGuidance = currentProfile.voiceGuidance;
         currentProfile = validateAccessibilityProfile(input);
         const nextClasses = new Set(accessibilityClasses(currentProfile));

@@ -1,5 +1,5 @@
 import "@naebangsik/kiosk-accessibility-sdk/styles.css";
-import { createBottomViewportPoc } from "@naebangsik/kiosk-accessibility-sdk";
+import { createAccessibilitySdk, createBottomViewportPoc } from "@naebangsik/kiosk-accessibility-sdk";
 
 const documentRoot = document.querySelector<HTMLElement>("#document-fixture")!;
 const nestedRoot = document.querySelector<HTMLElement>("#nested-fixture")!;
@@ -7,6 +7,7 @@ const status = document.querySelector<HTMLElement>("#fixture-status")!;
 const ratioSelect = document.querySelector<HTMLSelectElement>("#fixture-ratio")!;
 const fixtureSelect = document.querySelector<HTMLSelectElement>("#fixture-type")!;
 let activePoc: ReturnType<typeof createBottomViewportPoc> | null = null;
+let activeSdk: ReturnType<typeof createAccessibilitySdk> | null = null;
 
 for (const root of [documentRoot, nestedRoot]) {
   const cards = root.querySelector<HTMLElement>(".fixture-cards")!;
@@ -30,15 +31,46 @@ function updateStatus(): void {
   const last = root.querySelector<HTMLElement>("[id$='last-action']")!;
   const rect = last.getBoundingClientRect();
   const visible = rect.top >= 0 && rect.bottom <= window.innerHeight;
-  status.textContent = `root=${root.clientHeight}px, scroll=${root.scrollTop}/${root.scrollHeight - root.clientHeight}px, 마지막 조작 화면 내=${visible ? "예" : "아니요"}`;
+  const owner = root.querySelector<HTMLElement>("#nested-fixture .fixture-scroll") ??
+    root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')!;
+  status.textContent = `root=${root.clientHeight}px, scroll=${owner.scrollTop}/${owner.scrollHeight - owner.clientHeight}px, 마지막 조작 화면 내=${visible ? "예" : "아니요"}`;
 }
 
 document.querySelector("#fixture-apply")?.addEventListener("click", () => {
   activePoc?.destroy();
+  activeSdk?.destroy();
   activePoc = null;
+  activeSdk = null;
   documentRoot.hidden = fixtureSelect.value !== "document";
   nestedRoot.hidden = fixtureSelect.value !== "nested";
   const root = currentRoot();
+  const lastAction = root.querySelector<HTMLElement>("[id$='last-action']")!;
+  const scrollArea = root.querySelector<HTMLElement>(".fixture-scroll") ??
+    root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]');
+  activeSdk = createAccessibilitySdk({
+    root,
+    adapter: {
+      getSnapshot: () => ({ screenId: "fixture" }),
+      getActions: () => [{
+        id: `${root.id}.last-action`,
+        name: "마지막 단계 확인",
+        element: lastAction,
+        enabled: true,
+        primary: true,
+      }],
+      getTextTargets: () => [],
+      getLayoutRegions: () => ({
+        scrollArea,
+        menuItems: Array.from(root.querySelectorAll<HTMLElement>(".fixture-card")),
+        primaryActions: [{ element: lastAction }],
+      }),
+    },
+  });
+  activeSdk.applyProfile({
+    textSize: (document.querySelector<HTMLInputElement>("#fixture-extra")!).checked ? "extraLarge" : "standard",
+    buttonSize: (document.querySelector<HTMLInputElement>("#fixture-buttons")!).checked ? "large" : "standard",
+    contrast: (document.querySelector<HTMLInputElement>("#fixture-contrast")!).checked ? "high" : "standard",
+  });
   root.classList.toggle("a11y-text-extra", (document.querySelector<HTMLInputElement>("#fixture-extra")!).checked);
   root.classList.toggle("a11y-controls-large", (document.querySelector<HTMLInputElement>("#fixture-buttons")!).checked);
   root.classList.toggle("a11y-high-contrast", (document.querySelector<HTMLInputElement>("#fixture-contrast")!).checked);
@@ -54,18 +86,20 @@ document.querySelector("#fixture-apply")?.addEventListener("click", () => {
       }),
     },
   });
-  root.scrollTop = 0;
+  scrollArea!.scrollTop = 0;
   updateStatus();
 });
 
 document.querySelector("#fixture-restore")?.addEventListener("click", () => {
   activePoc?.destroy();
+  activeSdk?.destroy();
   activePoc = null;
+  activeSdk = null;
   documentRoot.hidden = fixtureSelect.value !== "document";
   nestedRoot.hidden = fixtureSelect.value !== "nested";
   for (const root of [documentRoot, nestedRoot]) {
     root.classList.remove("a11y-text-extra", "a11y-controls-large", "a11y-high-contrast");
-    root.scrollTop = 0;
+    (root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')!).scrollTop = 0;
   }
   updateStatus();
 });

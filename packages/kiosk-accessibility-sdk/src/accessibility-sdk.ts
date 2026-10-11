@@ -124,7 +124,10 @@ function createGuideOverlay(
   });
 
   aside.append(icon, copy, close);
-  root.append(aside);
+  const slot = typeof root.querySelector === "function"
+    ? root.querySelector<HTMLElement>(".a11y-guidance-slot")
+    : null;
+  (slot ?? root).append(aside);
   return aside;
 }
 
@@ -287,6 +290,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   }
 
   function removeGuide(): void {
+    const hadGuide = guideOverlay !== null;
     if (guideOverlay) {
       guideOverlay.remove();
       guideOverlay = null;
@@ -295,7 +299,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     }
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
-    menuHint.refresh();
+    if (hadGuide) {
+      menuHint.setEnabled(true);
+      menuHint.refresh();
+    }
   }
 
   function findGuideAction(actionId: string | null) {
@@ -323,6 +330,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const target = action?.element ?? null;
     if (!action || !target || !root.contains(target)) return;
     removeGuide();
+    menuHint.setEnabled(false);
     highlightedAction = action.highlightElement ?? target;
     highlightedAction.classList.add("a11y-guide-emphasis");
     guideOverlay = createGuideOverlay(root, guideState.message, () => {
@@ -368,7 +376,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
 
   function applyProfile(input: unknown): AccessibilityProfile {
     sessionEnded = false;
-    menuHint.setEnabled(true);
+    menuHint.setEnabled(guideOverlay === null);
     const previousVoiceGuidance = currentProfile.voiceGuidance;
     currentProfile = validateAccessibilityProfile(input);
     const nextClasses = new Set(accessibilityClasses(currentProfile));

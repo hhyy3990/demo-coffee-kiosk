@@ -256,6 +256,7 @@ export default function App() {
         easyLanguage: profile.includes("simple"),
         bottomControls: profile.includes("bottom"),
         smartGuide: profile.includes("guide"),
+        guideDelaySeconds: profile.includes("guide10") ? 10 : current.guideDelaySeconds,
         voiceGuidance: profile.includes("voice"),
       }));
     }
@@ -374,6 +375,10 @@ export default function App() {
 
   useEffect(() => {
     if (stage !== "menu") return;
+    const root = kioskRootRef.current;
+    const pocScroller = root?.classList.contains("a11y-bottom-viewport-poc-shell")
+      ? root.querySelector<HTMLElement>('[data-a11y-slot="scroll-content"]')
+      : null;
     let animationFrame = 0;
     const updateMenuPosition = () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
@@ -383,9 +388,6 @@ export default function App() {
         if (!cards.length) return;
         const browseBottom = kioskRootRef.current?.querySelector<HTMLElement>(".category-nav")?.getBoundingClientRect().bottom ?? 0;
         const visibleIndex = cards.findIndex((card) => card.getBoundingClientRect().bottom > Math.max(0, browseBottom) + 8);
-        const pocScroller = kioskRootRef.current?.classList.contains("a11y-bottom-viewport-poc-shell")
-          ? kioskRootRef.current
-          : null;
         const pageIsScrollable = pocScroller
           ? pocScroller.scrollHeight > pocScroller.clientHeight + 2
           : document.documentElement.scrollHeight > window.innerHeight + 2;
@@ -400,12 +402,13 @@ export default function App() {
       });
     };
     window.addEventListener("scroll", updateMenuPosition, { passive: true });
-    const root = kioskRootRef.current;
     root?.addEventListener("scroll", updateMenuPosition, { passive: true });
+    pocScroller?.addEventListener("scroll", updateMenuPosition, { passive: true });
     updateMenuPosition();
     return () => {
       window.removeEventListener("scroll", updateMenuPosition);
       root?.removeEventListener("scroll", updateMenuPosition);
+      pocScroller?.removeEventListener("scroll", updateMenuPosition);
       if (animationFrame) cancelAnimationFrame(animationFrame);
     };
   }, [category, currentProducts.length, stage]);

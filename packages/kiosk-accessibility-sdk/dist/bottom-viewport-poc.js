@@ -4,6 +4,12 @@
  */
 export function createBottomViewportPoc({ root, adapter, percent, }) {
     const rootHadClass = root.classList.contains("a11y-bottom-viewport-poc-shell");
+    const existingGuidanceSlot = root.querySelector(".a11y-guidance-slot");
+    const guidanceSlot = existingGuidanceSlot ?? document.createElement("div");
+    if (!existingGuidanceSlot) {
+        guidanceSlot.className = "a11y-guidance-slot";
+        root.append(guidanceSlot);
+    }
     const oldHeight = root.style.getPropertyValue("--a11y-bottom-poc-height");
     const oldHeightPriority = root.style.getPropertyPriority("--a11y-bottom-poc-height");
     const overlayState = new Map();
@@ -32,6 +38,8 @@ export function createBottomViewportPoc({ root, adapter, percent, }) {
                 return;
             destroyed = true;
             observer?.disconnect();
+            if (!existingGuidanceSlot)
+                guidanceSlot.remove();
             root.classList.toggle("a11y-bottom-viewport-poc-shell", rootHadClass);
             if (oldHeight)
                 root.style.setProperty("--a11y-bottom-poc-height", oldHeight, oldHeightPriority);

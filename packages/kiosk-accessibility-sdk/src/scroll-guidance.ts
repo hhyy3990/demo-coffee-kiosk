@@ -1,8 +1,8 @@
 import type { AccessibilityAdapter, KioskLayoutRegions } from "./adapter.ts";
 export const DEFAULT_PRIMARY_ACTION_MESSAGE =
-  "아래에도 버튼이 있습니다. 화면을 위로 밀어보세요.";
+  "아래에도 버튼이 있어요";
 export const DEFAULT_CONTENT_SCROLL_MESSAGE =
-  "아래에도 내용이 있습니다. 화면을 위로 밀어보세요.";
+  "아래에도 내용이 있어요";
 
 type Hint = { kind: string; message: string };
 
@@ -57,6 +57,7 @@ function ownerCanScrollBelow(owner: HTMLElement | Document | null): boolean {
 }
 
 function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | null {
+  if (typeof document === "undefined" || typeof window === "undefined") return null;
   const regions = adapter.getLayoutRegions();
   const owner = typeof root.querySelectorAll === "function"
     ? findVerticalOwner(root, regions.scrollArea)
@@ -91,6 +92,13 @@ function placeHint(
   root: HTMLElement,
   regions: KioskLayoutRegions,
 ): boolean {
+  if (root.classList.contains("a11y-bottom-viewport-poc-shell")) {
+    hint.style.removeProperty("width");
+    hint.style.removeProperty("left");
+    hint.style.removeProperty("top");
+    hint.style.visibility = "visible";
+    return true;
+  }
   const vw = document.documentElement.clientWidth || innerWidth;
   const vh = document.documentElement.clientHeight || innerHeight;
   const width = Math.max(0, Math.min(360, vw - 24));
@@ -136,18 +144,27 @@ function placeHint(
 
 export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAdapter) {
   let node: HTMLElement | null = null;
+  const getPocSlot = () => root.classList.contains("a11y-bottom-viewport-poc-shell") &&
+    typeof root.querySelector === "function"
+    ? root.querySelector<HTMLElement>(".a11y-guidance-slot")
+    : null;
   let frame = 0;
   let destroyed = false;
   let enabled = true;
   const ensureNode = () => {
-    if (node) return node;
+    const slot = getPocSlot();
+    if (node) {
+      if (slot && node.parentElement !== slot) slot.append(node);
+      return node;
+    }
+    if (typeof document === "undefined") return null;
     node = document.createElement("aside");
     node.className = "a11y-additional-menu-hint";
     node.setAttribute("role", "status");
     node.setAttribute("aria-live", "polite");
     node.setAttribute("aria-atomic", "true");
     node.innerHTML = '<span aria-hidden="true">↓</span><span class="a11y-additional-menu-copy"></span>';
-    root.append(node);
+    (slot ?? root).append(node);
     return node;
   };
   const refresh = () => {
@@ -165,6 +182,7 @@ export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAd
       return;
     }
     const element = ensureNode();
+    if (!element) return;
     const copy = element.querySelector<HTMLElement>(".a11y-additional-menu-copy");
     if (copy && copy.textContent !== hint.message) copy.textContent = hint.message;
     if (placeHint(element, root, adapter.getLayoutRegions())) {
@@ -183,11 +201,11 @@ export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAd
   const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver((records) => {
     const relevant = records.some((record) => {
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
-      if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast")) return false;
+      if (target?.closest(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot")) return false;
       if (record.type === "childList") {
         const changed = [...record.addedNodes, ...record.removedNodes];
         if (changed.length && changed.every((item) =>
-          item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast"),
+          item instanceof Element && item.matches(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot"),
         )) return false;
       }
       return true;
