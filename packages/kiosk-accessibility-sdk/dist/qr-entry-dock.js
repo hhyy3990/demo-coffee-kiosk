@@ -5,9 +5,20 @@ const INSET_VAR = "--a11y-qr-entry-dock-controls-inset";
 const CONTENT_VAR = "--a11y-qr-entry-dock-content-height";
 const SCROLL_CLASS = "a11y-qr-entry-dock-scroll-area";
 const CSS_VARS = [HEIGHT_VAR, INSET_VAR, CONTENT_VAR];
+const profileViewportByRoot = new WeakMap();
+const dockSyncByRoot = new WeakMap();
+/** Internal bridge used by the SDK so a profile change does not recreate a host dock. */
+export function syncQrEntryDockViewportMode(root, percent) {
+    profileViewportByRoot.set(root, percent);
+    for (const sync of dockSyncByRoot.get(root) ?? [])
+        sync(percent);
+}
 /** Creates an SDK-owned QR entry dock whose active state is controlled by the host. */
 export function createQrEntryDock(options) {
-    const { root, adapter, onOpenQr, label = "내 QR로 화면 설정", theme, bottomViewportPercent } = options;
+    const { root, adapter, onOpenQr, label = "내 QR로 화면 설정", theme } = options;
+    const configuredDevelopmentPercent = options.bottomViewportPercent;
+    let profilePercent = profileViewportByRoot.get(root) ?? null;
+    let effectivePercent = configuredDevelopmentPercent ?? profilePercent;
     const rootClassState = new Map();
     const previousVars = new Map();
     let footer = null;
@@ -79,10 +90,12 @@ export function createQrEntryDock(options) {
         root.style.setProperty(HEIGHT_VAR, `${dockHeight}px`);
         root.style.setProperty(INSET_VAR, `${controlsInset}px`);
         footer.style.setProperty(INSET_VAR, `${controlsInset}px`);
-        if (bottomViewportPercent) {
-            const availableHeight = Math.max(0, window.innerHeight - dockHeight - controlsInset);
-            root.style.setProperty(CONTENT_VAR, `${Math.floor(availableHeight * bottomViewportPercent / 100)}px`);
-        }
+        const availableHeight = Math.max(0, window.innerHeight - dockHeight - controlsInset);
+        if (effectivePercent)
+            root.style.setProperty(CONTENT_VAR, `${Math.floor(availableHeight * effectivePercent / 100)}px`);
+        else
+            root.style.removeProperty(CONTENT_VAR);
+        root.classList.toggle(BOTTOM_CLASS, Boolean(effectivePercent));
         const rootStyle = getComputedStyle(root);
         footer.style.fontFamily = rootStyle.fontFamily;
         footer.style.fontSize = rootStyle.fontSize;
@@ -118,7 +131,7 @@ export function createQrEntryDock(options) {
         }
         document.body.append(footer);
         root.classList.add(HOME_CLASS);
-        if (bottomViewportPercent)
+        if (effectivePercent)
             root.classList.add(BOTTOM_CLASS);
         resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateMeasurements);
         resizeObserver?.observe(footer);
@@ -143,6 +156,25 @@ export function createQrEntryDock(options) {
             destroyed = true;
             restoreRoot();
         },
+    };
+    const sync = (percent) => {
+        profilePercent = percent;
+        effectivePercent = configuredDevelopmentPercent ?? profilePercent;
+        if (active)
+            updateMeasurements();
+    };
+    let syncs = dockSyncByRoot.get(root);
+    if (!syncs) {
+        syncs = new Set();
+        dockSyncByRoot.set(root, syncs);
+    }
+    syncs.add(sync);
+    const originalDestroy = controller.destroy.bind(controller);
+    controller.destroy = () => {
+        syncs?.delete(sync);
+        if (syncs?.size === 0)
+            dockSyncByRoot.delete(root);
+        originalDestroy();
     };
     controller.setActive(options.active);
     return controller;

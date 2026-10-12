@@ -15,12 +15,15 @@ const documentHost = structure === "document";
 const fixedControlsHost = structure === "fixed-controls" || structure === "stage-root-fixed";
 const stageRootHost = structure === "stage-root" || structure === "stage-root-fixed";
 const hostTail = params.get("hostTail") === "1";
+const fontCorrection = params.get("fontCorrection") || "none";
 const documentModeUsesInner = documentHost && percent !== null;
 let screenId = "consumer.menu";
 let useDocumentScroll = documentHost && !documentModeUsesInner;
 document.body.classList.toggle("document-host", documentHost);
 document.body.classList.toggle("fixed-controls-host", fixedControlsHost);
 document.body.classList.toggle("host-tail", hostTail);
+document.body.classList.toggle("correction-fit", fontCorrection === "fit");
+document.body.classList.toggle("correction-fail", fontCorrection === "fail");
 document.body.dataset.qrScrollOwner = documentModeUsesInner ? "inner" : "document";
 
 const content = document.querySelector(".content");
@@ -50,7 +53,10 @@ const adapter = {
   getActions: () => [...document.querySelectorAll(".menu-item")].map((element, index) => ({
     id: `menu.${index}`, name: element.textContent, element, enabled: true,
   })),
-  getTextTargets: () => [],
+  getTextTargets: () => [{ id: "consumer.supporting-copy", element: document.querySelector("#supporting-copy") }],
+  getFontCorrectionTargets: () => fontCorrection === "none" ? [] : [
+    { id: "consumer.supporting-copy", element: document.querySelector("#supporting-copy") },
+  ],
   getLayoutRegions: () => ({
     bottomControls: fixedControlsHost ? [controls] : [],
     scrollArea: useDocumentScroll ? null : content,
@@ -152,6 +158,7 @@ window.qrConsumerTest = {
       percent,
       restoredAfterDisable,
       rootActive: root.classList.contains("a11y-qr-entry-dock-home"),
+      dockCount: document.querySelectorAll("[data-a11y-qr-entry-dock]").length,
       dockFixed: !!dockNode && getComputedStyle(dockNode).position === "fixed",
       dockRect: dockNode?.getBoundingClientRect().toJSON() ?? null,
       qrButtonHeight: dockButton?.getBoundingClientRect().height ?? 0,
@@ -177,6 +184,16 @@ window.qrConsumerTest = {
       qrViewportApplied: percent === null || (!!sdk &&
         sdk.profile.viewportMode?.heightPercent === percent &&
         root.classList.contains("a11y-bottom-viewport-enabled")),
+      dockBottomMode: root.classList.contains("a11y-qr-entry-dock-bottom"),
+      dockContentHeight: root.style.getPropertyValue("--a11y-qr-entry-dock-content-height"),
+      supportingFont: getComputedStyle(document.querySelector("#supporting-copy")).fontSize,
+      menuActionFont: getComputedStyle(document.querySelector(".menu-item")).fontSize,
+      supportingBox: (() => {
+        const el = document.querySelector("#supporting-copy");
+        return { rect: el.getBoundingClientRect().toJSON(), clientHeight: el.clientHeight, scrollHeight: el.scrollHeight, lineHeight: getComputedStyle(el).lineHeight, overflow: getComputedStyle(el).overflowY };
+      })(),
+      supportingCorrections: sdk?.getLastLayoutCorrections().filter((item) => item.strategy === "supporting-copy-font") ?? [],
+      diagnostics: sdk?.inspectLayout() ?? [],
       viewportRect: content.getBoundingClientRect().toJSON(),
       viewportInset: Number.parseFloat(content.style.getPropertyValue("--a11y-bottom-viewport-bottom-inset")) || 0,
       dockScrollSpacerHeight: Number.parseFloat(getComputedStyle(content, "::after").height) || 0,
@@ -406,5 +423,10 @@ window.qrConsumerTest = {
     };
   },
   clickQr() { document.querySelector(".a11y-qr-entry-dock-button").click(); },
+  restoreCorrectionProfile() {
+    sdk?.applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
+    const el = document.querySelector("#supporting-copy");
+    return { fontSize: getComputedStyle(el).fontSize, inlineFontSize: el.style.getPropertyValue("font-size"), inlineLineHeight: el.style.getPropertyValue("line-height") };
+  },
   destroy() { dock.destroy(); },
 };

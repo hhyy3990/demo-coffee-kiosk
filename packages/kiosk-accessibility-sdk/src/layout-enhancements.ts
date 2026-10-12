@@ -6,11 +6,14 @@ type StyleEntry = { value: string; priority: string };
 type StyleBaseline = Map<string, StyleEntry>;
 
 export interface LayoutCorrectionResult {
-  strategy: "text-wrap" | "release-container-width" | "reduce-grid-columns" | "reserve-scroll-space" | "stack-action-group";
+  strategy: "text-wrap" | "release-container-width" | "reduce-grid-columns" | "reserve-scroll-space" | "stack-action-group" | "supporting-copy-font";
   outcome: "applied" | "reverted" | "not-needed" | "failed";
   issuesBefore: number;
   issuesAfter: number;
   reason?: "scroll-unavailable" | "no-safe-inset";
+  targetId?: string;
+  fontSizeBefore?: number;
+  fontSizeAfter?: number;
 }
 
 const TEXT_SCALE = { standard: 1, large: 1.25, extraLarge: 1.5 } as const;
@@ -52,6 +55,7 @@ export function createLayoutEnhancer(
   const baseSizes = new WeakMap<HTMLElement, { font: number; height: number; paddingTop: number; paddingBottom: number }>();
   let destroyed = false;
   let lastResults: LayoutCorrectionResult[] = [];
+  let supportingResults: LayoutCorrectionResult[] = [];
   let resizeFrame = 0;
   let lastViewportWidth = window.innerWidth;
   let lastViewportHeight = window.innerHeight;
@@ -106,6 +110,9 @@ export function createLayoutEnhancer(
 
   function currentTargets(): HTMLElement[] {
     const explicit = new Set(adapter.getTextTargets().map(({ element }) => element).filter((element) => root.contains(element)));
+    for (const target of adapter.getFontCorrectionTargets?.() ?? []) {
+      if (root.contains(target.element)) explicit.add(target.element);
+    }
     const candidates = new Set<HTMLElement>(explicit);
     if (typeof root.querySelectorAll !== "function") return [...candidates];
     const ignored = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IMG", "VIDEO", "IFRAME"]);
@@ -125,6 +132,71 @@ export function createLayoutEnhancer(
     return [...candidates].filter((element) =>
       explicit.has(element) || ![...candidates].some((candidate) => candidate !== element && element.contains(candidate)),
     );
+  }
+
+  function correctOptedInSupportingCopy(): void {
+    supportingResults = [];
+    const registered = adapter.getFontCorrectionTargets?.() ?? [];
+    if (!registered.length || getProfile().textSize === "standard") return;
+    const textTargets = adapter.getTextTargets();
+    const actions = adapter.getActions();
+    const fixedControls = (adapter.getLayoutRegions().bottomControls ?? []).filter((element) => {
+      const style = window.getComputedStyle(element);
+      return style.position === "fixed" || style.position === "sticky";
+    });
+    for (const target of registered) {
+      const element = target.element;
+      if (!root.contains(element) || !textTargets.some((item) => item.element === element)) continue;
+      if (actions.some(({ element: action }) => action === element || action.contains(element))) continue;
+      if (element.matches("input, textarea, select, button, a, [role='button'], [contenteditable='true'], [aria-live], [role='alert'], [role='status']")) continue;
+      const profileFont = px(window.getComputedStyle(element).fontSize);
+      const profileLineHeight = px(window.getComputedStyle(element).lineHeight);
+      if (profileFont <= 0) continue;
+      const hasProblem = () => {
+        const clipped = inspectKioskLayout(root, adapter).some((issue) =>
+          issue.semanticId === target.id && issue.issueType === "text-clipped",
+        );
+        const rect = element.getBoundingClientRect();
+        const obscured = fixedControls.some((control) => {
+          const box = control.getBoundingClientRect();
+          return rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top;
+        });
+        return clipped || obscured;
+      };
+      if (!hasProblem()) {
+        supportingResults.push({ strategy: "supporting-copy-font", outcome: "not-needed", issuesBefore: 0, issuesAfter: 0, targetId: target.id, fontSizeBefore: profileFont, fontSizeAfter: profileFont });
+        continue;
+      }
+      let resolved = false;
+      let finalFont = profileFont;
+      const readabilityFloor = minimumReadableSize(element, getProfile());
+      for (const ratio of [0.95, 0.90]) {
+        finalFont = Math.ceil(profileFont * ratio * 100) / 100;
+        if (finalFont < readabilityFloor) continue;
+        element.style.setProperty("font-size", `${finalFont}px`, "important");
+        if (profileLineHeight > 0) {
+          element.style.setProperty("line-height", `${Math.ceil(profileLineHeight * ratio * 100) / 100}px`, "important");
+        }
+        if (!hasProblem()) {
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) {
+        element.style.setProperty("font-size", `${profileFont}px`, "important");
+        if (profileLineHeight > 0) element.style.setProperty("line-height", `${profileLineHeight}px`, "important");
+        finalFont = profileFont;
+      }
+      supportingResults.push({
+        strategy: "supporting-copy-font",
+        outcome: resolved ? "applied" : "failed",
+        issuesBefore: 1,
+        issuesAfter: resolved ? 0 : 1,
+        targetId: target.id,
+        fontSizeBefore: profileFont,
+        fontSizeAfter: finalFont,
+      });
+    }
   }
 
   function refreshProfile(): void {
@@ -170,6 +242,7 @@ export function createLayoutEnhancer(
         write(element, "overflow-wrap", "break-word");
       }
     }
+    correctOptedInSupportingCopy();
   }
 
   function tryCorrection(
@@ -221,7 +294,10 @@ export function createLayoutEnhancer(
     const regions = adapter.getLayoutRegions();
     const clippedIds = new Set(issues.filter((issue) => issue.issueType === "text-clipped").map((issue) => issue.semanticId));
     if (clippedIds.size) {
-      const targets = adapter.getTextTargets().filter((target) => clippedIds.has(target.id)).map(({ element }) => element);
+      const optedInIds = new Set((adapter.getFontCorrectionTargets?.() ?? []).map((target) => target.id));
+      const targets = adapter.getTextTargets()
+        .filter((target) => clippedIds.has(target.id) && !optedInIds.has(target.id))
+        .map(({ element }) => element);
       results.push(tryCorrection("text-wrap", targets, (element) => {
         write(element, "white-space", "normal");
         write(element, "overflow-wrap", "anywhere");
@@ -352,7 +428,7 @@ export function createLayoutEnhancer(
   return {
     applyProfile() { refreshProfile(); },
     correctLayout,
-    getLastCorrections: () => [...lastResults],
+    getLastCorrections: () => [...lastResults, ...supportingResults],
     restore,
     destroy() {
       destroyed = true;

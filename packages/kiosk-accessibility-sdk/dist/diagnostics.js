@@ -69,7 +69,11 @@ export function inspectKioskLayout(root, adapter, options = {}) {
             },
         });
     }
-    for (const target of adapter.getTextTargets()) {
+    const textTargets = new Map([
+        ...adapter.getTextTargets(),
+        ...(adapter.getFontCorrectionTargets?.() ?? []),
+    ].map((target) => [target.id, target]));
+    for (const target of textTargets.values()) {
         if (!root.contains(target.element) || !textIsClipped(target))
             continue;
         issues.push({

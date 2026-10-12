@@ -6,6 +6,7 @@ import { createIdleTimer, smartGuideDelayMs } from "./guide.js";
 import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_PROFILE, validateAccessibilityProfile, } from "./profile.js";
 import { cancelSpeech, speakText } from "./speech.js";
 import { createScreenChangeController } from "./screen-change.js";
+import { syncQrEntryDockViewportMode } from "./qr-entry-dock.js";
 const MANAGED_CLASSES = [
     "a11y-text-large",
     "a11y-text-extra",
@@ -408,7 +409,41 @@ export function createAccessibilitySdk(options) {
         return speakText(text, currentProfile.voiceGuidance);
     }
     function inspectLayout() {
-        const issues = inspectKioskLayout(root, adapter);
+        const corrections = layoutEnhancer.getLastCorrections();
+        const recommendation = {
+            "text-clipped": "텍스트 컨테이너의 높이·줄 간격·overflow 설정을 확인하세요.",
+            "horizontal-overflow": "컨테이너 최소 너비와 그리드 열 수를 확인하세요.",
+            "action-offscreen": "업무 버튼이 스크롤 영역 안에 등록되어 있는지 확인하세요.",
+            "bottom-control-obscures-action": "스크롤 영역과 고정 조작부의 경계를 확인하세요.",
+            "last-scroll-action-obscured": "스크롤 끝 여백과 고정 조작부 등록을 확인하세요.",
+            "small-touch-target": "버튼의 최소 터치 크기를 확인하세요.",
+            "action-overlap": "인접한 업무 버튼의 flex/grid 배치를 확인하세요.",
+            "menu-overflow-unreachable": "메뉴 목록의 스크롤 가능 여부를 확인하세요.",
+        };
+        const issues = inspectKioskLayout(root, adapter).map((issue) => {
+            const element = [...adapter.getTextTargets(), ...(adapter.getFontCorrectionTargets?.() ?? [])]
+                .find((item) => item.id === issue.semanticId)?.element ??
+                adapter.getActions().find((item) => item.id === issue.semanticId)?.element ??
+                (issue.semanticId === "kiosk.root" ? root : null);
+            const rect = element?.getBoundingClientRect();
+            const correction = corrections.find((item) => item.targetId === issue.semanticId);
+            return {
+                ...issue,
+                severity: issue.issueType === "small-touch-target" ? "warning" : "error",
+                ...(element ? { elementTag: element.tagName.toLowerCase() } : {}),
+                ...(rect ? { elementRect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height } } : {}),
+                viewport: { width: document.documentElement.clientWidth || innerWidth, height: document.documentElement.clientHeight || innerHeight },
+                profile: {
+                    textSize: currentProfile.textSize,
+                    buttonSize: currentProfile.buttonSize,
+                    contrast: currentProfile.contrast,
+                    viewportMode: currentProfile.viewportMode?.heightPercent ?? null,
+                },
+                recommendation: recommendation[issue.issueType],
+                autoCorrection: correction?.outcome === "applied" ? "applied" :
+                    correction?.outcome === "failed" ? "failed" : "not-attempted",
+            };
+        });
         options.onDiagnostics?.(issues);
         return issues;
     }
@@ -420,6 +455,7 @@ export function createAccessibilitySdk(options) {
     }
     function setViewportMode(config) {
         const applied = bottomViewport.apply(config);
+        syncQrEntryDockViewportMode(root, config?.mode === "bottom" ? config.heightPercent : null);
         if (applied) {
             menuHint.refresh();
             if (guideOverlay)

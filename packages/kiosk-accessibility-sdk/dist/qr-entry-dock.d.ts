@@ -22,5 +22,7 @@ export interface QrEntryDockController {
     setActive(active: boolean): void;
     destroy(): void;
 }
+/** Internal bridge used by the SDK so a profile change does not recreate a host dock. */
+export declare function syncQrEntryDockViewportMode(root: HTMLElement, percent: BottomViewportHeightPercent | null): void;
 /** Creates an SDK-owned QR entry dock whose active state is controlled by the host. */
 export declare function createQrEntryDock(options: QrEntryDockOptions): QrEntryDockController;

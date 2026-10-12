@@ -75,6 +75,7 @@ try {
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const cases = [];
+  const fontCorrectionCases = [];
   const viewports = [
     [320, 844], [360, 667], [390, 844],
     [1080, 1920], [1440, 900], [1920, 1080],
@@ -119,6 +120,11 @@ try {
               JSON.stringify({ width, height, structure, percent, started, expectedViewportHeight, controlsTop })
             }`);
           }
+        if (!started.dockBottomMode) {
+          throw new Error(`QR dock did not follow profile viewportMode: ${JSON.stringify({ width, height, structure, percent, started })}`);
+        }
+      } else if (started.dockBottomMode || started.dockContentHeight) {
+        throw new Error(`QR dock did not return to standard mode for null viewportMode: ${JSON.stringify(started)}`);
         }
         if (started.guidanceEnabled && (!started.hintVisible || started.noSafeSpace || !started.hintAvoidsDockAndControls ||
           started.hintPointerEvents !== "none")) {
@@ -281,6 +287,44 @@ try {
     }
   }
 
+  for (const mode of ["fit", "fail", "none"]) {
+    await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 844, deviceScaleFactor: 1, mobile: true });
+    await send("Page.navigate", { url: `${baseUrl}/qr-entry.html?structure=inner&percent=none&fontCorrection=${mode}` });
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (await evaluate("Boolean(window.qrConsumerTest)")) break;
+      await wait(50);
+    }
+    const result = await evaluate("window.qrConsumerTest.get()");
+    const correction = result.supportingCorrections[0];
+    fontCorrectionCases.push({
+      mode,
+      fontSizeBefore: correction?.fontSizeBefore ?? result.supportingFont,
+      fontSizeAfter: correction?.fontSizeAfter ?? result.supportingFont,
+      outcome: correction?.outcome ?? "not-registered",
+      diagnosticTypes: result.diagnostics.map((issue) => issue.issueType),
+    });
+    if (mode === "fit" && (!correction || correction.outcome !== "applied" ||
+      correction.fontSizeBefore !== 24 || correction.fontSizeAfter !== 22.8 || result.supportingFont !== "22.8px" ||
+      result.menuActionFont === result.supportingFont)) {
+      throw new Error(`5% supporting-copy correction failed: ${JSON.stringify(result)}`);
+    }
+    if (mode === "fail" && (!correction || correction.outcome !== "failed" ||
+      result.supportingFont !== "24px" ||
+      !result.diagnostics.some((issue) => issue.semanticId === "consumer.supporting-copy" &&
+        issue.issueType === "text-clipped" && issue.severity === "error" && issue.viewport.width === 320))) {
+      throw new Error(`10% correction failure was not restored and diagnosed: ${JSON.stringify(result)}`);
+    }
+    if (mode === "none" && result.supportingCorrections.length !== 0) {
+      throw new Error(`Non-opted-in copy was modified: ${JSON.stringify(result)}`);
+    }
+    if (mode === "fit") {
+      const restored = await evaluate("window.qrConsumerTest.restoreCorrectionProfile()");
+      if (restored.fontSize !== "16px" || restored.inlineFontSize || restored.inlineLineHeight) {
+        throw new Error(`Supporting-copy profile did not restore host styles: ${JSON.stringify(restored)}`);
+      }
+    }
+  }
+
   const stageRootStructures = structures.filter((structure) => structure.startsWith("stage-root")).length;
   const expectedCases = viewports.length * (structures.length * modes.length - stageRootStructures);
   if (cases.length !== expectedCases) {
@@ -288,6 +332,7 @@ try {
   }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
+    fontCorrectionCases,
     cases,
     result: "PASS",
   }, null, 2));

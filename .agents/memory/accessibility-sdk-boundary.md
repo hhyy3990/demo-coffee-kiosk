@@ -50,3 +50,9 @@ When the SDK constrains a registered flex-column scroll area, an unsafe `justify
 **Why:** An independent 1440×900 fixture reproduced a clipped first heading with the viewport starting at y=166 and a 780px minimum-height child; safe alignment kept the heading and final action reachable without scaling content.
 
 **How to apply:** Apply this only to the registered scroll target, preserve its original inline alignment and priority, and test the title hit target plus bottom action under 60%, 70%, and 80% viewport modes. Keep host-specific dimensions and selectors out of the SDK.
+
+Secondary-copy font reduction must be explicitly opted into by the host adapter. Keep opted-in targets out of generic text-wrap correction, and judge a 5%/10% attempt using actual post-profile clipping/overlap measurements; restore the profile-scaled font and line height when neither attempt clears the issue.
+
+**Why:** Generic text-wrap could undo the constrained fixture before verification, and profile scaling changes line height, so raw CSS dimensions alone do not prove that a reduction fixed clipping.
+
+**How to apply:** Register only noncritical supporting copy, report the measured outcome through the diagnostic API, and test success, rollback, unregistered text, and style restoration in a real browser fixture.

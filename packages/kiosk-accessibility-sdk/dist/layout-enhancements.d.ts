@@ -1,11 +1,14 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
 import type { AccessibilityProfile } from "./profile.ts";
 export interface LayoutCorrectionResult {
-    strategy: "text-wrap" | "release-container-width" | "reduce-grid-columns" | "reserve-scroll-space" | "stack-action-group";
+    strategy: "text-wrap" | "release-container-width" | "reduce-grid-columns" | "reserve-scroll-space" | "stack-action-group" | "supporting-copy-font";
     outcome: "applied" | "reverted" | "not-needed" | "failed";
     issuesBefore: number;
     issuesAfter: number;
     reason?: "scroll-unavailable" | "no-safe-inset";
+    targetId?: string;
+    fontSizeBefore?: number;
+    fontSizeAfter?: number;
 }
 export declare function createLayoutEnhancer(root: HTMLElement, adapter: AccessibilityAdapter, getProfile: () => AccessibilityProfile): {
     applyProfile(): void;

@@ -21,6 +21,13 @@ export interface AccessibilityDiagnostic {
   relatedSemanticId?: string;
   issueType: AccessibilityIssueType;
   measurements: Readonly<Record<string, number | boolean>>;
+  severity?: "warning" | "error";
+  elementTag?: string;
+  elementRect?: Readonly<{ left: number; top: number; right: number; bottom: number; width: number; height: number }>;
+  viewport?: Readonly<{ width: number; height: number }>;
+  profile?: Readonly<{ textSize: string; buttonSize: string; contrast: string; viewportMode: number | null }>;
+  recommendation?: string;
+  autoCorrection?: "applied" | "failed" | "not-attempted";
 }
 
 export interface LayoutDiagnosticOptions {
@@ -113,7 +120,11 @@ export function inspectKioskLayout(
     });
   }
 
-  for (const target of adapter.getTextTargets()) {
+  const textTargets = new Map([
+    ...adapter.getTextTargets(),
+    ...(adapter.getFontCorrectionTargets?.() ?? []),
+  ].map((target) => [target.id, target]));
+  for (const target of textTargets.values()) {
     if (!root.contains(target.element) || !textIsClipped(target)) continue;
     issues.push({
       screenId,

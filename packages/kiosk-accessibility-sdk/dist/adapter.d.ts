@@ -17,6 +17,9 @@ export interface KioskTextTarget {
     id: string;
     element: HTMLElement;
 }
+/** Host-opted-in secondary copy only; never register essential task text here. */
+export interface KioskFontCorrectionTarget extends KioskTextTarget {
+}
 export interface KioskLayoutRegions {
     bottomControls?: readonly HTMLElement[];
     scrollArea?: HTMLElement | null;
@@ -50,6 +53,8 @@ export interface AccessibilityAdapter {
     getSnapshot(): KioskSnapshot;
     getActions(): readonly KioskAction[];
     getTextTargets(): readonly KioskTextTarget[];
+    /** Optional, explicit opt-in list for the SDK's <=10% secondary-copy correction. */
+    getFontCorrectionTargets?(): readonly KioskFontCorrectionTarget[];
     getLayoutRegions(): KioskLayoutRegions;
 }
 export interface AccessibilityGuideMessage {

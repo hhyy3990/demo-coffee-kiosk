@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.5`
+- SDK API: `0.5.6`
 - 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -25,19 +25,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.3.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.6.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1·v2는 기존 설정을 읽고 `viewportMode`를 `null`로 정규화하므로 레거시 `bottomControls`로 하단 모드를 추측하지 않습니다. v3는 최상위 `schemaVersion`, `updatedAt`, `preferences`를 요구하며 `preferences.viewportMode`는 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`이어야 합니다. 문자열 비율, 지원하지 않는 값, v3의 레거시 `bottomControls`/`simplifiedLayout` 필드는 거부합니다. QR 프로필이 적용되면 SDK가 검증한 `viewportMode`를 기존 공통 레이아웃 경로에 자동 반영합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.3.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.6.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.5.3.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.6.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -77,7 +77,7 @@ dock.setActive(isWelcomeScreen);
 dock.destroy();
 ```
 
-첫 화면에서 `bottomViewportPercent: 60 | 70 | 80`을 선택적으로 전달하면, 비율은 QR 도크와 등록된 고정 조작부를 제외한 남은 높이를 기준으로 계산됩니다. 주문 화면의 기존 방법 B는 기존 SDK `setViewportMode()`로 따로 관리합니다. QR 도크는 접근성 프로필 적용/해제와 독립적이므로 QR을 적용해도 유지되고, 호스트가 첫 화면을 떠날 때 제거해야 합니다. 주문 또는 진료 등 업무 상태와 QR 모달 진입 권한은 계속 호스트가 관리합니다.
+QR 프로필의 v3 `viewportMode`는 SDK가 방법 B와 첫 화면 QR 도크의 하단 모드를 함께 동기화합니다. 기존처럼 `createQrEntryDock()`을 한 번 만들고 호스트 화면 전환에 맞춰 `setActive()`를 호출하면 됩니다. `createQrEntryDock({ bottomViewportPercent })`를 명시한 개발 모드는 QR 프로필보다 우선하며, 프로필의 `viewportMode: null` 또는 `endSession()`은 프로필 기반 도크 모드를 일반 모드로 돌립니다. 주문 또는 진료 등 업무 상태와 QR 모달 진입 권한은 계속 호스트가 관리합니다.
 
 ## 방법 B: 아래쪽 표시 영역
 
@@ -277,6 +277,25 @@ sdk.destroy();
 ## 공통 확대·제한적 레이아웃 보정
 
 글씨 크기는 root 안에서 탐색한 텍스트와 명시적으로 등록한 대상을 각 요소의 현재 반응형 원본 크기 기준으로 1.25배/1.5배 처리하고, 큰 글씨에서 14px/16px 최소 크기를 적용합니다. `ResizeObserver`와 창 크기 변경을 함께 감지해 뷰포트 또는 키오스크 루트의 너비가 바뀌면 기존 보정 스타일을 되돌린 뒤 반응형 CSS 기준을 다시 측정합니다. 크기 변경 중 확대가 누적되지 않으며, QR 프로필 해제·`endSession()`·`destroy()`에서 원래 스타일을 복원합니다. 화면이 다시 렌더링되면 SDK가 새 대상을 찾아 현재 프로필을 적용합니다.
+
+### 보조 안내 문구의 선택적 글씨 보정
+
+글씨를 줄일 수 있는 대상은 호스트가 `getFontCorrectionTargets()`에 등록한 요소뿐입니다. 대상은 `getTextTargets()`에도 등록해 의미 ID로 진단할 수 있게 합니다. 버튼·입력·링크·live region·업무 액션 하위의 텍스트는 자동 보정에서 제외됩니다. 메뉴명, 금액, 법적·개인정보 안내 같은 중요 텍스트는 등록하지 마세요. SDK는 의미를 추측할 수 없으므로 호스트의 명시적 등록이 안전 경계입니다.
+
+```ts
+getTextTargets: () => [
+  { id: "help.subtitle", element: helpSubtitle },
+],
+getFontCorrectionTargets: () => [
+  { id: "help.subtitle", element: helpSubtitle },
+],
+```
+
+프로필 확대 후 실제 잘림 또는 등록된 고정 조작부와의 겹침이 있을 때만 먼저 5%를 줄여 다시 측정하고, 해소되지 않으면 최대 10%까지 한 번 더 시도합니다. 두 시도 뒤에도 문제가 있으면 원래 프로필 확대 크기와 line-height로 복원하고 `failed` 결과와 레이아웃 진단을 남깁니다. 문제가 없으면 글씨를 줄이지 않습니다. 자동 줄바꿈은 이 기능에서 강제하지 않습니다.
+
+### 개발자용 읽기 전용 레이아웃 진단
+
+`sdk.inspectLayout()`을 명시적으로 호출할 때만 진단 배열을 반환합니다. SDK는 진단 UI나 콘솔 출력을 자동 표시하지 않습니다. 결과에는 의미 ID, 유형, 요소 태그·좌표, 뷰포트, 현재 프로필, 심각도, 권장 확인 사항 및 보정 상태가 포함되며 사용자 입력값은 수집하지 않습니다.
 
 대상 바깥의 스타일은 수정하지 않습니다. `getLayoutRegions()`에서 호스트가 명시한 `reflowContainers`, `gridContainers`, `actionGroups`, `scrollArea`만 보정 후보가 됩니다. 텍스트 줄바꿈/높이 유연화, 최소 너비 해제, 가로 넘침 시 그리드 1열 전환을 시도합니다. 고정 하단 조작부와 등록된 스크롤 영역의 실제 교차 높이를 측정해 여백을 더하고, 마지막 등록 액션을 최대 스크롤 위치로 예상했을 때 가림 진단이 해소되지 않으면 적용하지 않습니다. 스크롤 자체가 불가능하거나 안전한 여백을 계산할 수 없는 경우 `failed` 결과를 보고합니다. 버튼 겹침은 의미 ID 쌍으로 진단하며, 보정 전후 진단 결과가 나아지지 않거나 새 문제가 생기면 해당 변경을 되돌립니다. `correctLayout()`은 각 전략과 적용/롤백 결과를 반환하고, 자동 시도 결과는 `getLastLayoutCorrections()`에서 확인할 수 있습니다.
 

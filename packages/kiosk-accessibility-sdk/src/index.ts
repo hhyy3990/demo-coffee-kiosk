@@ -24,6 +24,7 @@ export {
   type AccessibilityAdapter,
   type AccessibilityGuideMessage,
   type KioskAction,
+  type KioskFontCorrectionTarget,
   type KioskLayoutRegions,
   type KioskSnapshot,
   type KioskTextTarget,
