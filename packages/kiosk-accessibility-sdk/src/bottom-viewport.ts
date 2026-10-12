@@ -34,6 +34,12 @@ type ElementState = {
   bottomInsetPriority: string;
   paddingBottom: string;
   paddingBottomPriority: string;
+  justifyContent: string;
+  justifyContentPriority: string;
+  alignContent: string;
+  alignContentPriority: string;
+  alignItems: string;
+  alignItemsPriority: string;
 };
 
 function validConfig(input: unknown): input is BottomViewportConfig {
@@ -80,6 +86,12 @@ export function createBottomViewportController(root: HTMLElement, adapter: Acces
     bottomInsetPriority: element.style.getPropertyPriority(BOTTOM_INSET_PROPERTY),
     paddingBottom: element.style.getPropertyValue("padding-bottom"),
     paddingBottomPriority: element.style.getPropertyPriority("padding-bottom"),
+    justifyContent: element.style.getPropertyValue("justify-content"),
+    justifyContentPriority: element.style.getPropertyPriority("justify-content"),
+    alignContent: element.style.getPropertyValue("align-content"),
+    alignContentPriority: element.style.getPropertyPriority("align-content"),
+    alignItems: element.style.getPropertyValue("align-items"),
+    alignItemsPriority: element.style.getPropertyPriority("align-items"),
   });
   const restoreElement = (element: HTMLElement, className: string, state: ElementState) => {
     if (!state.hadClass) element.classList.remove(className);
@@ -97,7 +109,34 @@ export function createBottomViewportController(root: HTMLElement, adapter: Acces
     else element.style.removeProperty(BOTTOM_INSET_PROPERTY);
     if (state.paddingBottom) element.style.setProperty("padding-bottom", state.paddingBottom, state.paddingBottomPriority);
     else element.style.removeProperty("padding-bottom");
+    if (state.justifyContent) element.style.setProperty("justify-content", state.justifyContent, state.justifyContentPriority);
+    else element.style.removeProperty("justify-content");
+    if (state.alignContent) element.style.setProperty("align-content", state.alignContent, state.alignContentPriority);
+    else element.style.removeProperty("align-content");
+    if (state.alignItems) element.style.setProperty("align-items", state.alignItems, state.alignItemsPriority);
+    else element.style.removeProperty("align-items");
   };
+
+  function protectCenteredOverflow(): void {
+    if (!target) return;
+    const style = getComputedStyle(target);
+    const direction = style.flexDirection;
+    const setSafeCenter = (property: "justify-content" | "align-content" | "align-items") => {
+      const current = getComputedStyle(target!)[property.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) as "justifyContent" | "alignContent" | "alignItems"];
+      if (current === "center") target!.style.setProperty(property, "safe center", "important");
+    };
+    if (style.display === "flex" || style.display === "inline-flex") {
+      if (direction === "column" || direction === "column-reverse") {
+        setSafeCenter("justify-content");
+      } else {
+        setSafeCenter("align-items");
+        setSafeCenter("align-content");
+      }
+    } else if (style.display === "grid" || style.display === "inline-grid") {
+      setSafeCenter("align-items");
+      setSafeCenter("align-content");
+    }
+  }
 
   function restoreTarget(): void {
     if (target && targetState) restoreElement(target, SCROLL_CLASS, targetState);
@@ -251,6 +290,7 @@ export function createBottomViewportController(root: HTMLElement, adapter: Acces
     const safeInset = Math.max(0, activeRect.bottom - occlusion - basePadding);
     target.style.setProperty(SAFE_INSET_PROPERTY, `${safeInset}px`);
     target.style.setProperty("padding-bottom", `calc(${basePadding}px + ${safeInset}px)`, "important");
+    protectCenteredOverflow();
     applyOverlays();
   }
 

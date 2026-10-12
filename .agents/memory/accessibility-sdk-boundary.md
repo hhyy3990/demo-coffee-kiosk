@@ -44,3 +44,9 @@ Business-screen scroll resets are host-signaled through a stable, distinct scree
 **Why:** Frameworks and host workflows know when a real task screen changed; DOM heuristics cannot reliably distinguish that from ordinary content updates, and broad descendant resets disrupt unrelated scrolling.
 
 **How to apply:** Notify once after a committed screen transition. Cancel a pending reset on user input, cancel remembered work on `endSession()`, and test both document and nested scroll ownership with SDK docks and fixed controls.
+
+When the SDK constrains a registered flex-column scroll area, an unsafe `justify-content:center` can move oversized minimum-height content above the scrollport. Use safe centering for centered alignment and restore the host's original inline alignment when the viewport mode ends.
+
+**Why:** An independent 1440×900 fixture reproduced a clipped first heading with the viewport starting at y=166 and a 780px minimum-height child; safe alignment kept the heading and final action reachable without scaling content.
+
+**How to apply:** Apply this only to the registered scroll target, preserve its original inline alignment and priority, and test the title hit target plus bottom action under 60%, 70%, and 80% viewport modes. Keep host-specific dimensions and selectors out of the SDK.

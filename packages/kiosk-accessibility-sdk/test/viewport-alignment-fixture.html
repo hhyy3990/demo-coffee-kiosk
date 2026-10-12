@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Generic bottom viewport alignment fixture</title>
+  <link rel="stylesheet" href="/packages/kiosk-accessibility-sdk/dist/styles.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; font: 16px/1.4 sans-serif; }
+    #host { width: 100%; height: 100%; }
+    .screen-shell { width: 100%; min-height: 780px; }
+    .shell { width: 100%; height: 100%; min-height: 780px; display: grid; place-items: center; }
+    .stage {
+      width: 100%; height: 100%; min-height: 100vh; overflow: auto;
+      display: grid; place-items: center; scroll-behavior: auto !important;
+    }
+    .content { width: 100%; min-height: 780px; padding: 36px 24px 24px; }
+    .content h1 { margin: 0 0 16px; font-size: 22px; line-height: 1.4; }
+    .items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .items button { min-height: 54px; font: inherit; }
+    .footer {
+      position: fixed; z-index: 12; inset-inline: 0; bottom: 0;
+      min-height: 72px; display: flex; align-items: center; justify-content: center;
+      background: #292929; color: white; display: none;
+    }
+    [data-a11y-qr-entry-dock] {
+      position: fixed; z-index: 14; inset-inline: 0; bottom: 72px;
+      min-height: 54px; display: grid; place-items: center;
+      background: #ddd; display: none;
+    }
+    .centered .stage { display: flex; flex-direction: column; justify-content: center; align-items: center; }
+    .centered .content { display: flex; flex-direction: column; justify-content: center; align-items: center; }
+    .centered .items { width: 100%; }
+    .long .screen-shell { min-height: 1100px; }
+    .inner-scroll .stage { height: 100vh; min-height: 0; }
+    .inner-scroll .screen-shell { min-height: 1100px; }
+    .center-shell .stage { display: flex; flex-direction: column; justify-content: center; align-items: stretch; }
+    .safe-contract .stage { justify-content: flex-start; }
+    .with-controls .footer, .dock-controls .footer { display: flex; }
+    .dock-controls [data-a11y-qr-entry-dock] { display: grid; }
+  </style>
+</head>
+<body>
+  <main id="host" class="shell">
+    <section id="stage" class="stage" data-a11y-slot="scroll-content">
+      <div class="screen-shell">
+        <div class="content">
+          <h1 id="first-heading">첫 업무 제목: 내용을 확인해 주세요</h1>
+          <p>공통 SDK 독립 검증을 위한 일반 키오스크 콘텐츠입니다.</p>
+          <div class="items" id="items"></div>
+        </div>
+      </div>
+    </section>
+    <footer class="footer" data-a11y-slot="bottom-controls">하단 업무 버튼</footer>
+    <aside data-a11y-qr-entry-dock>QR 설정 도크</aside>
+  </main>
+  <script type="module">
+    import { createAccessibilitySdk, DEFAULT_ACCESSIBILITY_PROFILE } from
+      "/packages/kiosk-accessibility-sdk/dist/index.js";
+
+    const params = new URLSearchParams(location.search);
+    const layout = params.get("layout") || "min-height";
+    const percentParam = params.get("percent") || "80";
+    const percent = percentParam === "none" ? null : Number(percentParam);
+    const layoutClasses = {
+      "min-height": [],
+      "centered": ["centered"],
+      "centered-min-height": ["center-shell", "with-controls"],
+      "centered-long": ["centered", "long"],
+      "dock-controls": ["centered", "long", "dock-controls"],
+      "inner-scroll": ["inner-scroll"],
+      "with-controls": ["with-controls"],
+      "safe-centered": ["center-shell", "with-controls", "safe-contract"],
+    }[layout] || [];
+    document.body.classList.add(...layoutClasses);
+    const items = document.querySelector("#items");
+    const itemCount = layoutClasses.includes("long") || layout === "inner-scroll" ? 18 : 8;
+    for (let index = 1; index <= itemCount; index += 1) {
+      const button = document.createElement("button");
+      button.textContent = `업무 항목 ${index}`;
+      button.id = index === itemCount ? "last-action" : `action-${index}`;
+      button.addEventListener("click", () => { window.lastActionClicked = true; });
+      items.append(button);
+    }
+    const root = document.querySelector("#host");
+    const stage = document.querySelector("#stage");
+    const adapter = {
+      getSnapshot: () => ({ screenId: "fixture.main" }),
+      getActions: () => [...items.querySelectorAll("button")].map((element) => ({
+        id: element.id, name: element.textContent || element.id, element, enabled: true,
+      })),
+      getTextTargets: () => [{ id: "fixture.heading", element: document.querySelector("#first-heading") }],
+      getLayoutRegions: () => ({
+        scrollArea: stage,
+        bottomControls: [document.querySelector(".footer")],
+      }),
+    };
+    const measure = () => {
+      const heading = document.querySelector("#first-heading");
+      const headingRect = heading.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const point = {
+        x: Math.min(innerWidth - 1, Math.max(0, (headingRect.left + headingRect.right) / 2)),
+        y: Math.min(innerHeight - 1, Math.max(0, (headingRect.top + headingRect.bottom) / 2)),
+      };
+      const hit = document.elementFromPoint(point.x, point.y);
+      return {
+        stage: stageRect.toJSON(),
+        heading: headingRect.toJSON(),
+        headingFullyVisible: headingRect.top >= stageRect.top - 1 && headingRect.bottom <= stageRect.bottom + 1,
+        headingHit: hit === heading || heading.contains(hit),
+        headingHitTag: hit?.tagName ?? null,
+        scrollTop: stage.scrollTop,
+        scrollHeight: stage.scrollHeight,
+        clientHeight: stage.clientHeight,
+        contentMinHeight: getComputedStyle(document.querySelector(".content")).minHeight,
+        stageDisplay: getComputedStyle(stage).display,
+        alignItems: getComputedStyle(stage).alignItems,
+        alignContent: getComputedStyle(stage).alignContent,
+        justifyContent: getComputedStyle(stage).justifyContent,
+      };
+    };
+    const before = measure();
+    const sdk = createAccessibilitySdk({ root, adapter });
+    const baseProfile = { ...DEFAULT_ACCESSIBILITY_PROFILE };
+    sdk.applyProfile({
+      ...baseProfile,
+      textSize: params.get("large") === "true" ? "extraLarge" : "standard",
+      buttonSize: params.get("large") === "true" ? "large" : "standard",
+      contrast: params.get("large") === "true" ? "high" : "standard",
+      viewportMode: percent === null ? null : { mode: "bottom", heightPercent: percent },
+    });
+    const applied = percent === null
+      ? sdk.profile.viewportMode === null
+      : sdk.profile.viewportMode?.heightPercent === percent &&
+        stage.classList.contains("a11y-bottom-viewport-scroll-area");
+
+    const topState = measure();
+    window.fixtureReady = {
+      layout, viewport: `${innerWidth}x${innerHeight}`, percent,
+      large: params.get("large") === "true", applied, before, top: topState,
+    };
+    window.readLastAction = () => {
+      const last = document.querySelector("#last-action");
+      const rect = last.getBoundingClientRect();
+      const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+      const footer = document.querySelector(".footer");
+      const dock = document.querySelector("[data-a11y-qr-entry-dock]");
+      const safeBottom = Math.min(
+        stage.getBoundingClientRect().bottom,
+        getComputedStyle(footer).display === "none" ? innerHeight : footer.getBoundingClientRect().top,
+        getComputedStyle(dock).display === "none" ? innerHeight : dock.getBoundingClientRect().top,
+      );
+      const lastState = {
+        scrollTop: stage.scrollTop,
+        maxScroll: stage.scrollHeight - stage.clientHeight,
+        rect: rect.toJSON(),
+        visible: rect.top >= stage.getBoundingClientRect().top - 1 && rect.bottom <= safeBottom + 1,
+        hit: hit === last || last.contains(hit),
+      };
+      return lastState;
+    };
+    window.scrollFixtureToEnd = async () => {
+      stage.style.setProperty("scroll-behavior", "auto", "important");
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      stage.scrollTo({ top: stage.scrollHeight, behavior: "instant" });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return { scrollTop: stage.scrollTop, maxScroll: stage.scrollHeight - stage.clientHeight };
+    };
+    window.destroyFixtureSdk = () => sdk.destroy();
+  </script>
+</body>
+</html>
