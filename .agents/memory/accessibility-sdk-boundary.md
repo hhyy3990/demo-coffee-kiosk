@@ -45,6 +45,12 @@ Business-screen scroll resets are host-signaled through a stable, distinct scree
 
 **How to apply:** Notify once after a committed screen transition. Cancel a pending reset on user input, cancel remembered work on `endSession()`, and test both document and nested scroll ownership with SDK docks and fixed controls.
 
+Smart Guide state uses a separate host-owned `stepId`, distinct from the scroll screen ID. A new task step cancels stale guidance and starts the profile delay; message-only updates within the same step preserve the timer and refresh visible copy. Timer callbacks must ignore canceled generations.
+
+**Why:** A kiosk can change option values or open a confirmation dialog without changing its scroll owner, while frequent guide-copy updates must not indefinitely restart the idle timer or let a stale message appear on the next step.
+
+**How to apply:** Give each meaningful host task step a stable, non-personal ID; update the message in place for value changes, and call `notifyScreenChange()` only when the actual screen/scroll owner changes.
+
 When the SDK constrains a registered flex-column scroll area, an unsafe `justify-content:center` can move oversized minimum-height content above the scrollport. Use safe centering for centered alignment and restore the host's original inline alignment when the viewport mode ends.
 
 **Why:** An independent 1440×900 fixture reproduced a clipped first heading with the viewport starting at y=166 and a 780px minimum-height child; safe alignment kept the heading and final action reachable without scaling content.

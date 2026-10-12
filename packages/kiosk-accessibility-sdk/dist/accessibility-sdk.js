@@ -103,8 +103,10 @@ function createGuideOverlay(root, message, onClose) {
     icon.textContent = "i";
     const copy = document.createElement("p");
     const title = document.createElement("strong");
+    title.dataset.a11yGuideTitle = "true";
     title.textContent = message.title;
     const text = document.createElement("span");
+    text.dataset.a11yGuideText = "true";
     text.textContent = message.text;
     copy.append(title, text);
     const close = document.createElement("button");
@@ -316,6 +318,7 @@ export function createAccessibilitySdk(options) {
     }
     function showGuide() {
         if (destroyed ||
+            !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
             !guideState.message?.actionId) {
@@ -347,6 +350,7 @@ export function createAccessibilitySdk(options) {
     function scheduleGuide() {
         timer.cancel();
         if (destroyed ||
+            !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
             !guideState.message?.actionId) {
@@ -397,7 +401,31 @@ export function createAccessibilitySdk(options) {
         return { ...currentProfile };
     }
     function setGuideState(state) {
+        const previous = guideState;
+        const previousStepId = previous.stepId ??
+            `${adapter.getSnapshot().screenId}:${previous.message?.actionId ?? ""}`;
+        const nextStepId = state.stepId ??
+            `${adapter.getSnapshot().screenId}:${state.message?.actionId ?? ""}`;
+        const sameStep = previousStepId === nextStepId &&
+            previous.enabled === state.enabled &&
+            previous.paused === state.paused &&
+            previous.delaySeconds === state.delaySeconds;
         guideState = { ...state, message: state.message ? { ...state.message } : null };
+        if (sameStep) {
+            if (guideOverlay && guideState.message) {
+                const title = guideOverlay.querySelector("[data-a11y-guide-title]");
+                const text = guideOverlay.querySelector("[data-a11y-guide-text]");
+                if (title)
+                    title.textContent = guideState.message.title;
+                if (text)
+                    text.textContent = guideState.message.text;
+                const action = findGuideAction(guideState.message.actionId);
+                if (!positionGuide(guideOverlay, action?.element ?? null, root, adapter.getLayoutRegions())) {
+                    removeGuide();
+                }
+            }
+            return;
+        }
         removeGuide();
         scheduleGuide();
         menuHint.refresh();
@@ -465,7 +493,12 @@ export function createAccessibilitySdk(options) {
         return applied;
     }
     function notifyScreenChange(screenId) {
-        return screenChange.notify(screenId);
+        const changed = screenChange.notify(screenId);
+        if (changed) {
+            timer.cancel();
+            removeGuide();
+        }
+        return changed;
     }
     function endSession() {
         sessionGeneration += 1;

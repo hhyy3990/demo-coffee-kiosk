@@ -22,10 +22,11 @@ export function createIdleTimer(
 ) {
   let handle: unknown = null;
   let disposed = false;
+  let generation = 0;
 
   const clear = () => {
-    if (handle === null) return;
-    driver.clear(handle);
+    generation += 1;
+    if (handle !== null) driver.clear(handle);
     handle = null;
   };
 
@@ -33,9 +34,11 @@ export function createIdleTimer(
     reset(delayMs: number) {
       clear();
       if (disposed || !Number.isFinite(delayMs) || delayMs < 0) return;
+      const scheduledGeneration = generation;
       handle = driver.set(() => {
+        if (disposed || scheduledGeneration !== generation) return;
         handle = null;
-        if (!disposed) onIdle();
+        onIdle();
       }, delayMs);
     },
     cancel: clear,
@@ -47,6 +50,8 @@ export function createIdleTimer(
 }
 
 export interface GuideState {
+  /** Stable host-owned business step ID; changes restart the timer, value edits do not. */
+  stepId?: string;
   enabled: boolean;
   paused: boolean;
   delaySeconds: GuideDelaySeconds;

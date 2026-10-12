@@ -26,7 +26,10 @@ test("idle timer reset cancels the prior timer and dispose prevents later callba
   const timer = createIdleTimer(() => { idleCalls += 1; }, driver);
 
   timer.reset(10_000);
+  const stale = [...pending.values()][0].callback;
   timer.reset(15_000);
+  stale();
+  assert.equal(idleCalls, 0);
   assert.equal(pending.size, 1);
   assert.equal([...pending.values()][0].delayMs, 15_000);
   const [handle, entry] = [...pending.entries()][0];
@@ -34,7 +37,9 @@ test("idle timer reset cancels the prior timer and dispose prevents later callba
   entry.callback();
   assert.equal(idleCalls, 1);
   timer.reset(20_000);
+  const afterDispose = [...pending.values()][0].callback;
   timer.dispose();
+  afterDispose();
   assert.equal(pending.size, 0);
   assert.equal(idleCalls, 1);
 });

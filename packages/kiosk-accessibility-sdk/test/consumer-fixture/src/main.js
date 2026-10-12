@@ -53,6 +53,7 @@ const profile = validateAccessibilityProfile({
 
 sdk.applyProfile(profile);
 sdk.setGuideState({
+  stepId: "host.review.continue",
   enabled: profile.smartGuide,
   paused: false,
   delaySeconds: profile.guideDelaySeconds,
@@ -133,6 +134,19 @@ window.__sdkPackageSmoke = {
       actionHighlighted: continueButton.classList.contains("a11y-guide-emphasis"),
       diagnostics: sdk.inspectLayout(),
     };
+  },
+  updateGuideCopy(text) {
+    sdk.setGuideState({
+      stepId: "host.review.continue",
+      enabled: profile.smartGuide,
+      paused: false,
+      delaySeconds: profile.guideDelaySeconds,
+      message: {
+        title: "다음 단계",
+        text,
+        actionId: "host.review.continue",
+      },
+    });
   },
   destroy() {
     sdk.destroy();

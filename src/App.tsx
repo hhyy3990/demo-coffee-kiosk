@@ -292,8 +292,9 @@ export default function App() {
     accessibilitySdkRef.current?.notifyScreenChange(stage);
   }, [stage]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     accessibilitySdkRef.current?.setGuideState({
+      stepId: `cafe.${stage}:${guideCopy?.actionId ?? "none"}`,
       enabled: preferences.smartGuide,
       paused: qrOpen || stage === "processing",
       delaySeconds: preferences.guideDelaySeconds,

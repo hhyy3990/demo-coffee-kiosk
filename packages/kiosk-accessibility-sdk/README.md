@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.7`
+- SDK API: `0.5.8`
 - 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -25,19 +25,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.7.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.8.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1·v2는 기존 설정을 읽고 `viewportMode`를 `null`로 정규화하므로 레거시 `bottomControls`로 하단 모드를 추측하지 않습니다. v3는 최상위 `schemaVersion`, `updatedAt`, `preferences`를 요구하며 `preferences.viewportMode`는 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`이어야 합니다. 문자열 비율, 지원하지 않는 값, v3의 레거시 `bottomControls`/`simplifiedLayout` 필드는 거부합니다. QR 프로필이 적용되면 SDK가 검증한 `viewportMode`를 기존 공통 레이아웃 경로에 자동 반영합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.7.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.8.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.5.7.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.8.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -177,7 +177,7 @@ const adapter: AccessibilityAdapter = {
 const sdk = createAccessibilitySdk({ root, adapter });
 ```
 
-화면이 실제 업무 단계로 바뀐 뒤 호스트는 프레임워크와 관계없이 새 화면 ID를 한 번 전달합니다. `notifyScreenChange()`는 ID가 바뀐 경우에만 이전·현재 스크롤 소유자를 다시 측정하고 초기화합니다. 같은 ID의 재렌더링, 입력 변경, 모달 및 길잡이는 통지하지 않습니다.
+화면이 실제 업무 단계로 바뀐 뒤 호스트는 프레임워크와 관계없이 새 화면 ID를 한 번 전달합니다. `notifyScreenChange()`는 ID가 바뀐 경우에만 이전·현재 스크롤 소유자를 다시 측정하고 초기화하며, 이전 길잡이 타이머와 안내도 취소합니다. 같은 ID의 재렌더링, 입력 변경, 모달 및 길잡이는 스크롤 초기화로 통지하지 않습니다.
 
 ```ts
 // DOM을 새 화면으로 갱신한 직후 호출합니다.
@@ -253,6 +253,9 @@ scanner.destroy();
 
 ```ts
 sdk.setGuideState({
+  // 같은 화면 안의 확인 모달처럼 새 업무 안내 단계마다 바꿉니다.
+  // ID에는 개인정보나 입력값을 넣지 않습니다.
+  stepId: "bank.review.confirm",
   enabled: profile.smartGuide,
   paused: false,
   delaySeconds: profile.guideDelaySeconds,
@@ -262,6 +265,8 @@ sdk.setGuideState({
     actionId: "bank.review.continue",
   },
 });
+
+// 같은 stepId에서 옵션/수량에 따라 message만 바뀌면 기존 타이머를 유지합니다.
 
 const layoutIssues = sdk.inspectLayout(); // 읽기 전용 진단
 const corrections = sdk.correctLayout(); // 명시된 영역에서만 보정 시도, 결과별 되돌림 여부 반환

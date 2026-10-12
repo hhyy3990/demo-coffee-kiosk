@@ -8,10 +8,11 @@ export function smartGuideDelayMs(seconds) {
 export function createIdleTimer(onIdle, driver = browserTimers) {
     let handle = null;
     let disposed = false;
+    let generation = 0;
     const clear = () => {
-        if (handle === null)
-            return;
-        driver.clear(handle);
+        generation += 1;
+        if (handle !== null)
+            driver.clear(handle);
         handle = null;
     };
     return {
@@ -19,10 +20,12 @@ export function createIdleTimer(onIdle, driver = browserTimers) {
             clear();
             if (disposed || !Number.isFinite(delayMs) || delayMs < 0)
                 return;
+            const scheduledGeneration = generation;
             handle = driver.set(() => {
+                if (disposed || scheduledGeneration !== generation)
+                    return;
                 handle = null;
-                if (!disposed)
-                    onIdle();
+                onIdle();
             }, delayMs);
         },
         cancel: clear,

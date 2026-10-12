@@ -45,6 +45,7 @@ const screenChanged: boolean = sdk.notifyScreenChange("independent.confirm");
 sdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
 sdk.setViewportMode(null);
 sdk.setGuideState({
+  stepId: "independent.confirm.continue",
   enabled: profile.smartGuide,
   paused: false,
   delaySeconds: profile.guideDelaySeconds,

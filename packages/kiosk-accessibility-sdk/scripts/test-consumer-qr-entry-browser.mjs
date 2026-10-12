@@ -386,8 +386,33 @@ try {
   if (cases.length !== expectedCases) {
     throw new Error(`Expected ${expectedCases} consumer browser cases, got ${cases.length}.`);
   }
+  await send("Page.navigate", { url: baseUrl });
+  let guideFixtureLoaded = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    guideFixtureLoaded = await evaluate("Boolean(window.__sdkPackageSmoke)");
+    if (guideFixtureLoaded) break;
+    await wait(50);
+  }
+  if (!guideFixtureLoaded) throw new Error("Independent Smart Guide fixture did not load.");
+  await wait(2_000);
+  await evaluate(`window.__sdkPackageSmoke.updateGuideCopy("같은 업무 단계에서 갱신한 안내 문구입니다.")`);
+  await wait(8_300);
+  const independentGuide = await evaluate(`(() => {
+    const guide = document.querySelector(".a11y-guide-toast");
+    return {
+      visible: Boolean(guide),
+      text: guide?.innerText ?? "",
+      actionHighlighted: document.querySelector("#host-continue")?.classList.contains("a11y-guide-emphasis") ?? false,
+    };
+  })()`);
+  if (!independentGuide.visible ||
+    !independentGuide.text.includes("같은 업무 단계에서 갱신한 안내 문구입니다.") ||
+    !independentGuide.actionHighlighted) {
+    throw new Error(`Independent Smart Guide step/timer update failed: ${JSON.stringify(independentGuide)}`);
+  }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
+    independentGuideStepUpdate: independentGuide,
     fontCorrectionCases,
     cases,
     result: "PASS",

@@ -74,12 +74,14 @@ function createSessionHarness() {
   const originals = {
     window: Object.getOwnPropertyDescriptor(globalThis, "window"),
     document: Object.getOwnPropertyDescriptor(globalThis, "document"),
+    HTMLElement: Object.getOwnPropertyDescriptor(globalThis, "HTMLElement"),
     SpeechSynthesisUtterance: Object.getOwnPropertyDescriptor(globalThis, "SpeechSynthesisUtterance"),
     setTimeout: globalThis.setTimeout,
     clearTimeout: globalThis.clearTimeout,
   };
   const timerCallbacks = new Map();
   const clearedTimers = new Set();
+  const scheduledDelays = new Map();
   let timerId = 0;
   let speechCancels = 0;
   let speechUtterances = 0;
@@ -91,6 +93,8 @@ function createSessionHarness() {
     speechSynthesis: speech,
     addEventListener() {},
     removeEventListener() {},
+    requestAnimationFrame(callback) { return globalThis.setTimeout(() => callback(0), 0); },
+    cancelAnimationFrame(id) { globalThis.clearTimeout(id); },
   };
   const makeClassList = () => {
     const classes = new Set();
@@ -124,6 +128,7 @@ function createSessionHarness() {
       return {
         className: "",
         textContent: "",
+        dataset: {},
         style: {},
         classList: makeClassList(),
         children: [],
@@ -138,14 +143,16 @@ function createSessionHarness() {
       };
     },
   };
-  globalThis.setTimeout = (callback) => {
+  globalThis.setTimeout = (callback, delay = 0) => {
     const id = ++timerId;
     timerCallbacks.set(id, callback);
+    scheduledDelays.set(id, delay);
     return id;
   };
   globalThis.clearTimeout = (id) => clearedTimers.add(id);
   Object.defineProperty(globalThis, "window", { configurable: true, value: windowStub });
   Object.defineProperty(globalThis, "document", { configurable: true, value: documentStub });
+  Object.defineProperty(globalThis, "HTMLElement", { configurable: true, value: class HTMLElement {} });
   Object.defineProperty(globalThis, "SpeechSynthesisUtterance", {
     configurable: true,
     value: class SpeechSynthesisUtterance { constructor(text) { this.text = text; } },
@@ -166,19 +173,112 @@ function createSessionHarness() {
     children,
     timerCallbacks,
     clearedTimers,
+    scheduledDelays,
     get speechCancels() { return speechCancels; },
     get speechUtterances() { return speechUtterances; },
     restore() {
       sdkInstance.destroy();
       globalThis.setTimeout = originals.setTimeout;
       globalThis.clearTimeout = originals.clearTimeout;
-      for (const key of ["window", "document", "SpeechSynthesisUtterance"]) {
+      for (const key of ["window", "document", "HTMLElement", "SpeechSynthesisUtterance"]) {
         if (originals[key]) Object.defineProperty(globalThis, key, originals[key]);
         else delete globalThis[key];
       }
     },
   };
 }
+
+test("guide step updates keep one timer for value edits and restart only at business-step boundaries", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    const guide = (stepId, text, delaySeconds = 10) => h.sdk.setGuideState({
+      stepId,
+      enabled: true,
+      paused: false,
+      delaySeconds,
+      message: { title: "안내", text, actionId: "continue" },
+    });
+
+    guide("cafe.options", "온도와 크기를 선택해 주세요.");
+    const optionsTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.scheduledDelays.get(optionsTimer), 10_000);
+
+    guide("cafe.options", "차갑게, 큰 사이즈가 선택되어 있어요.");
+    assert.equal(h.clearedTimers.has(optionsTimer), false);
+    assert.equal([...h.timerCallbacks.keys()].at(-1), optionsTimer);
+
+    guide("cafe.cart", "주문을 확인한 뒤 결제로 이동해요.", 15);
+    const cartTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.notEqual(cartTimer, optionsTimer);
+    assert.equal(h.clearedTimers.has(optionsTimer), true);
+    assert.equal(h.scheduledDelays.get(cartTimer), 15_000);
+
+    guide("cafe.cart.confirm-modal", "주문 내용을 확인해 주세요.", 15);
+    const modalTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.clearedTimers.has(cartTimer), true);
+    guide("cafe.cart", "주문 화면으로 돌아왔어요.", 15);
+    const returnedCartTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.clearedTimers.has(modalTimer), true);
+
+    guide("cafe.payment", "결제 방법을 선택해 주세요.", 20);
+    const paymentTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.clearedTimers.has(returnedCartTimer), true);
+    assert.equal(h.scheduledDelays.get(paymentTimer), 20_000);
+
+    h.sdk.setGuideState({
+      stepId: "cafe.payment",
+      enabled: false,
+      paused: false,
+      delaySeconds: 20,
+      message: { title: "안내", text: "사용 안 함", actionId: "continue" },
+    });
+    assert.equal(h.clearedTimers.has(paymentTimer), true);
+    assert.equal(h.children.length, 0);
+    const timerCount = h.timerCallbacks.size;
+    h.sdk.setGuideState({
+      stepId: "cafe.payment.no-copy",
+      enabled: true,
+      paused: false,
+      delaySeconds: 20,
+      message: null,
+    });
+    assert.equal(h.timerCallbacks.size, timerCount);
+  } finally {
+    h.restore();
+  }
+});
+
+test("a committed screen change cancels the old guide before a replacement step arrives", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    h.sdk.setGuideState({
+      stepId: "cafe.options",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "옵션", text: "옵션을 골라 주세요.", actionId: "continue" },
+    });
+    const oldTimer = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(oldTimer)?.();
+    assert.equal(h.children.length, 1);
+    assert.equal(h.sdk.notifyScreenChange("cafe.cart"), true);
+    assert.equal(h.children.length, 0);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
+    assert.equal(h.sdk.notifyScreenChange("cafe.cart"), false);
+    h.sdk.setGuideState({
+      stepId: "cafe.cart",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "주문 확인", text: "주문을 확인해 주세요.", actionId: "continue" },
+    });
+    assert.notEqual([...h.timerCallbacks.keys()].at(-1), oldTimer);
+  } finally {
+    h.restore();
+  }
+});
 
 test("endSession clears profile classes, pending guide and speech, and leaves host data untouched", () => {
   const h = createSessionHarness();
