@@ -123,7 +123,11 @@
       const scrollRect = instance.scroll.getBoundingClientRect();
       const lastReached = lastRect.top >= 0 && lastRect.bottom <= innerHeight &&
         (kind === "document-scroll" || (lastRect.top >= scrollRect.top - 1 && lastRect.bottom <= scrollRect.bottom + 1));
-      const hidesAtEnd = !root.querySelector(".a11y-additional-menu-hint");
+      const endHint = root.querySelector(".a11y-additional-menu-hint");
+      const hidesAtEnd = !endHint || (
+        endHint.getAttribute("aria-hidden") === "true" &&
+        getComputedStyle(endHint).visibility === "hidden"
+      );
       const endState = analyzeAdditionalMenuOverflow(root, instance.adapter);
       const point = { x: last.getBoundingClientRect().left + 30, y: last.getBoundingClientRect().top + 30 };
       const hit = document.elementFromPoint(point.x, point.y);

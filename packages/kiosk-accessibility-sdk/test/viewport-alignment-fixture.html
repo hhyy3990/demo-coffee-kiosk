@@ -85,7 +85,92 @@
     }
     const root = document.querySelector("#host");
     const stage = document.querySelector("#stage");
+    if (params.get("diagnostic") === "overflow-anchor-none") {
+      stage.style.setProperty("overflow-anchor", "none", "important");
+    }
+    if (params.get("diagnostic") === "position-static") {
+      stage.style.setProperty("position", "static", "important");
+    }
     const inputStats = { scrollEvents: 0, wheelEvents: 0, touchStarts: 0, touchMoves: 0, observations: [] };
+    const rootScrollListeners = [];
+    const rootAddEventListener = root.addEventListener;
+    root.addEventListener = function (type, listener, options) {
+      if (type === "scroll") rootScrollListeners.push({
+        listener, capture: options === true || options?.capture === true,
+        stack: new Error().stack?.split("\n").slice(1, 6),
+      });
+      return rootAddEventListener.call(this, type, listener, options);
+    };
+    const probe = {
+      observerCallbacks: [],
+      scrollWrites: [],
+      scrollMethods: [],
+      input: { wheel: 0, touchstart: 0, touchmove: 0, touchend: 0, pointerdown: 0, pointerup: 0 },
+      lastInputAt: null,
+    };
+    for (const eventName of Object.keys(probe.input)) {
+      window.addEventListener(eventName, () => {
+        probe.input[eventName] += 1;
+        probe.lastInputAt = performance.now();
+      }, { capture: true, passive: true });
+    }
+    for (const name of ["ResizeObserver", "MutationObserver"]) {
+      const NativeObserver = window[name];
+      if (!NativeObserver) continue;
+      window[name] = class extends NativeObserver {
+        constructor(callback) {
+          super((...args) => {
+            const nodes = (list) => [...list].map((node) => node instanceof Element
+              ? `${node.tagName.toLowerCase()}#${node.id}.${String(node.className || "").trim().replace(/\s+/g, ".")}`
+              : node.nodeName);
+            probe.observerCallbacks.push({
+              type: name, at: performance.now(),
+              records: name === "MutationObserver" ? (args[0] || []).map((record) => ({
+                kind: record.type,
+                target: record.target instanceof Element
+                  ? `${record.target.tagName.toLowerCase()}#${record.target.id}.${String(record.target.className || "").trim().replace(/\s+/g, ".")}`
+                  : record.target.nodeName,
+                attribute: record.attributeName,
+                added: nodes(record.addedNodes || []),
+                removed: nodes(record.removedNodes || []),
+              })) : undefined,
+            });
+            callback(...args);
+          });
+        }
+      };
+    }
+    for (let prototype = Object.getPrototypeOf(stage); prototype; prototype = Object.getPrototypeOf(prototype)) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, "scrollTop");
+      if (!descriptor?.set || !descriptor.configurable) continue;
+      Object.defineProperty(prototype, "scrollTop", {
+        ...descriptor,
+        set(value) {
+          if (this === stage) probe.scrollWrites.push({
+            at: performance.now(), value, stack: new Error().stack?.split("\n").slice(1, 5),
+          });
+          descriptor.set.call(this, value);
+        },
+      });
+      break;
+    }
+    for (const [object, methodName, appliesToStage] of [
+      [Element.prototype, "scrollTo", (target) => target === stage],
+      [Element.prototype, "scrollIntoView", (target) => target === stage || stage.contains(target)],
+      [window, "scrollTo", () => true],
+      [window, "scroll", () => true],
+    ]) {
+      const original = object[methodName];
+      if (typeof original !== "function") continue;
+      object[methodName] = function (...args) {
+        if (appliesToStage(this)) probe.scrollMethods.push({
+          method: methodName, at: performance.now(), args: args.map((arg) =>
+            typeof arg === "object" && arg !== null ? { ...arg } : arg),
+          stack: new Error().stack?.split("\n").slice(1, 5),
+        });
+        return original.apply(this, args);
+      };
+    }
     const observeScroll = () => {
       inputStats.scrollEvents += 1;
       inputStats.observations.push({
@@ -138,6 +223,7 @@
     };
     const before = measure();
     const sdk = createAccessibilitySdk({ root, adapter });
+    delete root.addEventListener;
     const baseProfile = { ...DEFAULT_ACCESSIBILITY_PROFILE };
     sdk.applyProfile({
       ...baseProfile,
@@ -227,6 +313,71 @@
         states.push({ delay, ...window.readLastAction() });
       }
       return states;
+    };
+    window.captureScrollReturnTimeline = async () => {
+      if (params.get("diagnostic") === "scroll-guidance-disabled") {
+        for (const entry of rootScrollListeners) {
+          root.removeEventListener("scroll", entry.listener, entry.capture);
+        }
+      }
+      if (params.get("diagnostic") === "hint-removal-blocked") {
+        const hint = root.querySelector(".a11y-additional-menu-hint");
+        if (hint) hint.remove = () => { probe.hintRemovalBlocked = true; };
+      }
+      const snapshot = (label, elapsed = 0) => {
+        const stageRect = stage.getBoundingClientRect();
+        const heading = document.querySelector("#first-heading").getBoundingClientRect();
+        const last = document.querySelector("#last-action").getBoundingClientRect();
+        const style = getComputedStyle(stage);
+        const maxScroll = Math.max(0, stage.scrollHeight - stage.clientHeight);
+        return {
+          label, elapsedMs: Number(elapsed.toFixed(2)), performanceNow: performance.now(),
+          owner: stage.id, isDocumentScroller: stage === document.scrollingElement,
+          documentScrollTop: document.scrollingElement?.scrollTop ?? null,
+          scrollTop: stage.scrollTop, scrollHeight: stage.scrollHeight,
+          clientHeight: stage.clientHeight, maxScroll,
+          stageRect: stageRect.toJSON(), headingRect: heading.toJSON(), lastButtonRect: last.toJSON(),
+          css: {
+            overflowY: style.overflowY, scrollBehavior: style.scrollBehavior,
+            scrollSnapType: style.scrollSnapType, overflowAnchor: style.overflowAnchor,
+            pointerEvents: style.pointerEvents, touchAction: style.touchAction,
+            position: style.position, transform: style.transform,
+            viewportHeight: style.getPropertyValue("--a11y-bottom-viewport-height"),
+            viewportBottomInset: style.getPropertyValue("--a11y-bottom-viewport-bottom-inset"),
+          },
+          input: { ...probe.input, lastInputAt: probe.lastInputAt },
+          observerCallbackCount: probe.observerCallbacks.length,
+          scrollWriteCount: probe.scrollWrites.length,
+          scrollMethodCount: probe.scrollMethods.length,
+          hintRemovalBlocked: Boolean(probe.hintRemovalBlocked),
+          hints: [...root.querySelectorAll(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot")]
+            .map((element) => ({
+              className: element.className, text: element.textContent,
+              rect: element.getBoundingClientRect().toJSON(),
+            })),
+        };
+      };
+      await window.waitForScrollQuiet();
+      const before = snapshot("before");
+      const start = performance.now();
+      const max = Math.max(0, stage.scrollHeight - stage.clientHeight);
+      stage.scrollTop = max;
+      const immediate = snapshot("immediate", performance.now() - start);
+      const nextFrame = new Promise((resolve) => requestAnimationFrame(() =>
+        resolve(snapshot("next-animation-frame", performance.now() - start))));
+      const times = [16, 50, 100, 250, 500, 1000, 3000];
+      const timed = times.map((time) => new Promise((resolve) => setTimeout(() =>
+        resolve(snapshot(`${time}ms`, performance.now() - start)), time)));
+      return {
+        before, immediate,
+        later: await Promise.all([nextFrame, ...timed]),
+        disabledRootScrollListeners: params.get("diagnostic") === "scroll-guidance-disabled"
+          ? rootScrollListeners.map(({ capture, stack }) => ({ capture, stack }))
+          : [],
+        scrollWrites: [...probe.scrollWrites],
+        scrollMethods: [...probe.scrollMethods],
+        observerCallbacks: [...probe.observerCallbacks],
+      };
     };
     window.destroyFixtureSdk = () => sdk.destroy();
   </script>

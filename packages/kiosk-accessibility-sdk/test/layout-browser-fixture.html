@@ -384,7 +384,8 @@
           label,
           scrollTop: scrollArea.scrollTop,
           maxScroll: maxScroll(),
-          visible: Boolean(pill && getComputedStyle(pill).visibility !== "hidden"),
+          visible: Boolean(pill && pill.getAttribute("aria-hidden") !== "true" &&
+            getComputedStyle(pill).visibility !== "hidden"),
           message: pill?.querySelector(".a11y-additional-menu-copy")?.textContent ?? null,
           pillRect: pillRect ? { top: pillRect.top, bottom: pillRect.bottom } : null,
           footerTop: footerRect.top,
@@ -452,7 +453,10 @@
           await new Promise((resolve) => setTimeout(resolve, delay));
           samples.push({ delay, ...ownerSnapshot() });
         }
-        const hintVisibleWithModal = Boolean(scrollRoot.querySelector(".a11y-additional-menu-hint"));
+        const modalHint = scrollRoot.querySelector(".a11y-additional-menu-hint");
+        const hintVisibleWithModal = Boolean(modalHint &&
+          modalHint.getAttribute("aria-hidden") !== "true" &&
+          getComputedStyle(modalHint).visibility !== "hidden");
         closeButton.click();
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const afterClose = ownerSnapshot();

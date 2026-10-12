@@ -197,11 +197,16 @@ window.qrConsumerTest = {
       sdk.applyProfile(sdk.profile);
     }
     await frame();
-    const hidden = !document.querySelector(".a11y-additional-menu-hint");
+    const hintVisible = () => {
+      const hint = document.querySelector(".a11y-additional-menu-hint");
+      return Boolean(hint && hint.getAttribute("aria-hidden") !== "true" &&
+        getComputedStyle(hint).visibility !== "hidden");
+    };
+    const hidden = !hintVisible();
     overlay.remove();
     if (kind === "guide") sdk.applyProfile(sdk.profile);
     await frame();
-    return { hidden, returns: !!document.querySelector(".a11y-additional-menu-hint") };
+    return { hidden, returns: hintVisible() };
   },
   async verifyDockless() {
     dock.setActive(false);

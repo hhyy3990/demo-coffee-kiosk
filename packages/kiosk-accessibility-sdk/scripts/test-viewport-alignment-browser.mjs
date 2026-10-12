@@ -56,19 +56,21 @@ try {
     "centered-long_320x844_true", "inner-scroll_320x844_true", "with-controls_320x844_true",
     "safe-centered_320x844_true", "min-height_360x667_true", "centered_360x667_false",
     "centered_360x667_true", "centered-min-height_360x667_true", "centered-long_360x667_true",
-    "inner-scroll_360x667_true", "with-controls_360x667_true", "safe-centered_360x667_true",
-    "centered_390x844_true", "centered-min-height_390x844_true", "centered-long_390x844_true",
-    "inner-scroll_390x844_true", "with-controls_390x844_true", "safe-centered_390x844_true",
+    "centered-long_390x844_true",
+    "inner-scroll_390x844_true",
     "centered-long_1440x900_true", "inner-scroll_1440x900_true",
     "centered-long_1920x1080_true", "inner-scroll_1920x1080_true",
   ]);
   const reports = [];
+  const scrollReturnExperiment = process.env.SCROLL_RETURN_EXPERIMENT;
+  let scrollExperimentCompleted = false;
 
   for (const [width, height] of sizes) {
+    const emulateMobile = width < 600 && process.env.SCROLL_RETURN_MOBILE !== "off";
     await send("Emulation.setDeviceMetricsOverride", {
-      width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
+      width, height, deviceScaleFactor: 1, mobile: emulateMobile, screenWidth: width, screenHeight: height,
     });
-    await send("Emulation.setTouchEmulationEnabled", { enabled: width < 600, maxTouchPoints: 1 });
+    await send("Emulation.setTouchEmulationEnabled", { enabled: emulateMobile, maxTouchPoints: 1 });
     const cases = layouts.flatMap((layout) => [
       { layout, large: false, percent: 80 },
       { layout, large: true, percent: 80 },
@@ -87,9 +89,21 @@ try {
       if (process.env.FAILURES_ONLY === "1" && !previousFailureCases.has(failureKey)) continue;
       const query = new URLSearchParams({
         layout: testCase.layout,
-        percent: String(testCase.percent),
+        percent: process.env.SCROLL_RETURN_VIEWPORT === "off" ? "none" : String(testCase.percent),
         large: String(testCase.large),
       });
+      if (process.env.SCROLL_RETURN_ANCHOR === "none") {
+        query.set("diagnostic", "overflow-anchor-none");
+      }
+      if (process.env.SCROLL_RETURN_POSITION === "static") {
+        query.set("diagnostic", "position-static");
+      }
+      if (process.env.SCROLL_RETURN_GUIDANCE === "off") {
+        query.set("diagnostic", "scroll-guidance-disabled");
+      }
+      if (process.env.SCROLL_RETURN_HINT === "keep") {
+        query.set("diagnostic", "hint-removal-blocked");
+      }
       await send("Page.navigate", {
         url: `http://127.0.0.1:5000/packages/kiosk-accessibility-sdk/test/viewport-alignment-fixture.html?${query}`,
       });
@@ -108,6 +122,40 @@ try {
           scriptType: [...document.scripts].map((item) => item.type),
         })`);
         throw new Error(`Alignment fixture timed out: ${width}x${height}/${JSON.stringify(testCase)} ${JSON.stringify(debug)}`);
+      }
+      if (scrollReturnExperiment === "none" || scrollReturnExperiment === "input") {
+        await wait(1000);
+        if (scrollReturnExperiment === "input") {
+          const stageRect = result.top.stage;
+          const x = Math.max(1, Math.min(width - 2, stageRect.left + stageRect.width / 2));
+          const y = Math.max(1, Math.min(height - 2, stageRect.top + stageRect.height / 2));
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            await send("Input.dispatchTouchEvent", {
+              type: "touchStart", touchPoints: [{ x, y, id: 1 }],
+            });
+            for (let step = 1; step <= 6; step += 1) {
+              await send("Input.dispatchTouchEvent", {
+                type: "touchMove", touchPoints: [{ x, y: Math.max(1, y - step * 42), id: 1 }],
+              });
+              await wait(20);
+            }
+            await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+            await wait(150);
+          }
+          await evaluate("window.waitForScrollQuiet()");
+        }
+        const timeline = await evaluate("window.captureScrollReturnTimeline()");
+        reports.push({
+          experiment: scrollReturnExperiment,
+          viewport: `${width}x${height}`,
+          layout: testCase.layout,
+          large: testCase.large,
+          percent: testCase.percent,
+          fixture: result,
+          timeline,
+        });
+        scrollExperimentCompleted = true;
+        break;
       }
       const stage = result.top.stage;
       const inputX = Math.max(1, Math.min(width - 2, stage.left + stage.width / 2));
@@ -205,7 +253,11 @@ try {
       };
       reports.push(result);
     }
+    if (scrollExperimentCompleted) break;
   }
+  if (scrollExperimentCompleted) {
+    console.log(JSON.stringify(reports[0], null, 2));
+  } else {
   const failures = reports.filter((item) =>
     !item.applied || !item.last.visible || !item.last.hit || !item.lastActionClicked);
   const headingClips = reports.filter((item) => !item.top.headingFullyVisible || !item.top.headingHit);
@@ -227,6 +279,7 @@ try {
   }
   if (failures.length) {
     throw new Error(`${failures.length} of ${reports.length} last-action browser checks did not pass.`);
+  }
   }
 } finally {
   try { socket?.close(); } catch {}

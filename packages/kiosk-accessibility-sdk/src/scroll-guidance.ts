@@ -251,27 +251,32 @@ export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAd
   const refresh = () => {
     if (destroyed) return;
     if (!enabled) {
-      node?.remove();
-      node = null;
+      if (node) {
+        node.setAttribute("aria-hidden", "true");
+        node.style.visibility = "hidden";
+      }
       return;
     }
     const hint = currentHint(root, adapter);
     if (!hint) {
-      node?.remove();
-      node = null;
+      if (node) {
+        node.setAttribute("aria-hidden", "true");
+        node.style.visibility = "hidden";
+      }
       if (root.dataset) delete root.dataset.a11yScrollGuidance;
       return;
     }
     const element = ensureNode();
     if (!element) return;
+    element.removeAttribute("aria-hidden");
     const copy = element.querySelector<HTMLElement>(".a11y-additional-menu-copy");
     if (copy && copy.textContent !== hint.message) copy.textContent = hint.message;
     if (placeHint(element, root, adapter.getLayoutRegions())) {
       element.dataset.hintKind = hint.kind;
       if (root.dataset) delete root.dataset.a11yScrollGuidance;
     } else {
-      element.remove();
-      node = null;
+      element.setAttribute("aria-hidden", "true");
+      element.style.visibility = "hidden";
     }
   };
   const schedule = () => {
