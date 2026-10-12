@@ -4,9 +4,11 @@ import type {
   KioskTextTarget,
 } from "./adapter.ts";
 import { analyzeAdditionalMenuOverflow } from "./menu-overflow.ts";
+import { getQrEntryDockButtons } from "./qr-entry-dock.ts";
 
 export type AccessibilityIssueType =
   | "text-clipped"
+  | "text-obscured"
   | "horizontal-overflow"
   | "action-offscreen"
   | "bottom-control-obscures-action"
@@ -28,6 +30,7 @@ export interface AccessibilityDiagnostic {
   profile?: Readonly<{ textSize: string; buttonSize: string; contrast: string; viewportMode: number | null }>;
   recommendation?: string;
   autoCorrection?: "applied" | "failed" | "not-attempted";
+  reason?: "target-overflow" | "ancestor-overflow" | "line-clamp" | "fixed-button" | "qr-button";
 }
 
 export interface LayoutDiagnosticOptions {
@@ -51,9 +54,9 @@ function overlaps(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-function textIsClipped(target: KioskTextTarget): boolean {
+function textClipReason(target: KioskTextTarget): AccessibilityDiagnostic["reason"] | null {
   const element = target.element;
-  if (!element.isConnected || !isVisible(element)) return false;
+  if (!element.isConnected || !isVisible(element)) return null;
 
   const ownStyle = window.getComputedStyle(element);
   const ownHasClippingOverflow =
@@ -63,12 +66,13 @@ function textIsClipped(target: KioskTextTarget): boolean {
     ownHasClippingOverflow &&
     (element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1);
   const lineClamp = ownStyle.getPropertyValue("-webkit-line-clamp");
-  if (ownScrollClipped || (lineClamp && lineClamp !== "none" && lineClamp !== "0")) return true;
+  if (ownScrollClipped) return "target-overflow";
+  if (lineClamp && lineClamp !== "none" && lineClamp !== "0") return "line-clamp";
 
   const range = document.createRange();
   range.selectNodeContents(element);
   const textRect = range.getBoundingClientRect();
-  if (textRect.width === 0 && textRect.height === 0) return false;
+  if (textRect.width === 0 && textRect.height === 0) return null;
 
   for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
     const style = window.getComputedStyle(ancestor);
@@ -79,12 +83,51 @@ function textIsClipped(target: KioskTextTarget): boolean {
       (clipsX && (textRect.left < rect.left - 1 || textRect.right > rect.right + 1)) ||
       (clipsY && (textRect.top < rect.top - 1 || textRect.bottom > rect.bottom + 1))
     ) {
-      return true;
+      return "ancestor-overflow";
     }
     if (ancestor === element.ownerDocument.documentElement) break;
   }
 
-  return false;
+  return null;
+}
+
+function intersects(a: DOMRect, b: DOMRect): { width: number; height: number } | null {
+  const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function fixedButtons(root: HTMLElement, adapter: AccessibilityAdapter, bottomControls: HTMLElement[]) {
+  const results = new Map<HTMLElement, { id: string; reason: "fixed-button" | "qr-button" }>();
+  const registered = adapter.getActions().filter((action) => root.contains(action.element) && isVisible(action.element));
+  const fixedBottomControls = bottomControls.filter((control) => {
+    const position = window.getComputedStyle(control).position;
+    return position === "fixed" || position === "sticky";
+  });
+  for (const action of registered) {
+    const style = window.getComputedStyle(action.element);
+    if (fixedBottomControls.some((control) => control === action.element || control.contains(action.element)) ||
+      style.position === "fixed" || style.position === "sticky") {
+      results.set(action.element, { id: safeSemanticId(action.id), reason: "fixed-button" });
+    }
+  }
+  for (const control of fixedBottomControls) {
+    const candidates = [
+      ...(typeof control.matches === "function" && control.matches("button, a, input, [role='button']") ? [control] : []),
+      ...(typeof control.querySelectorAll === "function"
+        ? Array.from(control.querySelectorAll<HTMLElement>("button, a, input, [role='button']"))
+        : []),
+    ];
+    for (const element of candidates) {
+      if (!isVisible(element)) continue;
+      const action = registered.find((item) => item.element === element);
+      results.set(element, { id: action ? safeSemanticId(action.id) : "unmapped.fixed-button", reason: "fixed-button" });
+    }
+  }
+  for (const element of getQrEntryDockButtons(root)) {
+    if (isVisible(element)) results.set(element, { id: "qr-entry.open", reason: "qr-button" });
+  }
+  return [...results.entries()].map(([element, data]) => ({ element, ...data }));
 }
 
 function horizontalOverflow(root: HTMLElement): boolean {
@@ -106,6 +149,9 @@ export function inspectKioskLayout(
   const issues: AccessibilityDiagnostic[] = [];
   const minimumTouchTarget = options.minimumTouchTarget ?? 44;
   const regions = adapter.getLayoutRegions();
+  const bottomControls = (regions.bottomControls ?? []).filter((element) =>
+    isVisible(element),
+  );
 
   if (horizontalOverflow(root)) {
     issues.push({
@@ -124,12 +170,17 @@ export function inspectKioskLayout(
     ...adapter.getTextTargets(),
     ...(adapter.getFontCorrectionTargets?.() ?? []),
   ].map((target) => [target.id, target]));
-  for (const target of textTargets.values()) {
-    if (!root.contains(target.element) || !textIsClipped(target)) continue;
+  const visibleTextTargets = [...textTargets.values()].filter((target) =>
+    root.contains(target.element) && isVisible(target.element),
+  );
+  for (const target of visibleTextTargets) {
+    const reason = textClipReason(target);
+    if (!reason) continue;
     issues.push({
       screenId,
       semanticId: safeSemanticId(target.id),
       issueType: "text-clipped",
+      reason,
       measurements: {
         clientWidth: target.element.clientWidth,
         scrollWidth: target.element.scrollWidth,
@@ -138,13 +189,31 @@ export function inspectKioskLayout(
       },
     });
   }
+  const actionableObstacles = fixedButtons(root, adapter, bottomControls);
+  for (const target of visibleTextTargets) {
+    const textRect = target.element.getBoundingClientRect();
+    for (const obstacle of actionableObstacles) {
+      if (obstacle.element === target.element ||
+        obstacle.element.contains(target.element) || target.element.contains(obstacle.element)) continue;
+      const overlap = intersects(textRect, obstacle.element.getBoundingClientRect());
+      if (!overlap) continue;
+      issues.push({
+        screenId,
+        semanticId: safeSemanticId(target.id),
+        relatedSemanticId: obstacle.id,
+        issueType: "text-obscured",
+        reason: obstacle.reason,
+        measurements: {
+          overlapWidth: Math.round(overlap.width * 100) / 100,
+          overlapHeight: Math.round(overlap.height * 100) / 100,
+        },
+      });
+    }
+  }
 
   const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
   const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
   const actions = adapter.getActions().filter((action) => root.contains(action.element) && isVisible(action.element));
-  const bottomControls = (regions.bottomControls ?? []).filter((element) =>
-    root.contains(element) && isVisible(element),
-  );
   const scrollArea = regions.scrollArea;
   if (scrollArea && root.contains(scrollArea)) {
     const scrollActions = actions.filter((action) => scrollArea.contains(action.element));
@@ -253,6 +322,8 @@ export function inspectKioskLayout(
     const firstRect = first.element.getBoundingClientRect();
     for (let next = index + 1; next < actions.length; next += 1) {
       const second = actions[next];
+      if (first.element === second.element ||
+        first.element.contains(second.element) || second.element.contains(first.element)) continue;
       const secondRect = second.element.getBoundingClientRect();
       if (!overlaps(firstRect, secondRect)) continue;
       issues.push({

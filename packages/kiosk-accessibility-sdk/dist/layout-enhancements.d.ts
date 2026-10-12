@@ -5,10 +5,18 @@ export interface LayoutCorrectionResult {
     outcome: "applied" | "reverted" | "not-needed" | "failed";
     issuesBefore: number;
     issuesAfter: number;
-    reason?: "scroll-unavailable" | "no-safe-inset";
+    reason?: "scroll-unavailable" | "no-safe-inset" | "clipping-remains" | "fixed-control-overlap-remains";
     targetId?: string;
     fontSizeBefore?: number;
     fontSizeAfter?: number;
+    attempts?: readonly {
+        reductionPercent: 5 | 10;
+        fontSize: number;
+        lineHeight: number | null;
+        remainingIssueTypes: readonly string[];
+        maxOverlapWidth?: number;
+        maxOverlapHeight?: number;
+    }[];
 }
 export declare function createLayoutEnhancer(root: HTMLElement, adapter: AccessibilityAdapter, getProfile: () => AccessibilityProfile): {
     applyProfile(): void;

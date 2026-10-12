@@ -287,7 +287,7 @@ try {
     }
   }
 
-  for (const mode of ["fit", "fail", "none"]) {
+  for (const mode of ["fit", "14fit", "16fit", "fail", "none"]) {
     await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 844, deviceScaleFactor: 1, mobile: true });
     await send("Page.navigate", { url: `${baseUrl}/qr-entry.html?structure=inner&percent=none&fontCorrection=${mode}` });
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -308,8 +308,20 @@ try {
       result.menuActionFont === result.supportingFont)) {
       throw new Error(`5% supporting-copy correction failed: ${JSON.stringify(result)}`);
     }
+    const expectedCorrection = mode === "14fit"
+      ? { before: 14, after: 13.3 }
+      : mode === "16fit" ? { before: 16, after: 14.4 } : null;
+    if (expectedCorrection && (!correction || correction.outcome !== "applied" ||
+      correction.fontSizeBefore !== expectedCorrection.before ||
+      correction.fontSizeAfter !== expectedCorrection.after ||
+      result.supportingFont !== `${expectedCorrection.after}px`)) {
+      throw new Error(`Small-font correction ${mode} failed: ${JSON.stringify(result)}`);
+    }
     if (mode === "fail" && (!correction || correction.outcome !== "failed" ||
       result.supportingFont !== "24px" ||
+      correction.attempts?.length !== 2 ||
+      correction.attempts[0]?.reductionPercent !== 5 ||
+      correction.attempts[1]?.reductionPercent !== 10 ||
       !result.diagnostics.some((issue) => issue.semanticId === "consumer.supporting-copy" &&
         issue.issueType === "text-clipped" && issue.severity === "error" && issue.viewport.width === 320))) {
       throw new Error(`10% correction failure was not restored and diagnosed: ${JSON.stringify(result)}`);
@@ -323,6 +335,50 @@ try {
         throw new Error(`Supporting-copy profile did not restore host styles: ${JSON.stringify(restored)}`);
       }
     }
+    if (expectedCorrection) {
+      const attempt = correction.attempts?.at(-1);
+      const expectedPercent = mode === "14fit" ? 5 : 10;
+      if (attempt?.reductionPercent !== expectedPercent) {
+        throw new Error(`Expected ${expectedPercent}% attempt for ${mode}: ${JSON.stringify(correction)}`);
+      }
+    }
+  }
+
+  await send("Emulation.setDeviceMetricsOverride", { width: 1080, height: 1920, deviceScaleFactor: 1, mobile: false });
+  await send("Page.navigate", { url: `${baseUrl}/qr-entry.html?structure=fixed-controls&percent=none&fontCorrection=none` });
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await evaluate("Boolean(window.qrConsumerTest)")) break;
+    await wait(50);
+  }
+  const parentOverlap = await evaluate("window.qrConsumerTest.diagnoseOverlap('parent')");
+  const dockOverlap = await evaluate("window.qrConsumerTest.diagnoseOverlap('dock')");
+  const buttonOverlap = await evaluate("window.qrConsumerTest.diagnoseOverlap('button')");
+  if (parentOverlap.some((issue) => issue.issueType === "text-obscured") ||
+    dockOverlap.some((issue) => issue.issueType === "text-obscured") ||
+    !buttonOverlap.some((issue) => issue.issueType === "text-obscured" &&
+      issue.relatedSemanticId === "footer.action.0" && issue.measurements.overlapWidth > 0 &&
+      issue.measurements.overlapHeight > 0)) {
+    throw new Error(`Fixed-button/dock diagnostic distinction failed: ${
+      JSON.stringify({ parentOverlap, dockOverlap, buttonOverlap })
+    }`);
+  }
+  const twoRegisteredCopies = await evaluate("window.qrConsumerTest.testMultipleCopy(2)");
+  if (twoRegisteredCopies.fonts[0] !== "12.6px" || twoRegisteredCopies.fonts[1] !== "12.6px" ||
+    twoRegisteredCopies.corrections.length !== 2 ||
+    twoRegisteredCopies.corrections.some((result) => result.outcome !== "applied")) {
+    throw new Error(`Both registered fixed-area notices were not corrected: ${JSON.stringify(twoRegisteredCopies)}`);
+  }
+  const oneRegisteredCopy = await evaluate("window.qrConsumerTest.testMultipleCopy(1)");
+  if (oneRegisteredCopy.fonts[0] !== "12.6px" || oneRegisteredCopy.fonts[1] !== "14px" ||
+    !oneRegisteredCopy.corrections.some((result) => result.targetId === "consumer.fixed-copy.1") ||
+    oneRegisteredCopy.corrections.some((result) => result.targetId === "consumer.fixed-copy.2")) {
+    throw new Error(`Registration scope for fixed-area notices failed: ${JSON.stringify(oneRegisteredCopy)}`);
+  }
+  const sessionRestore = await evaluate("window.qrConsumerTest.verifyCorrectionSessionRestore()");
+  if (sessionRestore.before !== "12.6px" ||
+    sessionRestore.after.some((result) => result.font !== "9.33333px" ||
+      result.inlineFont !== "9.33333px" || result.inlineLineHeight !== "1")) {
+    throw new Error(`endSession did not restore host copy styles: ${JSON.stringify(sessionRestore)}`);
   }
 
   const stageRootStructures = structures.filter((structure) => structure.startsWith("stage-root")).length;

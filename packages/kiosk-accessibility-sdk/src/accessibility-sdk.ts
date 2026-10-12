@@ -493,6 +493,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const corrections = layoutEnhancer.getLastCorrections();
     const recommendation: Record<string, string> = {
       "text-clipped": "텍스트 컨테이너의 높이·줄 간격·overflow 설정을 확인하세요.",
+      "text-obscured": "안내 문구와 실제 고정 조작 버튼의 겹침을 확인하세요.",
       "horizontal-overflow": "컨테이너 최소 너비와 그리드 열 수를 확인하세요.",
       "action-offscreen": "업무 버튼이 스크롤 영역 안에 등록되어 있는지 확인하세요.",
       "bottom-control-obscures-action": "스크롤 영역과 고정 조작부의 경계를 확인하세요.",

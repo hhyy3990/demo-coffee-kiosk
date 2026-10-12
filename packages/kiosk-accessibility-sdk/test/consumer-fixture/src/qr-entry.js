@@ -24,12 +24,20 @@ document.body.classList.toggle("fixed-controls-host", fixedControlsHost);
 document.body.classList.toggle("host-tail", hostTail);
 document.body.classList.toggle("correction-fit", fontCorrection === "fit");
 document.body.classList.toggle("correction-fail", fontCorrection === "fail");
+document.body.classList.toggle("correction-14-fit", fontCorrection === "14fit");
+document.body.classList.toggle("correction-16-fit", fontCorrection === "16fit");
 document.body.dataset.qrScrollOwner = documentModeUsesInner ? "inner" : "document";
 
 const content = document.querySelector(".content");
+const supportingCopy = document.querySelector("#supporting-copy");
+if (fontCorrection === "14fit") supportingCopy.style.fontSize = "9.333333px";
+if (fontCorrection === "16fit") supportingCopy.style.fontSize = "10.666667px";
 const root = documentHost ? document.body : stageRootHost ? content : document.querySelector("#kiosk-root");
 const controls = document.querySelector(".bottom-controls");
 const list = document.querySelector("#menu-list");
+const extraTextTargets = [];
+let extraActions = [];
+let extraCorrectionTargets = [];
 for (let index = 1; index <= 18; index += 1) {
   const button = document.createElement("button");
   button.type = "button";
@@ -50,12 +58,16 @@ let qrClicks = 0;
 let lastMenuClicks = 0;
 const adapter = {
   getSnapshot: () => ({ screenId }),
-  getActions: () => [...document.querySelectorAll(".menu-item")].map((element, index) => ({
-    id: `menu.${index}`, name: element.textContent, element, enabled: true,
-  })),
-  getTextTargets: () => [{ id: "consumer.supporting-copy", element: document.querySelector("#supporting-copy") }],
-  getFontCorrectionTargets: () => fontCorrection === "none" ? [] : [
-    { id: "consumer.supporting-copy", element: document.querySelector("#supporting-copy") },
+  getActions: () => [
+    ...[...document.querySelectorAll(".menu-item")].map((element, index) => ({
+      id: `menu.${index}`, name: element.textContent, element, enabled: true,
+    })),
+    ...extraActions,
+  ],
+  getTextTargets: () => [{ id: "consumer.supporting-copy", element: supportingCopy }, ...extraTextTargets],
+  getFontCorrectionTargets: () => [
+    ...(fontCorrection === "none" ? [] : [{ id: "consumer.supporting-copy", element: supportingCopy }]),
+    ...extraCorrectionTargets,
   ],
   getLayoutRegions: () => ({
     bottomControls: fixedControlsHost ? [controls] : [],
@@ -427,6 +439,81 @@ window.qrConsumerTest = {
     sdk?.applyProfile(DEFAULT_ACCESSIBILITY_PROFILE);
     const el = document.querySelector("#supporting-copy");
     return { fontSize: getComputedStyle(el).fontSize, inlineFontSize: el.style.getPropertyValue("font-size"), inlineLineHeight: el.style.getPropertyValue("line-height") };
+  },
+  diagnoseOverlap(kind) {
+    extraActions = kind === "button"
+      ? [{ id: "footer.action.0", name: "이전 단계", element: controls.querySelector("button"), enabled: true }]
+      : [];
+    const target = document.createElement("p");
+    target.dataset.testTarget = kind;
+    target.textContent = "도움 안내";
+    Object.assign(target.style, { position: "fixed", width: "10px", height: "10px", overflow: "visible", margin: "0", padding: "0", font: "10px/10px sans-serif", zIndex: "50" });
+    const footer = controls.getBoundingClientRect();
+    const dockNode = document.querySelector(".a11y-qr-entry-dock");
+    if (kind === "button") {
+      const button = controls.querySelector("button").getBoundingClientRect();
+      target.style.left = `${button.left + 4}px`;
+      target.style.top = `${button.top + 4}px`;
+      target.style.width = "60px";
+      target.style.height = "20px";
+    } else if (kind === "parent") {
+      target.style.left = "1px";
+      target.style.top = `${footer.top + 4}px`;
+    } else {
+      target.style.left = "1px";
+      target.style.top = `${dockNode.getBoundingClientRect().top + 4}px`;
+    }
+    root.append(target);
+    extraTextTargets.push({ id: `consumer.overlay.${kind}`, element: target });
+    return sdk.inspectLayout().filter((issue) => issue.semanticId === `consumer.overlay.${kind}`);
+  },
+  async testMultipleCopy(registeredCount) {
+    extraTextTargets.length = 0;
+    extraCorrectionTargets.length = 0;
+    extraActions = [];
+    document.querySelectorAll("[data-test-target]").forEach((element) => element.remove());
+    document.querySelectorAll(".test-fixed-copy-area").forEach((element) => element.remove());
+    const fixedArea = document.createElement("aside");
+    fixedArea.className = "test-fixed-copy-area";
+    fixedArea.style.cssText = "position:fixed;left:max(20px, calc((100vw - 680px) / 2 + 20px));top:300px;width:240px;height:80px;overflow:visible";
+    const texts = [1, 2].map((index) => {
+      const el = document.createElement("p");
+      el.textContent = `안내 ${index}`;
+      el.style.cssText = `position:absolute;left:${(index - 1) * 90}px;top:0;width:70px;height:18px;margin:0;padding:0;overflow:hidden;line-height:1;font-size:9.333333px`;
+      fixedArea.append(el);
+      const item = { id: `consumer.fixed-copy.${index}`, element: el };
+      extraTextTargets.push(item);
+      if (index <= registeredCount) extraCorrectionTargets.push(item);
+      return el;
+    });
+    root.append(fixedArea);
+    sdk.applyProfile(baseProfile);
+    await frame();
+    const corrections = sdk.getLastLayoutCorrections().filter((item) => item.strategy === "supporting-copy-font" &&
+      item.targetId?.startsWith("consumer.fixed-copy."));
+    return {
+      fonts: texts.map((el) => getComputedStyle(el).fontSize),
+      boxes: texts.map((el) => ({
+        clientHeight: el.clientHeight, scrollHeight: el.scrollHeight,
+        lineHeight: getComputedStyle(el).lineHeight, height: el.getBoundingClientRect().height,
+      })),
+      corrections,
+      diagnosticIds: sdk.inspectLayout().filter((issue) => issue.issueType === "text-clipped" &&
+        issue.semanticId.startsWith("consumer.fixed-copy.")).map((issue) => issue.semanticId),
+    };
+  },
+  async verifyCorrectionSessionRestore() {
+    sdk.applyProfile(baseProfile);
+    await frame();
+    const before = getComputedStyle(document.querySelector(".test-fixed-copy-area p")).fontSize;
+    sdk.endSession();
+    await frame();
+    const after = [...document.querySelectorAll(".test-fixed-copy-area p")].map((el) => ({
+      font: getComputedStyle(el).fontSize,
+      inlineFont: el.style.getPropertyValue("font-size"),
+      inlineLineHeight: el.style.getPropertyValue("line-height"),
+    }));
+    return { before, after };
   },
   destroy() { dock.destroy(); },
 };

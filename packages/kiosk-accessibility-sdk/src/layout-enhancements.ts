@@ -10,10 +10,18 @@ export interface LayoutCorrectionResult {
   outcome: "applied" | "reverted" | "not-needed" | "failed";
   issuesBefore: number;
   issuesAfter: number;
-  reason?: "scroll-unavailable" | "no-safe-inset";
+  reason?: "scroll-unavailable" | "no-safe-inset" | "clipping-remains" | "fixed-control-overlap-remains";
   targetId?: string;
   fontSizeBefore?: number;
   fontSizeAfter?: number;
+  attempts?: readonly {
+    reductionPercent: 5 | 10;
+    fontSize: number;
+    lineHeight: number | null;
+    remainingIssueTypes: readonly string[];
+    maxOverlapWidth?: number;
+    maxOverlapHeight?: number;
+  }[];
 }
 
 const TEXT_SCALE = { standard: 1, large: 1.25, extraLarge: 1.5 } as const;
@@ -26,18 +34,6 @@ function supported(): boolean {
 function px(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function minimumReadableSize(element: HTMLElement, profile: AccessibilityProfile): number {
-  if (profile.textSize === "standard") return 0;
-  const large = profile.textSize === "large";
-  const heading = /^H[1-6]$/.test(element.tagName) || element.getAttribute("role") === "heading";
-  const control = element.matches("button, input, textarea, select, [role='button'], [role='switch']");
-  const secondary = element.matches("small, .helper, .optional-detail, .product-tag, .eyebrow");
-  if (heading) return large ? 20 : 24;
-  if (control) return large ? 16 : 18;
-  if (secondary) return large ? 12 : 14;
-  return large ? 14 : 16;
 }
 
 export function createLayoutEnhancer(
@@ -140,10 +136,6 @@ export function createLayoutEnhancer(
     if (!registered.length || getProfile().textSize === "standard") return;
     const textTargets = adapter.getTextTargets();
     const actions = adapter.getActions();
-    const fixedControls = (adapter.getLayoutRegions().bottomControls ?? []).filter((element) => {
-      const style = window.getComputedStyle(element);
-      return style.position === "fixed" || style.position === "sticky";
-    });
     for (const target of registered) {
       const element = target.element;
       if (!root.contains(element) || !textTargets.some((item) => item.element === element)) continue;
@@ -152,32 +144,39 @@ export function createLayoutEnhancer(
       const profileFont = px(window.getComputedStyle(element).fontSize);
       const profileLineHeight = px(window.getComputedStyle(element).lineHeight);
       if (profileFont <= 0) continue;
-      const hasProblem = () => {
-        const clipped = inspectKioskLayout(root, adapter).some((issue) =>
-          issue.semanticId === target.id && issue.issueType === "text-clipped",
-        );
-        const rect = element.getBoundingClientRect();
-        const obscured = fixedControls.some((control) => {
-          const box = control.getBoundingClientRect();
-          return rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top;
-        });
-        return clipped || obscured;
-      };
-      if (!hasProblem()) {
+      const currentIssues = () => inspectKioskLayout(root, adapter).filter((issue) =>
+        issue.semanticId === target.id && (issue.issueType === "text-clipped" || issue.issueType === "text-obscured"),
+      );
+      const beforeIssues = currentIssues();
+      if (beforeIssues.length === 0) {
         supportingResults.push({ strategy: "supporting-copy-font", outcome: "not-needed", issuesBefore: 0, issuesAfter: 0, targetId: target.id, fontSizeBefore: profileFont, fontSizeAfter: profileFont });
         continue;
       }
       let resolved = false;
       let finalFont = profileFont;
-      const readabilityFloor = minimumReadableSize(element, getProfile());
-      for (const ratio of [0.95, 0.90]) {
-        finalFont = Math.ceil(profileFont * ratio * 100) / 100;
-        if (finalFont < readabilityFloor) continue;
+      let finalIssues = beforeIssues;
+      const attempts: NonNullable<LayoutCorrectionResult["attempts"]>[number][] = [];
+      for (const [reductionPercent, ratio] of [[5, 0.95], [10, 0.90]] as const) {
+        finalFont = Math.round(profileFont * ratio * 100) / 100;
         element.style.setProperty("font-size", `${finalFont}px`, "important");
+        const lineHeight = profileLineHeight > 0
+          ? Math.round(profileLineHeight * ratio * 100) / 100
+          : null;
         if (profileLineHeight > 0) {
-          element.style.setProperty("line-height", `${Math.ceil(profileLineHeight * ratio * 100) / 100}px`, "important");
+          element.style.setProperty("line-height", `${lineHeight}px`, "important");
         }
-        if (!hasProblem()) {
+        finalIssues = currentIssues();
+        const overlapWidths = finalIssues.map((issue) => Number(issue.measurements.overlapWidth) || 0);
+        const overlapHeights = finalIssues.map((issue) => Number(issue.measurements.overlapHeight) || 0);
+        attempts.push({
+          reductionPercent,
+          fontSize: finalFont,
+          lineHeight,
+          remainingIssueTypes: finalIssues.map((issue) => issue.issueType),
+          ...(overlapWidths.length ? { maxOverlapWidth: Math.max(...overlapWidths) } : {}),
+          ...(overlapHeights.length ? { maxOverlapHeight: Math.max(...overlapHeights) } : {}),
+        });
+        if (finalIssues.length === 0) {
           resolved = true;
           break;
         }
@@ -190,11 +189,17 @@ export function createLayoutEnhancer(
       supportingResults.push({
         strategy: "supporting-copy-font",
         outcome: resolved ? "applied" : "failed",
-        issuesBefore: 1,
-        issuesAfter: resolved ? 0 : 1,
+        issuesBefore: beforeIssues.length,
+        issuesAfter: resolved ? 0 : finalIssues.length,
         targetId: target.id,
         fontSizeBefore: profileFont,
         fontSizeAfter: finalFont,
+        ...(!resolved ? {
+          reason: finalIssues.some((issue) => issue.issueType === "text-obscured")
+            ? "fixed-control-overlap-remains" as const
+            : "clipping-remains" as const,
+        } : {}),
+        attempts,
       });
     }
   }
@@ -218,8 +223,7 @@ export function createLayoutEnhancer(
       const style = window.getComputedStyle(element);
       const size = baseSizes.get(element)!;
       if (textScale > 1 && size.font > 0) {
-        const minimum = minimumReadableSize(element, profile);
-        write(element, "font-size", `${Math.max(size.font * textScale, minimum)}px`);
+        write(element, "font-size", `${size.font * textScale}px`);
         if (style.lineHeight !== "normal" && px(style.lineHeight) > 0) {
           write(element, "line-height", `${Math.max(px(style.lineHeight) * textScale, size.font * textScale * 1.2)}px`);
         }
@@ -295,8 +299,10 @@ export function createLayoutEnhancer(
     const clippedIds = new Set(issues.filter((issue) => issue.issueType === "text-clipped").map((issue) => issue.semanticId));
     if (clippedIds.size) {
       const optedInIds = new Set((adapter.getFontCorrectionTargets?.() ?? []).map((target) => target.id));
+      const reflowContainers = regions.reflowContainers ?? [];
       const targets = adapter.getTextTargets()
-        .filter((target) => clippedIds.has(target.id) && !optedInIds.has(target.id))
+        .filter((target) => clippedIds.has(target.id) && !optedInIds.has(target.id) &&
+          reflowContainers.some((container) => container.contains(target.element)))
         .map(({ element }) => element);
       results.push(tryCorrection("text-wrap", targets, (element) => {
         write(element, "white-space", "normal");

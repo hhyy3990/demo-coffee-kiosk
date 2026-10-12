@@ -113,3 +113,68 @@ test("layout audit reports clipping, page overflow, offscreen and obscured targe
     else globalThis.document = priorDocument;
   }
 });
+
+test("diagnostics ignore parent-child action containment and report only actual fixed-button intersections", () => {
+  const priorWindow = globalThis.window;
+  const priorDocument = globalThis.document;
+  try {
+    globalThis.window = {
+      innerWidth: 320,
+      innerHeight: 600,
+      getComputedStyle: (target) => ({
+        display: "block", visibility: "visible", opacity: "1",
+        overflowX: "visible", overflowY: "visible",
+        position: target.position ?? "static",
+        getPropertyValue: () => "none",
+      }),
+    };
+    globalThis.document = {
+      documentElement: { clientWidth: 320, clientHeight: 600 },
+      createRange: () => ({
+        selectNodeContents() {},
+        getBoundingClientRect: () => ({ left: 10, top: 510, right: 110, bottom: 530, width: 100, height: 20 }),
+      }),
+    };
+    const root = element({ width: 320, height: 600 });
+    const footer = element({ left: 0, top: 500, width: 320, height: 100 });
+    const button = element({ left: 60, top: 510, width: 100, height: 44 });
+    button.position = "fixed";
+    const text = element({ left: 10, top: 510, width: 100, height: 20 });
+    text.ownerDocument = globalThis.document;
+    const parentAction = element({ left: 40, top: 100, width: 100, height: 60 });
+    const childAction = element({ left: 50, top: 110, width: 80, height: 40 });
+    const contained = new Set([footer, button, text, parentAction, childAction]);
+    root.contains = (candidate) => candidate === root || contained.has(candidate);
+    footer.contains = (candidate) => candidate === button;
+    parentAction.contains = (candidate) => candidate === childAction;
+    childAction.parentElement = parentAction;
+    text.parentElement = root;
+    const adapter = {
+      getSnapshot: () => ({ screenId: "fixture.notice" }),
+      getActions: () => [
+        { id: "group.action", name: "group", element: parentAction, enabled: true },
+        { id: "group.child", name: "child", element: childAction, enabled: true },
+        { id: "footer.confirm", name: "confirm", element: button, enabled: true },
+      ],
+      getTextTargets: () => [{ id: "fixture.notice.copy", element: text }],
+      getLayoutRegions: () => ({ bottomControls: [footer] }),
+    };
+    const issues = inspectKioskLayout(root, adapter);
+    assert.equal(issues.some((issue) => issue.issueType === "action-overlap" &&
+      issue.semanticId.startsWith("group.")), false);
+    const textOverlap = issues.find((issue) => issue.issueType === "text-obscured");
+    assert.equal(textOverlap?.semanticId, "fixture.notice.copy");
+    assert.equal(textOverlap?.relatedSemanticId, "footer.confirm");
+    assert.equal(textOverlap?.reason, "fixed-button");
+
+    footer.contains = () => false;
+    button.position = "static";
+    const parentOnly = inspectKioskLayout(root, adapter);
+    assert.equal(parentOnly.some((issue) => issue.issueType === "text-obscured"), false);
+  } finally {
+    if (priorWindow === undefined) delete globalThis.window;
+    else globalThis.window = priorWindow;
+    if (priorDocument === undefined) delete globalThis.document;
+    else globalThis.document = priorDocument;
+  }
+});

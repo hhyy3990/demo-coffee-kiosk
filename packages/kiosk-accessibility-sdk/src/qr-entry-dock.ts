@@ -33,6 +33,7 @@ const INSET_VAR = "--a11y-qr-entry-dock-controls-inset";
 const CONTENT_VAR = "--a11y-qr-entry-dock-content-height";
 const SCROLL_CLASS = "a11y-qr-entry-dock-scroll-area";
 const CSS_VARS = [HEIGHT_VAR, INSET_VAR, CONTENT_VAR] as const;
+const dockButtonsByRoot = new WeakMap<HTMLElement, Set<HTMLElement>>();
 const profileViewportByRoot = new WeakMap<HTMLElement, BottomViewportHeightPercent | null>();
 const dockSyncByRoot = new WeakMap<HTMLElement, Set<(percent: BottomViewportHeightPercent | null) => void>>();
 
@@ -40,6 +41,11 @@ const dockSyncByRoot = new WeakMap<HTMLElement, Set<(percent: BottomViewportHeig
 export function syncQrEntryDockViewportMode(root: HTMLElement, percent: BottomViewportHeightPercent | null): void {
   profileViewportByRoot.set(root, percent);
   for (const sync of dockSyncByRoot.get(root) ?? []) sync(percent);
+}
+
+/** Internal root-scoped view of the real button, excluding its decorative dock container. */
+export function getQrEntryDockButtons(root: HTMLElement): readonly HTMLElement[] {
+  return [...(dockButtonsByRoot.get(root) ?? [])];
 }
 
 /** Creates an SDK-owned QR entry dock whose active state is controlled by the host. */
@@ -86,6 +92,11 @@ export function createQrEntryDock(options: QrEntryDockOptions): QrEntryDockContr
     resizeObserver?.disconnect();
     window.removeEventListener("resize", updateMeasurements);
     button?.removeEventListener("click", onOpenQr);
+    if (button) {
+      const buttons = dockButtonsByRoot.get(root);
+      buttons?.delete(button);
+      if (buttons?.size === 0) dockButtonsByRoot.delete(root);
+    }
     footer?.remove();
     footer = null;
     button = null;
@@ -152,6 +163,12 @@ export function createQrEntryDock(options: QrEntryDockOptions): QrEntryDockContr
       if (value) footer.style.setProperty(property, value);
     }
     document.body.append(footer);
+    let buttons = dockButtonsByRoot.get(root);
+    if (!buttons) {
+      buttons = new Set();
+      dockButtonsByRoot.set(root, buttons);
+    }
+    buttons.add(button);
     root.classList.add(HOME_CLASS);
     if (effectivePercent) root.classList.add(BOTTOM_CLASS);
     resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateMeasurements);

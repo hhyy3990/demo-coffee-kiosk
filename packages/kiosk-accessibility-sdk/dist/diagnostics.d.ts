@@ -1,5 +1,5 @@
 import type { AccessibilityAdapter } from "./adapter.ts";
-export type AccessibilityIssueType = "text-clipped" | "horizontal-overflow" | "action-offscreen" | "bottom-control-obscures-action" | "last-scroll-action-obscured" | "small-touch-target" | "action-overlap" | "menu-overflow-unreachable";
+export type AccessibilityIssueType = "text-clipped" | "text-obscured" | "horizontal-overflow" | "action-offscreen" | "bottom-control-obscures-action" | "last-scroll-action-obscured" | "small-touch-target" | "action-overlap" | "menu-overflow-unreachable";
 export interface AccessibilityDiagnostic {
     screenId: string;
     semanticId: string;
@@ -28,6 +28,7 @@ export interface AccessibilityDiagnostic {
     }>;
     recommendation?: string;
     autoCorrection?: "applied" | "failed" | "not-attempted";
+    reason?: "target-overflow" | "ancestor-overflow" | "line-clamp" | "fixed-button" | "qr-button";
 }
 export interface LayoutDiagnosticOptions {
     minimumTouchTarget?: number;

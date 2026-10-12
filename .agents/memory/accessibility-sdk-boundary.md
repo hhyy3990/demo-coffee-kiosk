@@ -51,8 +51,8 @@ When the SDK constrains a registered flex-column scroll area, an unsafe `justify
 
 **How to apply:** Apply this only to the registered scroll target, preserve its original inline alignment and priority, and test the title hit target plus bottom action under 60%, 70%, and 80% viewport modes. Keep host-specific dimensions and selectors out of the SDK.
 
-Secondary-copy font reduction must be explicitly opted into by the host adapter. Keep opted-in targets out of generic text-wrap correction, and judge a 5%/10% attempt using actual post-profile clipping/overlap measurements; restore the profile-scaled font and line height when neither attempt clears the issue.
+Do not impose SDK-wide minimum font floors: scale the host-computed base size by the selected profile. Font reduction is limited to explicitly registered noncritical copy, tried at 5% then 10%, and judged against post-profile clipping/overlap measurements. Generic wrapping is allowed only inside explicitly registered reflow containers. Text-obscured diagnostics compare text with actual fixed/sticky action hitboxes or the QR dock button, never a decorative container; ignore parent/child action intersections.
 
-**Why:** Generic text-wrap could undo the constrained fixture before verification, and profile scaling changes line height, so raw CSS dimensions alone do not prove that a reduction fixed clipping.
+**Why:** Generic text-wrap could undo an opted-in correction, hard floors would override the host's own responsive typography, and profile scaling changes line height. Parent rectangles also produce false overlap reports that hide real button occlusions.
 
-**How to apply:** Register only noncritical supporting copy, report the measured outcome through the diagnostic API, and test success, rollback, unregistered text, and style restoration in a real browser fixture.
+**How to apply:** Register only noncritical supporting copy and safe reflow regions; report attempt percentages, residual issue types, and overlap measurements. Test 5%/10% success, rollback, unregistered copy, real button hitboxes, and style restoration in an independent browser fixture.
