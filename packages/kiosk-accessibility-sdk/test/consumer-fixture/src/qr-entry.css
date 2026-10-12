@@ -17,6 +17,14 @@ body { overflow-x: clip; }
   overflow: auto;
   padding: 18px 24px;
 }
+body.host-tail .content { padding-bottom: 90px; }
+.host-tail-notice {
+  min-height: 52.5px;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid #d7cfc2;
+  background: #fffefa;
+}
 .content h1 { margin: 0 0 12px; }
 .menu-item {
   display: block;
@@ -34,7 +42,7 @@ body { overflow-x: clip; }
   z-index: 20;
   inset-inline: 0;
   bottom: 0;
-  min-height: 100px;
+  min-height: 93px;
   display: none;
   align-items: center;
   gap: 12px;

@@ -75,8 +75,11 @@ try {
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const cases = [];
-  const viewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
-  const structures = ["document", "inner", "fixed-controls"];
+  const viewports = [
+    [320, 844], [360, 667], [390, 844],
+    [1080, 1920], [1440, 900], [1920, 1080],
+  ];
+  const structures = ["document", "inner", "fixed-controls", "stage-root", "stage-root-fixed"];
   const modes = [null, 60, 70, 80];
 
   for (const [width, height] of viewports) {
@@ -85,8 +88,11 @@ try {
       screenWidth: width, screenHeight: height,
     });
     for (const structure of structures) {
-      for (const percent of modes) {
+      for (const percent of structure.startsWith("stage-root") ? modes.slice(1) : modes) {
         const query = new URLSearchParams({ structure, percent: percent ?? "none" });
+        const hostTailCase = width === 360 && height === 667 &&
+          structure === "stage-root-fixed" && percent === 60;
+        if (hostTailCase) query.set("hostTail", "1");
         await send("Page.navigate", { url: `${baseUrl}/qr-entry.html?${query}` });
         let loaded = false;
         for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -103,7 +109,7 @@ try {
         if (percent !== null) {
           const expectedViewportHeight = Math.floor((height - started.viewportInset) * percent / 100);
           const dockTop = started.dockRect.top;
-          const controlsTop = structure === "fixed-controls"
+          const controlsTop = structure === "fixed-controls" || structure === "stage-root-fixed"
             ? await evaluate("document.querySelector('.bottom-controls').getBoundingClientRect().top")
             : height;
           if (!started.qrViewportApplied || started.qrViewportMode?.heightPercent !== percent ||
@@ -192,7 +198,8 @@ try {
         await wait(100);
         const atEnd = await evaluate("window.qrConsumerTest.get()");
         const qrClicks = await evaluate("window.qrConsumerTest.get().qrClicks");
-        if (!atEnd.lastVisible || !atEnd.lastHit || !atEnd.fixedControlsVisible ||
+        const isTailReproduction = hostTailCase;
+        if ((!isTailReproduction && (!atEnd.lastVisible || !atEnd.lastHit)) || !atEnd.fixedControlsVisible ||
           atEnd.horizontalOverflow || qrClicks !== 1 || atEnd.lastMenuClicks !== 0 ||
           atEnd.hintVisible || atEnd.noSafeSpace ||
           atEnd.ownerRange <= 0 ||
@@ -205,6 +212,9 @@ try {
           const expectedHeight = Math.floor((height - atEnd.viewportInset) * percent / 100);
           if (Math.abs(atEnd.viewportRect.height - expectedHeight) > 3) {
             throw new Error(`Consumer bottom viewport height differs from the API: ${JSON.stringify({ width, height, structure, percent, expectedHeight, actual: atEnd.viewportRect.height, inset: atEnd.viewportInset })}`);
+          }
+          if (atEnd.dockScrollSpacerHeight > 1) {
+            throw new Error(`The bottom viewport overlaps the SDK dock spacer: ${JSON.stringify({ width, height, structure, percent, spacer: atEnd.dockScrollSpacerHeight, viewport: atEnd.viewportRect })}`);
           }
         }
         if (touchScroll !== null && touchScroll <= 0) {
@@ -259,6 +269,11 @@ try {
           viewport: `${width}x${height}`, structure, percent: percent ?? "none",
           documentScrollRange: atEnd.documentRange, ownerScrollRange: atEnd.ownerRange,
           dockTop: dockPosition, dockHeight: atEnd.dockRect.height,
+          dockScrollSpacerHeight: atEnd.dockScrollSpacerHeight,
+          dockScrollSpacerContent: atEnd.dockScrollSpacerContent,
+          scrollAreaHasDockClass: atEnd.scrollAreaHasDockClass,
+          scrollAreaHasViewportClass: atEnd.scrollAreaHasViewportClass,
+          hostTail: atEnd.hostTail, hostNoticeRect: atEnd.hostNoticeRect,
           contentHeight: atEnd.rootHeight, lastVisible: atEnd.lastVisible,
           lastClicked: clicked === 1, hintAtStart: atStart.hintVisible, overlays, touchScroll,
         });
@@ -266,7 +281,11 @@ try {
     }
   }
 
-  if (cases.length !== 48) throw new Error(`Expected 48 consumer browser cases, got ${cases.length}.`);
+  const stageRootStructures = structures.filter((structure) => structure.startsWith("stage-root")).length;
+  const expectedCases = viewports.length * (structures.length * modes.length - stageRootStructures);
+  if (cases.length !== expectedCases) {
+    throw new Error(`Expected ${expectedCases} consumer browser cases, got ${cases.length}.`);
+  }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
     cases,

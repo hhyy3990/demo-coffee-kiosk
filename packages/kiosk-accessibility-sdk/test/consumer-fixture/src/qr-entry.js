@@ -12,16 +12,19 @@ const structure = params.get("structure") || "inner";
 const percentValue = params.get("percent");
 const percent = ["60", "70", "80"].includes(percentValue) ? Number(percentValue) : null;
 const documentHost = structure === "document";
-const fixedControlsHost = structure === "fixed-controls";
+const fixedControlsHost = structure === "fixed-controls" || structure === "stage-root-fixed";
+const stageRootHost = structure === "stage-root" || structure === "stage-root-fixed";
+const hostTail = params.get("hostTail") === "1";
 const documentModeUsesInner = documentHost && percent !== null;
 let screenId = "consumer.menu";
 let useDocumentScroll = documentHost && !documentModeUsesInner;
 document.body.classList.toggle("document-host", documentHost);
 document.body.classList.toggle("fixed-controls-host", fixedControlsHost);
+document.body.classList.toggle("host-tail", hostTail);
 document.body.dataset.qrScrollOwner = documentModeUsesInner ? "inner" : "document";
 
-const root = documentHost ? document.body : document.querySelector("#kiosk-root");
 const content = document.querySelector(".content");
+const root = documentHost ? document.body : stageRootHost ? content : document.querySelector("#kiosk-root");
 const controls = document.querySelector(".bottom-controls");
 const list = document.querySelector("#menu-list");
 for (let index = 1; index <= 18; index += 1) {
@@ -32,6 +35,12 @@ for (let index = 1; index <= 18; index += 1) {
   button.dataset.menuIndex = String(index);
   if (index === 18) button.id = "last-menu";
   list.append(button);
+}
+if (hostTail) {
+  const notice = document.createElement("aside");
+  notice.className = "host-tail-notice";
+  notice.textContent = "이용 안내: 마지막 메뉴 뒤에도 필요한 내용을 확인할 수 있습니다.";
+  list.after(notice);
 }
 
 let qrClicks = 0;
@@ -170,6 +179,12 @@ window.qrConsumerTest = {
         root.classList.contains("a11y-bottom-viewport-enabled")),
       viewportRect: content.getBoundingClientRect().toJSON(),
       viewportInset: Number.parseFloat(content.style.getPropertyValue("--a11y-bottom-viewport-bottom-inset")) || 0,
+      dockScrollSpacerHeight: Number.parseFloat(getComputedStyle(content, "::after").height) || 0,
+      dockScrollSpacerContent: getComputedStyle(content, "::after").content,
+      scrollAreaHasDockClass: content.classList.contains("a11y-qr-entry-dock-scroll-area"),
+      scrollAreaHasViewportClass: content.classList.contains("a11y-bottom-viewport-scroll-area"),
+      hostTail,
+      hostNoticeRect: document.querySelector(".host-tail-notice")?.getBoundingClientRect().toJSON() ?? null,
       hintVisible: Boolean(sdk) && !!document.querySelector(".a11y-additional-menu-hint") &&
         getComputedStyle(document.querySelector(".a11y-additional-menu-hint")).visibility === "visible",
       hintRect: document.querySelector(".a11y-additional-menu-hint")?.getBoundingClientRect().toJSON() ?? null,
