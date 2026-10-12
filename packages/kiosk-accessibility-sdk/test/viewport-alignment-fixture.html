@@ -147,26 +147,32 @@
       const hit = document.elementFromPoint((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
       const footer = document.querySelector(".footer");
       const dock = document.querySelector("[data-a11y-qr-entry-dock]");
+      const footerStyle = getComputedStyle(footer);
+      const dockStyle = getComputedStyle(dock);
       const safeBottom = Math.min(
         stage.getBoundingClientRect().bottom,
-        getComputedStyle(footer).display === "none" ? innerHeight : footer.getBoundingClientRect().top,
-        getComputedStyle(dock).display === "none" ? innerHeight : dock.getBoundingClientRect().top,
+        footerStyle.display === "none" ? innerHeight : footer.getBoundingClientRect().top,
+        dockStyle.display === "none" ? innerHeight : dock.getBoundingClientRect().top,
       );
       const lastState = {
+        testId: `${layout}_${innerWidth}x${innerHeight}_large-${params.get("large") === "true"}_viewport-${percent}`,
+        scrollOwner: { id: stage.id, tag: stage.tagName, isDocumentScroller: stage === document.scrollingElement },
+        documentScrollTop: document.scrollingElement?.scrollTop ?? null,
         scrollTop: stage.scrollTop,
+        scrollHeight: stage.scrollHeight,
+        clientHeight: stage.clientHeight,
         maxScroll: stage.scrollHeight - stage.clientHeight,
+        overflowY: getComputedStyle(stage).overflowY,
         rect: rect.toJSON(),
+        screenRect: rect.toJSON(),
+        hitTag: hit?.tagName ?? null,
+        hitId: hit?.id ?? null,
+        footer: { display: footerStyle.display, position: footerStyle.position, rect: footer.getBoundingClientRect().toJSON() },
+        dock: { display: dockStyle.display, position: dockStyle.position, rect: dock.getBoundingClientRect().toJSON() },
         visible: rect.top >= stage.getBoundingClientRect().top - 1 && rect.bottom <= safeBottom + 1,
         hit: hit === last || last.contains(hit),
       };
       return lastState;
-    };
-    window.scrollFixtureToEnd = async () => {
-      stage.style.setProperty("scroll-behavior", "auto", "important");
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      stage.scrollTo({ top: stage.scrollHeight, behavior: "instant" });
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      return { scrollTop: stage.scrollTop, maxScroll: stage.scrollHeight - stage.clientHeight };
     };
     window.destroyFixtureSdk = () => sdk.destroy();
   </script>

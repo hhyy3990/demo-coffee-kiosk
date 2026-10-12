@@ -94,35 +94,34 @@ try {
         throw new Error(`Alignment fixture timed out: ${width}x${height}/${JSON.stringify(testCase)} ${JSON.stringify(debug)}`);
       }
       const stage = result.top.stage;
+      const inputX = Math.max(1, Math.min(width - 2, stage.left + stage.width / 2));
+      const inputY = Math.max(1, Math.min(height - 2, stage.top + stage.height / 2));
       for (let scrollAttempt = 0; scrollAttempt < 6; scrollAttempt += 1) {
         await send("Input.dispatchMouseEvent", {
           type: "mouseWheel",
-          x: Math.max(1, Math.min(width - 2, stage.left + stage.width / 2)),
-          y: Math.max(1, Math.min(height - 2, stage.top + stage.height / 2)),
+          x: inputX,
+          y: inputY,
           deltaX: 0,
           deltaY: 12000,
         });
         await wait(70);
       }
-      const last = await evaluate("window.readLastAction()");
-      if (last.scrollTop < last.maxScroll - 1) {
-        await evaluate("window.scrollFixtureToEnd()");
-        await wait(250);
-      }
+      const afterWheel = await evaluate("window.readLastAction()");
       const finalLast = await evaluate("window.readLastAction()");
       if (finalLast.hit) {
+        const clickX = finalLast.rect.left + finalLast.rect.width / 2;
+        const clickY = finalLast.rect.top + finalLast.rect.height / 2;
         await send("Input.dispatchMouseEvent", {
-          type: "mousePressed", x: finalLast.rect.left + finalLast.rect.width / 2,
-          y: finalLast.rect.top + finalLast.rect.height / 2, button: "left", clickCount: 1,
+          type: "mousePressed", x: clickX, y: clickY, button: "left", clickCount: 1,
         });
         await send("Input.dispatchMouseEvent", {
-          type: "mouseReleased", x: finalLast.rect.left + finalLast.rect.width / 2,
-          y: finalLast.rect.top + finalLast.rect.height / 2, button: "left", clickCount: 1,
+          type: "mouseReleased", x: clickX, y: clickY, button: "left", clickCount: 1,
         });
       }
       await evaluate("window.destroyFixtureSdk()");
       result = {
         ...result,
+        afterWheel,
         last: finalLast,
         lastActionClicked: await evaluate("Boolean(window.lastActionClicked)"),
         restoredJustifyContent: await evaluate("getComputedStyle(document.querySelector('#stage')).justifyContent"),
@@ -147,6 +146,9 @@ try {
         !item.top.headingFullyVisible || !item.top.headingHit ||
         !item.last.visible || !item.last.hit || !item.lastActionClicked)) {
     throw new Error("The reproduced 1440x900 clipping case did not pass its post-fix browser regression.");
+  }
+  if (failures.length) {
+    throw new Error(`${failures.length} of ${reports.length} last-action browser checks did not pass.`);
   }
 } finally {
   try { socket?.close(); } catch {}
