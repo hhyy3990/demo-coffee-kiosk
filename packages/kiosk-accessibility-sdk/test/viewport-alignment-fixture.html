@@ -85,6 +85,21 @@
     }
     const root = document.querySelector("#host");
     const stage = document.querySelector("#stage");
+    const inputStats = { scrollEvents: 0, wheelEvents: 0, touchStarts: 0, touchMoves: 0, observations: [] };
+    const observeScroll = () => {
+      inputStats.scrollEvents += 1;
+      inputStats.observations.push({
+        scrollTop: stage.scrollTop,
+        scrollHeight: stage.scrollHeight,
+        clientHeight: stage.clientHeight,
+        top: stage.getBoundingClientRect().top,
+        height: stage.getBoundingClientRect().height,
+      });
+    };
+    stage.addEventListener("scroll", observeScroll, { passive: true });
+    stage.addEventListener("wheel", () => { inputStats.wheelEvents += 1; }, { passive: true });
+    stage.addEventListener("touchstart", () => { inputStats.touchStarts += 1; }, { passive: true });
+    stage.addEventListener("touchmove", () => { inputStats.touchMoves += 1; }, { passive: true });
     const adapter = {
       getSnapshot: () => ({ screenId: "fixture.main" }),
       getActions: () => [...items.querySelectorAll("button")].map((element) => ({
@@ -163,16 +178,55 @@
         clientHeight: stage.clientHeight,
         maxScroll: stage.scrollHeight - stage.clientHeight,
         overflowY: getComputedStyle(stage).overflowY,
+        pointerEvents: getComputedStyle(stage).pointerEvents,
+        touchAction: getComputedStyle(stage).touchAction,
+        scrollBehavior: getComputedStyle(stage).scrollBehavior,
+        inputStats: structuredClone(inputStats),
         rect: rect.toJSON(),
         screenRect: rect.toJSON(),
         hitTag: hit?.tagName ?? null,
         hitId: hit?.id ?? null,
+        edgeHits: [
+          [rect.left + 2, rect.top + 2],
+          [rect.right - 2, rect.top + 2],
+          [rect.left + 2, rect.bottom - 2],
+          [rect.right - 2, rect.bottom - 2],
+        ].map(([x, y]) => {
+          const edgeHit = document.elementFromPoint(x, y);
+          return { x, y, tag: edgeHit?.tagName ?? null, id: edgeHit?.id ?? null,
+            isLast: edgeHit === last || last.contains(edgeHit) };
+        }),
         footer: { display: footerStyle.display, position: footerStyle.position, rect: footer.getBoundingClientRect().toJSON() },
         dock: { display: dockStyle.display, position: dockStyle.position, rect: dock.getBoundingClientRect().toJSON() },
         visible: rect.top >= stage.getBoundingClientRect().top - 1 && rect.bottom <= safeBottom + 1,
         hit: hit === last || last.contains(hit),
       };
       return lastState;
+    };
+    window.waitForScrollQuiet = async () => {
+      let previous = stage.scrollTop;
+      let stable = 0;
+      let waited = 0;
+      while (stable < 3 && waited < 3000) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const current = stage.scrollTop;
+        stable = current === previous ? stable + 1 : 0;
+        previous = current;
+        waited += 100;
+      }
+      return { waited, stable, scrollTop: stage.scrollTop };
+    };
+    window.forceMaximumScrollDiagnostic = async () => {
+      const settled = await window.waitForScrollQuiet();
+      stage.style.setProperty("scroll-behavior", "auto", "important");
+      const assignedTop = stage.scrollHeight - stage.clientHeight;
+      stage.scrollTop = assignedTop;
+      const states = [{ delay: 0, assignedTop, immediateTop: stage.scrollTop, settled, ...window.readLastAction() }];
+      for (const delay of [100, 500, 1000, 3000]) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        states.push({ delay, ...window.readLastAction() });
+      }
+      return states;
     };
     window.destroyFixtureSdk = () => sdk.destroy();
   </script>

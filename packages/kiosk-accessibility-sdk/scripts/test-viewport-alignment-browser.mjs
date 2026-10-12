@@ -51,12 +51,24 @@ try {
   const sizes = [[320, 844], [360, 667], [390, 844], [1080, 1920], [1440, 900], [1920, 1080]];
   const layouts = ["min-height", "centered", "centered-min-height", "centered-long",
     "dock-controls", "inner-scroll", "with-controls", "safe-centered"];
+  const previousFailureCases = new Set([
+    "min-height_320x844_true", "centered_320x844_true", "centered-min-height_320x844_true",
+    "centered-long_320x844_true", "inner-scroll_320x844_true", "with-controls_320x844_true",
+    "safe-centered_320x844_true", "min-height_360x667_true", "centered_360x667_false",
+    "centered_360x667_true", "centered-min-height_360x667_true", "centered-long_360x667_true",
+    "inner-scroll_360x667_true", "with-controls_360x667_true", "safe-centered_360x667_true",
+    "centered_390x844_true", "centered-min-height_390x844_true", "centered-long_390x844_true",
+    "inner-scroll_390x844_true", "with-controls_390x844_true", "safe-centered_390x844_true",
+    "centered-long_1440x900_true", "inner-scroll_1440x900_true",
+    "centered-long_1920x1080_true", "inner-scroll_1920x1080_true",
+  ]);
   const reports = [];
 
   for (const [width, height] of sizes) {
     await send("Emulation.setDeviceMetricsOverride", {
       width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
     });
+    await send("Emulation.setTouchEmulationEnabled", { enabled: width < 600, maxTouchPoints: 1 });
     const cases = layouts.flatMap((layout) => [
       { layout, large: false, percent: 80 },
       { layout, large: true, percent: 80 },
@@ -69,6 +81,10 @@ try {
       cases.push({ layout: "centered-min-height", large: true, percent: 70 });
     }
     for (const testCase of cases) {
+      const failureKey = `${testCase.layout}_${width}x${height}_${testCase.large}`;
+      const testId = `${testCase.layout}_${width}x${height}_large-${testCase.large}_viewport-${testCase.percent}`;
+      if (process.env.ALIGNMENT_TEST_ID && process.env.ALIGNMENT_TEST_ID !== testId) continue;
+      if (process.env.FAILURES_ONLY === "1" && !previousFailureCases.has(failureKey)) continue;
       const query = new URLSearchParams({
         layout: testCase.layout,
         percent: String(testCase.percent),
@@ -96,34 +112,95 @@ try {
       const stage = result.top.stage;
       const inputX = Math.max(1, Math.min(width - 2, stage.left + stage.width / 2));
       const inputY = Math.max(1, Math.min(height - 2, stage.top + stage.height / 2));
-      for (let scrollAttempt = 0; scrollAttempt < 6; scrollAttempt += 1) {
-        await send("Input.dispatchMouseEvent", {
-          type: "mouseWheel",
-          x: inputX,
-          y: inputY,
-          deltaX: 0,
-          deltaY: 12000,
-        });
-        await wait(70);
+      let previousScrollTop = -1;
+      let stableScrollCount = 0;
+      for (let scrollAttempt = 0; scrollAttempt < (width < 600 ? 8 : 18); scrollAttempt += 1) {
+        if (width < 600) {
+          await send("Input.dispatchTouchEvent", {
+            type: "touchStart", touchPoints: [{ x: inputX, y: inputY, id: 1 }],
+          });
+          for (let step = 1; step <= 6; step += 1) {
+            await send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: [{ x: inputX, y: Math.max(1, inputY - step * 42), id: 1 }],
+            });
+            await wait(20);
+          }
+          await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        } else {
+          await send("Input.dispatchMouseEvent", {
+            type: "mouseWheel", x: inputX, y: inputY, deltaX: 0, deltaY: 700,
+          });
+        }
+        await wait(150);
+        const current = await evaluate("window.readLastAction()");
+        if (current.scrollTop >= current.maxScroll - 1) break;
+        stableScrollCount = current.scrollTop === previousScrollTop ? stableScrollCount + 1 : 0;
+        previousScrollTop = current.scrollTop;
+        if (stableScrollCount >= 3) break;
       }
+      const scrollQuiet = await evaluate("window.waitForScrollQuiet()");
       const afterWheel = await evaluate("window.readLastAction()");
       const finalLast = await evaluate("window.readLastAction()");
       if (finalLast.hit) {
         const clickX = finalLast.rect.left + finalLast.rect.width / 2;
         const clickY = finalLast.rect.top + finalLast.rect.height / 2;
-        await send("Input.dispatchMouseEvent", {
-          type: "mousePressed", x: clickX, y: clickY, button: "left", clickCount: 1,
-        });
-        await send("Input.dispatchMouseEvent", {
-          type: "mouseReleased", x: clickX, y: clickY, button: "left", clickCount: 1,
-        });
+        if (width < 600) {
+          await send("Input.dispatchTouchEvent", {
+            type: "touchStart", touchPoints: [{ x: clickX, y: clickY, id: 1 }],
+          });
+          await wait(80);
+          await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        } else {
+          await send("Input.dispatchMouseEvent", {
+            type: "mousePressed", x: clickX, y: clickY, button: "left", clickCount: 1,
+          });
+          await send("Input.dispatchMouseEvent", {
+            type: "mouseReleased", x: clickX, y: clickY, button: "left", clickCount: 1,
+          });
+        }
+      }
+      const inputClick = await evaluate("Boolean(window.lastActionClicked)");
+      let forcedDiagnostics = [];
+      if (!finalLast.visible || !finalLast.hit || !inputClick) {
+        forcedDiagnostics = await evaluate("window.forceMaximumScrollDiagnostic()");
+      }
+      let forcedMaximumClick = false;
+      const forcedAtMax = forcedDiagnostics[0];
+      if (forcedAtMax && forcedAtMax.immediateTop >= forcedAtMax.maxScroll - 1 &&
+          forcedAtMax.visible && forcedAtMax.hit) {
+        await evaluate("window.lastActionClicked = false");
+        const clickX = forcedAtMax.rect.left + forcedAtMax.rect.width / 2;
+        const clickY = forcedAtMax.rect.top + forcedAtMax.rect.height / 2;
+        if (width < 600) {
+          await send("Input.dispatchTouchEvent", {
+            type: "touchStart", touchPoints: [{ x: clickX, y: clickY, id: 1 }],
+          });
+          await wait(80);
+          await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        } else {
+          await send("Input.dispatchMouseEvent", {
+            type: "mousePressed", x: clickX, y: clickY, button: "left", clickCount: 1,
+          });
+          await send("Input.dispatchMouseEvent", {
+            type: "mouseReleased", x: clickX, y: clickY, button: "left", clickCount: 1,
+          });
+        }
+        forcedMaximumClick = await evaluate("Boolean(window.lastActionClicked)");
       }
       await evaluate("window.destroyFixtureSdk()");
+      const forcedAfterDestroy = process.env.ALIGNMENT_TEST_ID
+        ? await evaluate("window.forceMaximumScrollDiagnostic()")
+        : [];
       result = {
         ...result,
         afterWheel,
+        scrollQuiet,
         last: finalLast,
-        lastActionClicked: await evaluate("Boolean(window.lastActionClicked)"),
+        lastActionClicked: inputClick,
+        forcedDiagnostics,
+        forcedMaximumClick,
+        forcedAfterDestroy,
         restoredJustifyContent: await evaluate("getComputedStyle(document.querySelector('#stage')).justifyContent"),
       };
       reports.push(result);
@@ -141,7 +218,8 @@ try {
   }, null, 2));
   const requiredRegression = reports.filter((item) =>
     item.layout === "centered-min-height" && item.viewport === "1440x900" && item.percent === 80);
-  if (reports.length !== 103 || requiredRegression.length !== 2 ||
+  if ((!process.env.ALIGNMENT_TEST_ID && process.env.FAILURES_ONLY !== "1" && reports.length !== 103) ||
+      (!process.env.ALIGNMENT_TEST_ID && process.env.FAILURES_ONLY !== "1" && requiredRegression.length !== 2) ||
       requiredRegression.some((item) =>
         !item.top.headingFullyVisible || !item.top.headingHit ||
         !item.last.visible || !item.last.hit || !item.lastActionClicked)) {
