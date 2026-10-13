@@ -125,7 +125,8 @@ function createSessionHarness() {
   };
   const documentStub = {
     createElement() {
-      return {
+        const listeners = new Map();
+        return {
         className: "",
         textContent: "",
         dataset: {},
@@ -133,7 +134,14 @@ function createSessionHarness() {
         classList: makeClassList(),
         children: [],
         setAttribute() {},
-        addEventListener() {},
+        addEventListener(type, callback) {
+          const callbacks = listeners.get(type) ?? [];
+          callbacks.push(callback);
+          listeners.set(type, callbacks);
+        },
+        dispatch(type, event = {}) {
+          for (const callback of listeners.get(type) ?? []) callback(event);
+        },
         append(...nodes) { this.children.push(...nodes); },
         remove() {
           const index = children.indexOf(this);
@@ -263,7 +271,9 @@ test("a committed screen change cancels the old guide before a replacement step 
     const oldTimer = [...h.timerCallbacks.keys()].at(-1);
     h.timerCallbacks.get(oldTimer)?.();
     assert.equal(h.children.length, 1);
+    const oldDismissTimer = [...h.timerCallbacks.keys()].at(-1);
     assert.equal(h.sdk.notifyScreenChange("cafe.cart"), true);
+    assert.equal(h.clearedTimers.has(oldDismissTimer), true);
     assert.equal(h.children.length, 0);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
     assert.equal(h.sdk.notifyScreenChange("cafe.cart"), false);
@@ -275,12 +285,39 @@ test("a committed screen change cancels the old guide before a replacement step 
       message: { title: "주문 확인", text: "주문을 확인해 주세요.", actionId: "continue" },
     });
     assert.notEqual([...h.timerCallbacks.keys()].at(-1), oldTimer);
+    const newIdleTimer = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(newIdleTimer)?.();
+    h.timerCallbacks.get(oldDismissTimer)?.();
+    assert.equal(h.children.length, 1);
   } finally {
     h.restore();
   }
 });
 
-test("a visible Smart Guide closes after 30 seconds and clears its action emphasis", () => {
+test("closing the Smart Guide directly removes it and cancels its auto-dismiss timer", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    h.sdk.setGuideState({
+      stepId: "fixture.confirm",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "확인", text: "계속 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    h.timerCallbacks.get([...h.timerCallbacks.keys()].at(-1))?.();
+    const dismissTimer = [...h.timerCallbacks.keys()].at(-1);
+    const close = h.children[0].children.find((element) => element.className === "a11y-guide-close");
+    close.dispatch("click", { stopPropagation() {} });
+    assert.equal(h.children.length, 0);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
+    assert.equal(h.clearedTimers.has(dismissTimer), true);
+  } finally {
+    h.restore();
+  }
+});
+
+test("a visible Smart Guide closes after 10 seconds, clears emphasis, and does not reappear for same-step edits", () => {
   const h = createSessionHarness();
   try {
     h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
@@ -296,37 +333,21 @@ test("a visible Smart Guide closes after 30 seconds and clears its action emphas
     assert.equal(h.children.length, 1);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), true);
     const dismissTimer = [...h.timerCallbacks.keys()].at(-1);
-    assert.equal(h.scheduledDelays.get(dismissTimer), 30_000);
+    assert.equal(h.scheduledDelays.get(dismissTimer), 10_000);
 
     h.timerCallbacks.get(dismissTimer)?.();
     assert.equal(h.children.length, 0);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
-  } finally {
-    h.restore();
-  }
-});
-
-test("Smart Guide auto-dismisses after 30 seconds and removes its button emphasis", () => {
-  const h = createSessionHarness();
-  try {
-    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    const timersAfterDismiss = h.timerCallbacks.size;
     h.sdk.setGuideState({
       stepId: "fixture.confirm",
       enabled: true,
       paused: false,
       delaySeconds: 10,
-      message: { title: "확인", text: "계속 버튼을 눌러 주세요.", actionId: "continue" },
+      message: { title: "확인", text: "수량이 바뀌었습니다.", actionId: "continue" },
     });
-    const idleTimer = [...h.timerCallbacks.keys()].at(-1);
-    h.timerCallbacks.get(idleTimer)?.();
-    assert.equal(h.children.length, 1);
-    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), true);
-    const dismissTimer = [...h.timerCallbacks.keys()].at(-1);
-    assert.equal(h.scheduledDelays.get(dismissTimer), 30_000);
-
-    h.timerCallbacks.get(dismissTimer)?.();
+    assert.equal(h.timerCallbacks.size, timersAfterDismiss);
     assert.equal(h.children.length, 0);
-    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
   } finally {
     h.restore();
   }
@@ -350,6 +371,7 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
     const pendingTimerId = [...h.timerCallbacks.keys()].at(-1);
     h.timerCallbacks.get(pendingTimerId)?.();
     assert.equal(h.children.length, 1);
+    const dismissTimerId = [...h.timerCallbacks.keys()].at(-1);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), true);
     h.sdk.speak("Session speech");
     const utterancesBeforeEnd = h.speechUtterances;
@@ -357,6 +379,7 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
     assert.ok(h.root.classList.contains("a11y-high-contrast"));
 
     h.sdk.endSession();
+    assert.equal(h.clearedTimers.has(dismissTimerId), true);
     assert.deepEqual(h.sdk.profile, sdk.DEFAULT_ACCESSIBILITY_PROFILE);
     assert.equal(h.children.length, 0);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
@@ -366,6 +389,7 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
 
     const staleGuideTimer = h.timerCallbacks.get(pendingTimerId);
     staleGuideTimer?.();
+    h.timerCallbacks.get(dismissTimerId)?.();
     assert.equal(h.children.length, 0);
   } finally {
     h.restore();

@@ -61,7 +61,7 @@ const MANAGED_CLASSES = [
   "a11y-bottom-controls",
 ] as const;
 
-export const GUIDE_AUTO_DISMISS_MS = 30_000;
+export const GUIDE_AUTO_DISMISS_MS = 10_000;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));

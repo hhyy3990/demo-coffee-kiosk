@@ -63,8 +63,8 @@ Do not impose SDK-wide minimum font floors: scale the host-computed base size by
 
 **How to apply:** Register only noncritical supporting copy and safe reflow regions; report attempt percentages, residual issue types, and overlap measurements. Test 5%/10% success, rollback, unregistered copy, real button hitboxes, and style restoration in an independent browser fixture.
 
-Smart Guide visibility has a separate 30-second display timeout; the profile's 10/15/20-second delay controls only when it first appears. When there is no unobstructed popup position, prefer a visible placement inside the usable work area that avoids fixed controls, QR docks, and explicit avoidance regions, even if it overlaps ordinary buttons.
+Smart Guide visibility has a separate 10-second default display timeout with a 15-second maximum; the profile's 10/15/20-second delay controls only when it first appears. When there is no unobstructed popup position, prefer a visible placement inside the usable work area that avoids fixed controls, QR docks, and explicit avoidance regions, even if it overlaps ordinary buttons.
 
 **Why:** Returning `false` whenever ordinary actions cover every preferred position silently removes guidance for users in compact layouts; a bounded display period avoids leaving a transient guide over task controls indefinitely.
 
-**How to apply:** Keep the display lifetime distinct from the pre-display idle delay, clear the overlay and emphasis on every dismissal path, and browser-test constrained work areas before claiming placement succeeded.
+**How to apply:** Keep the display lifetime distinct from the pre-display idle delay, cap configured display durations at 15 seconds, clear the overlay and emphasis on every dismissal path, and browser-test constrained work areas before claiming placement succeeded.

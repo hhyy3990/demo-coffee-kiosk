@@ -15,7 +15,7 @@ const MANAGED_CLASSES = [
     "a11y-easy-language",
     "a11y-bottom-controls",
 ];
-export const GUIDE_AUTO_DISMISS_MS = 30_000;
+export const GUIDE_AUTO_DISMISS_MS = 10_000;
 function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
 }
