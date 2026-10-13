@@ -78,6 +78,23 @@ function visibleObstacle(element: HTMLElement, root: HTMLElement): boolean {
   return inVisibleViewport(element, root);
 }
 
+function overlap(a: DOMRect, b: DOMRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+function chooseHintPlacement(
+  candidates: readonly DOMRect[],
+  obstacles: readonly HTMLElement[],
+  mandatory: readonly HTMLElement[],
+): DOMRect | null {
+  const safe = candidates.filter((candidate) =>
+    !mandatory.some((element) => overlap(candidate, element.getBoundingClientRect())),
+  );
+  return safe.find((candidate) =>
+    !obstacles.some((element) => overlap(candidate, element.getBoundingClientRect())),
+  ) ?? safe[0] ?? null;
+}
+
 function getGuidanceObstacles(
   root: HTMLElement,
   regions: KioskLayoutRegions,
@@ -167,25 +184,32 @@ function placeHint(
     const lowerEdge = controls.reduce((edge, el) =>
       Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, rootRect.bottom)) - 8;
     const upperEdge = Math.max(0, rootRect.top) + 8;
-    const top = lowerEdge - rect.height;
-    if (top < upperEdge || rect.height <= 0) {
+    if (lowerEdge - upperEdge < rect.height || rect.height <= 0) {
       if (root.dataset) root.dataset.a11yScrollGuidance = "no-safe-space";
       hint.style.visibility = "hidden";
       return false;
     }
     const obstacles = getGuidanceObstacles(root, regions, hint);
-    const candidate = new DOMRect(left, top, rect.width, rect.height);
-    const blocked = obstacles.some((el) => {
-      const obstacle = el.getBoundingClientRect();
-      return candidate.left < obstacle.right && candidate.right > obstacle.left &&
-        candidate.top < obstacle.bottom && candidate.bottom > obstacle.top;
-    });
-    if (blocked) {
+    const top = lowerEdge - rect.height;
+    const candidates = [
+      top,
+      upperEdge,
+      upperEdge + (lowerEdge - upperEdge - rect.height) / 2,
+    ].map((candidateTop) => new DOMRect(left, candidateTop, rect.width, rect.height));
+    const docks = Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"));
+    const mandatory = [
+      ...(regions.viewportOverlays ?? []),
+      ...(regions.guidanceAvoidAreas ?? []),
+      ...controls,
+      ...docks,
+    ].filter((element) => visibleObstacle(element, root));
+    const placement = chooseHintPlacement(candidates, obstacles, mandatory);
+    if (!placement) {
       if (root.dataset) root.dataset.a11yScrollGuidance = "no-safe-space";
       hint.style.visibility = "hidden";
       return false;
     }
-    hint.style.top = `${top}px`;
+    hint.style.top = `${placement.top}px`;
     hint.style.visibility = "visible";
     return true;
   }
@@ -212,17 +236,26 @@ function placeHint(
   const positions = [...new Set([
     safeBottom - height,
     vh - height - 12,
+    12,
+    Math.max(12, root.getBoundingClientRect().top + 12),
     ...obstacles.map((element) => element.getBoundingClientRect().top - height - 8),
   ])].filter((top) => top >= 12).sort((a, b) => b - a);
+  const candidates: DOMRect[] = [];
   for (const top of positions) {
     if (top < 12) continue;
-    const candidate = new DOMRect(parseFloat(hint.style.left), top, width, height);
-    if (obstacles.some((el) => {
-      const r = el.getBoundingClientRect();
-      return candidate.left < r.right && candidate.right > r.left &&
-        candidate.top < r.bottom && candidate.bottom > r.top;
-    })) continue;
-    hint.style.top = `${top}px`;
+    candidates.push(new DOMRect(parseFloat(hint.style.left), top, width, height));
+  }
+  const docks = Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"));
+  const mandatory = [
+    ...(regions.viewportOverlays ?? []),
+    ...(regions.guidanceAvoidAreas ?? []),
+    ...bottomControls,
+    ...docks,
+  ].filter((element) => visibleObstacle(element, root));
+  const placement = chooseHintPlacement(candidates, obstacles, mandatory);
+  if (placement) {
+    hint.style.left = `${placement.left}px`;
+    hint.style.top = `${placement.top}px`;
     hint.style.visibility = "visible";
     return true;
   }

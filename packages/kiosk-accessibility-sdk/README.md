@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.8`
+- SDK API: `0.5.9`
 - 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -25,19 +25,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.8.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.9.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1·v2는 기존 설정을 읽고 `viewportMode`를 `null`로 정규화하므로 레거시 `bottomControls`로 하단 모드를 추측하지 않습니다. v3는 최상위 `schemaVersion`, `updatedAt`, `preferences`를 요구하며 `preferences.viewportMode`는 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`이어야 합니다. 문자열 비율, 지원하지 않는 값, v3의 레거시 `bottomControls`/`simplifiedLayout` 필드는 거부합니다. QR 프로필이 적용되면 SDK가 검증한 `viewportMode`를 기존 공통 레이아웃 경로에 자동 반영합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.8.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.9.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.5.8.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.9.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -130,6 +130,8 @@ getLayoutRegions: () => ({
 ## 스크롤 안내 선택과 우선순위
 
 세로 스크롤 안내는 실제 문서 또는 내부 스크롤 컨테이너의 위치와 남은 스크롤 거리를 기준으로 표시합니다. `primaryActions`에는 화면 아래에 있는 중요한 버튼을 선택 등록할 수 있으며, 실제로 아래로 이동할 수 있을 때만 공통 버튼 안내를 표시합니다.
+
+안내는 기본적으로 화면에 나타난 뒤 30초 후 자동으로 닫히며 강조 효과도 함께 제거됩니다. `guideDelaySeconds`는 안내가 나타나기 전 대기 시간(10·15·20초)이고, 30초 표시는 별도의 고정 유지 시간입니다. 안전하게 배치할 빈 공간이 부족하면 QR 도크·하단 고정 조작부·명시적 회피 영역은 피하고, 가능한 작업 영역 안에서 일반 버튼과 겹치는 후보 중 가장 덜 겹치는 위치를 선택합니다. 표시할 작업 영역 자체가 72px보다 작으면 잘린 안내 대신 표시 실패를 반환합니다.
 
 기존 수평 목록의 이동 버튼은 `aria-controls`로 실제 가로 스크롤 목록을 연결하고 접근성 이름에 “다음/이전 + 메뉴·항목·목록” 의미를 제공하세요. 식별이 모호한 경우 `horizontalNavigation`에 목록과 두 버튼을 명시적으로 연결할 수 있습니다. SDK는 이미 존재하는 버튼만 최대 5초간 부드럽게 강조하며 누르거나 생성하지 않습니다. 같은 세션에서 이미 안내한 방향은 반복하지 않고, `endSession()`에서 상태와 타이머를 초기화합니다. reduced-motion 환경에서는 정적인 강조를 짧게 표시합니다.
 

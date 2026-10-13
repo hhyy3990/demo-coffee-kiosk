@@ -280,6 +280,58 @@ test("a committed screen change cancels the old guide before a replacement step 
   }
 });
 
+test("a visible Smart Guide closes after 30 seconds and clears its action emphasis", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    h.sdk.setGuideState({
+      stepId: "fixture.confirm",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "확인", text: "계속 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    const idleTimer = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(idleTimer)?.();
+    assert.equal(h.children.length, 1);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), true);
+    const dismissTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.scheduledDelays.get(dismissTimer), 30_000);
+
+    h.timerCallbacks.get(dismissTimer)?.();
+    assert.equal(h.children.length, 0);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
+  } finally {
+    h.restore();
+  }
+});
+
+test("Smart Guide auto-dismisses after 30 seconds and removes its button emphasis", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    h.sdk.setGuideState({
+      stepId: "fixture.confirm",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "확인", text: "계속 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    const idleTimer = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(idleTimer)?.();
+    assert.equal(h.children.length, 1);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), true);
+    const dismissTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.equal(h.scheduledDelays.get(dismissTimer), 30_000);
+
+    h.timerCallbacks.get(dismissTimer)?.();
+    assert.equal(h.children.length, 0);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
+  } finally {
+    h.restore();
+  }
+});
+
 test("endSession clears profile classes, pending guide and speech, and leaves host data untouched", () => {
   const h = createSessionHarness();
   const hostOrder = Object.freeze({ applicationId: "host-owned", step: "review" });

@@ -15,6 +15,7 @@ const MANAGED_CLASSES = [
     "a11y-easy-language",
     "a11y-bottom-controls",
 ];
+export const GUIDE_AUTO_DISMISS_MS = 30_000;
 function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
 }
@@ -28,11 +29,12 @@ function positionGuide(overlay, target, root, regions) {
         const shell = (regions?.scrollArea && root.contains(regions.scrollArea)
             ? regions.scrollArea
             : root).getBoundingClientRect();
-        const controls = (regions?.bottomControls ?? []).filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
+        const qrDocks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
+        const controls = [...(regions?.bottomControls ?? []), ...qrDocks].filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
         const safeBottom = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.bottom)) - 8;
         const safeTop = Math.max(0, shell.top) + 8;
         const availableHeight = safeBottom - safeTop;
-        if (availableHeight < 96)
+        if (availableHeight < 72)
             return false;
         overlay.style.position = "fixed";
         overlay.style.left = `${Math.max(12, (vw - Math.min(500, vw - 24)) / 2)}px`;
@@ -55,13 +57,27 @@ function positionGuide(overlay, target, root, regions) {
         ].filter((el) => el !== overlay && el.isConnected &&
             getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
             el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
-        const top = positions.find((candidate) => candidate >= minimum && candidate <= maximum &&
-            !obstacles.some((el) => {
-                const rect = el.getBoundingClientRect();
-                return 12 < rect.right && vw - 12 > rect.left &&
-                    candidate < rect.bottom && candidate + height > rect.top;
-            }));
-        if (top === undefined)
+        const fits = positions.map((candidate) => clamp(candidate, minimum, maximum));
+        fits.push(minimum, maximum, minimum + (maximum - minimum) / 2);
+        const candidates = [...new Set(fits.filter(Number.isFinite))];
+        const overlapsAt = (candidate, element) => {
+            const rect = element.getBoundingClientRect();
+            return 12 < rect.right && vw - 12 > rect.left &&
+                candidate < rect.bottom && candidate + height > rect.top;
+        };
+        const top = candidates.find((candidate) => !obstacles.some((element) => overlapsAt(candidate, element))) ?? candidates
+            .map((candidate) => ({
+            candidate,
+            overlap: obstacles.reduce((sum, element) => {
+                const rect = element.getBoundingClientRect();
+                if (!overlapsAt(candidate, element))
+                    return sum;
+                return sum + Math.max(0, Math.min(candidate + height, rect.bottom) - Math.max(candidate, rect.top)) *
+                    Math.max(0, Math.min(vw - 12, rect.right) - Math.max(12, rect.left));
+            }, 0),
+        }))
+            .sort((a, b) => a.overlap - b.overlap)[0]?.candidate;
+        if (top === undefined || maximum < minimum)
             return false;
         overlay.style.top = `${top}px`;
         overlay.style.visibility = "visible";
@@ -73,20 +89,17 @@ function positionGuide(overlay, target, root, regions) {
     const gap = 12;
     const above = targetRect.top - overlayRect.height - gap;
     const below = targetRect.bottom + gap;
-    const canFitAbove = above >= margin;
-    const canFitBelow = below + overlayRect.height <= window.innerHeight - margin;
-    let top;
-    if (canFitAbove)
-        top = above;
-    else if (canFitBelow)
-        top = below;
-    else {
-        const spaceAbove = targetRect.top - margin;
-        const spaceBelow = window.innerHeight - margin - targetRect.bottom;
-        top = spaceAbove >= spaceBelow
-            ? margin
-            : Math.max(margin, window.innerHeight - overlayRect.height - margin);
-    }
+    const maxTop = Math.max(margin, window.innerHeight - overlayRect.height - margin);
+    const clampToViewport = (value) => clamp(value, margin, maxTop);
+    const targetIsVisible = targetRect.bottom > 0 && targetRect.top < window.innerHeight;
+    const preferred = targetIsVisible
+        ? [
+            ...(above >= margin && above <= maxTop ? [above] : []),
+            ...(below <= maxTop ? [below] : []),
+        ]
+        : [];
+    const candidates = [...preferred, clampToViewport(above), clampToViewport(below), margin, maxTop];
+    const top = [...new Set(candidates)][0];
     const left = clamp(targetRect.left + (targetRect.width - overlayRect.width) / 2, margin, Math.max(margin, window.innerWidth - overlayRect.width - margin));
     overlay.style.left = `${left}px`;
     overlay.style.top = `${top}px`;
@@ -159,6 +172,7 @@ export function createAccessibilitySdk(options) {
                 updateGuidePosition();
         });
     let timer = createIdleTimer(showGuide);
+    let guideDismissTimer = null;
     const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
     const menuHint = createScrollGuidance(root, adapter);
     const bottomViewport = createBottomViewportController(root, adapter);
@@ -290,6 +304,10 @@ export function createAccessibilitySdk(options) {
     }
     function removeGuide() {
         const hadGuide = guideOverlay !== null;
+        if (guideDismissTimer !== null) {
+            globalThis.clearTimeout(guideDismissTimer);
+            guideDismissTimer = null;
+        }
         if (guideOverlay) {
             guideOverlay.remove();
             guideOverlay = null;
@@ -342,6 +360,13 @@ export function createAccessibilitySdk(options) {
             removeGuide();
             return;
         }
+        const visibleGuide = guideOverlay;
+        guideDismissTimer = globalThis.setTimeout(() => {
+            if (guideOverlay !== visibleGuide)
+                return;
+            guideDismissTimer = null;
+            removeGuide();
+        }, GUIDE_AUTO_DISMISS_MS);
         window.addEventListener("resize", updateGuidePosition);
         window.addEventListener("scroll", updateGuidePosition, true);
         speakText(guideState.message.text, currentProfile.voiceGuidance);
@@ -497,6 +522,7 @@ export function createAccessibilitySdk(options) {
         if (changed) {
             timer.cancel();
             removeGuide();
+            menuHint.refresh();
         }
         return changed;
     }

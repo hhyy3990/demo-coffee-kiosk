@@ -32,4 +32,5 @@ export interface AccessibilitySdk {
     createSessionGuard(): () => boolean;
     destroy(): void;
 }
+export declare const GUIDE_AUTO_DISMISS_MS = 30000;
 export declare function createAccessibilitySdk(options: AccessibilitySdkOptions): AccessibilitySdk;
