@@ -40,7 +40,7 @@ try {
   );
   run(process.execPath, [
     "--test",
-    ...["diagnostics", "guide", "lifecycle", "profile", "qr-profile", "qr-scanner"]
+    ...["completion", "diagnostics", "guide", "lifecycle", "profile", "qr-profile", "qr-scanner"]
       .map((name) => resolve(packageRoot, `test/${name}.test.mjs`)),
   ], repositoryRoot, { KIOSK_SDK_CONSUMER_ROOT: consumerRoot });
   run(

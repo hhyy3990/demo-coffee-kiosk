@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>독립 SDK 완료 세션 테스트</title>
+  <style>
+    body{font:18px system-ui,sans-serif;max-width:38rem;margin:2rem auto;padding:1rem;color:#211710}
+    button{min-height:52px;padding:.7rem 1rem;margin:.25rem;border-radius:.7rem}
+    #status{font-weight:800}
+  </style>
+  <main>
+    <h1>업무 완료</h1>
+    <p id="status" aria-live="polite">완료 세션이 시작되지 않았습니다.</p>
+    <button id="extend">시간 연장</button>
+    <button id="home">처음 화면으로</button>
+  </main>
+  <script type="module">
+    import { createAccessibilitySdk } from "../dist/index.js";
+    const root = document.querySelector("main");
+    const status = document.querySelector("#status");
+    const sdk = createAccessibilitySdk({
+      root,
+      adapter: {
+        getSnapshot: () => ({ screenId: "fixture.complete", state: {} }),
+        getActions: () => [...root.querySelectorAll("button")].map((element) => ({
+          id: element.id, name: element.textContent, element, enabled: true,
+        })),
+        getTextTargets: () => [],
+        getLayoutRegions: () => ({ bottomControls: [], scrollArea: root }),
+      },
+    });
+    sdk.subscribeCompletion((state) => {
+      status.textContent = state.error ? "복귀에 실패했습니다. 다시 시도해 주세요." :
+        state.returning ? "복귀 중입니다." :
+        state.active ? `${state.remainingSeconds}초 후 복귀합니다.` : "완료 세션이 시작되지 않았습니다.";
+    });
+    const returnHome = () => { sdk.endSession(); status.textContent = "호스트가 첫 화면을 표시했습니다."; };
+    sdk.beginCompletion(returnHome);
+    document.querySelector("#extend").addEventListener("click", () => sdk.extendCompletion());
+    document.querySelector("#home").addEventListener("click", () => void sdk.finishCompletion());
+    window.addEventListener("pagehide", () => sdk.destroy(), { once: true });
+  </script>
+</html>

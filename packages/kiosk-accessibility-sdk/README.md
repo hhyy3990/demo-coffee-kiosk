@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.10`
+- SDK API: `0.5.11`
 - 중앙 QR 프로필: v1·v2·v3 읽기 지원, v3에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -25,19 +25,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.10.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.11.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하고, 중앙 프로필 계약을 임의로 변경하지 마세요. v1·v2는 기존 설정을 읽고 `viewportMode`를 `null`로 정규화하므로 레거시 `bottomControls`로 하단 모드를 추측하지 않습니다. v3는 최상위 `schemaVersion`, `updatedAt`, `preferences`를 요구하며 `preferences.viewportMode`는 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`이어야 합니다. 문자열 비율, 지원하지 않는 값, v3의 레거시 `bottomControls`/`simplifiedLayout` 필드는 거부합니다. QR 프로필이 적용되면 SDK가 검증한 `viewportMode`를 기존 공통 레이아웃 경로에 자동 반영합니다. 이 SDK는 npm에 게시하지 않아도 로컬 tarball로 설치할 수 있습니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.10.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.11.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.5.10.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.11.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.
@@ -235,6 +235,33 @@ sdk.destroy();
 ```
 
 `endSession()`은 등록된 정리 콜백, 스마트 길잡이 타이머·안내·강조, 음성, SDK 접근성 클래스와 프로필을 초기화하지만 SDK 인스턴스와 이벤트 리스너는 유지합니다. 새 업무에서 만든 비동기 요청은 시작 전에 `createSessionGuard()`를 캡처하고 응답 적용 전에 확인하세요. 세션 종료 후 콜백은 `false`를 반환합니다. QR 요청·카메라를 SDK가 만들지 않았다면 SDK가 직접 접근하지 않으며, 호스트가 `registerSessionCleanup()`으로 정리할 리소스만 등록합니다.
+
+## 업무 완료 후 처음 화면 복귀
+
+호스트가 실제 완료를 확정한 뒤 `beginCompletion()`을 호출합니다. SDK는 15초 카운트다운, 초 단위 상태 구독, 시간 연장, 취소, 수동 복귀를 관리합니다. 완료 콜백은 호스트의 첫 화면 이동과 업무 데이터 초기화를 수행합니다. 완료 화면을 떠나거나 `endSession()`을 호출하면 타이머는 취소됩니다. SDK는 업무 완료 여부를 추론하지 않으며 주문·발급 데이터를 직접 변경하지 않습니다.
+
+```ts
+const unsubscribe = sdk.subscribeCompletion((state) => {
+  renderCompletionTimer(state.remainingSeconds, state.active, state.error);
+});
+
+// 실제 완료 화면에서, 영수증 등 후속 처리가 끝난 뒤:
+sdk.beginCompletion(() => {
+  resetHostOrderState();
+  sdk.endSession();
+  showHostWelcomeScreen();
+});
+
+// 완료 화면 버튼:
+sdk.extendCompletion(); // 15초로 다시 시작
+void sdk.finishCompletion(); // 즉시 호스트 복귀 콜백
+
+// 완료 화면을 다른 업무 화면으로 떠날 때:
+sdk.cancelCompletion();
+unsubscribe();
+```
+
+복귀 콜백이 `false`를 반환하거나 오류를 던지면 자동 재시도하지 않습니다. 상태는 오류로 남아 사용자가 수동 복귀를 다시 시도할 수 있습니다. 카운트다운은 실제 마감 시각 기준이므로 백그라운드 탭에서도 여러 타이머가 중복 실행되지 않습니다.
 
 카메라 스캐너는 별도 entrypoint입니다. SDK 기본 entrypoint에서 ZXing 모듈을 가져오지 않으며, QR UI를 표시할 때만 동적 import 하세요.
 

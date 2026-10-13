@@ -7,6 +7,7 @@ import { ACCESSIBILITY_SDK_VERSION, accessibilityClasses, DEFAULT_ACCESSIBILITY_
 import { cancelSpeech, speakText } from "./speech.js";
 import { createScreenChangeController } from "./screen-change.js";
 import { syncQrEntryDockViewportMode } from "./qr-entry-dock.js";
+import { createCompletionController, } from "./completion.js";
 const MANAGED_CLASSES = [
     "a11y-text-large",
     "a11y-text-extra",
@@ -161,6 +162,8 @@ export function createAccessibilitySdk(options) {
     let destroyed = false;
     let sessionEnded = false;
     let sessionGeneration = 0;
+    let completionScreenId = null;
+    let completionActive = false;
     const sessionCleanups = new Set();
     const navigationStates = new Map();
     const emphasizedNextButtons = new Set();
@@ -177,6 +180,7 @@ export function createAccessibilitySdk(options) {
     const menuHint = createScrollGuidance(root, adapter);
     const bottomViewport = createBottomViewportController(root, adapter);
     const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
+    const completion = createCompletionController((state) => { completionActive = state.active; });
     function refreshNextItemButtons() {
         if (sessionEnded || destroyed)
             return;
@@ -336,6 +340,7 @@ export function createAccessibilitySdk(options) {
     }
     function showGuide() {
         if (destroyed ||
+            completionActive ||
             !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
@@ -375,6 +380,7 @@ export function createAccessibilitySdk(options) {
     function scheduleGuide() {
         timer.cancel();
         if (destroyed ||
+            completionActive ||
             !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
@@ -520,16 +526,33 @@ export function createAccessibilitySdk(options) {
     function notifyScreenChange(screenId) {
         const changed = screenChange.notify(screenId);
         if (changed) {
+            if (completionActive && completionScreenId !== screenId) {
+                completion.cancel();
+                completionScreenId = null;
+            }
             timer.cancel();
             removeGuide();
             menuHint.refresh();
         }
         return changed;
     }
+    function beginCompletion(onReturn) {
+        if (destroyed || sessionEnded)
+            return;
+        timer.cancel();
+        removeGuide();
+        completionScreenId = adapter.getSnapshot().screenId;
+        completion.begin(onReturn);
+    }
+    function cancelCompletion() {
+        completionScreenId = null;
+        completion.cancel();
+    }
     function endSession() {
         sessionGeneration += 1;
         screenChange.reset();
         timer.cancel();
+        cancelCompletion();
         for (const cleanup of [...sessionCleanups]) {
             try {
                 cleanup();
@@ -606,6 +629,12 @@ export function createAccessibilitySdk(options) {
         notifyScreenChange,
         setViewportMode,
         setGuideState,
+        beginCompletion,
+        extendCompletion: () => completion.extend(),
+        cancelCompletion,
+        finishCompletion: () => completion.finish(),
+        subscribeCompletion: (listener) => completion.subscribe(listener),
+        get completionState() { return completion.state; },
         resetIdleTimer,
         speak,
         inspectLayout,
@@ -625,6 +654,7 @@ export function createAccessibilitySdk(options) {
                 button.classList.remove("a11y-next-item-emphasis");
             emphasizedNextButtons.clear();
             timer.dispose();
+            completion.dispose();
             removeGuide();
             layoutEnhancer.destroy();
             bottomViewport.destroy();

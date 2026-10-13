@@ -396,6 +396,52 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
   }
 });
 
+test("completion cancels Smart Guide timers, blocks new guidance, and is canceled by screen exit", async () => {
+  const h = createSessionHarness();
+  let returned = 0;
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    h.sdk.setGuideState({
+      stepId: "work.review",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "확인", text: "계속해 주세요.", actionId: "continue" },
+    });
+    const guideIdle = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(guideIdle)?.();
+    const guideDismiss = [...h.timerCallbacks.keys()].at(-1);
+    h.sdk.beginCompletion(() => { returned += 1; });
+    assert.equal(h.clearedTimers.has(guideDismiss), true);
+    assert.equal(h.children.length, 0);
+    assert.equal(h.sdk.completionState.remainingSeconds, 15);
+    const timerCount = h.timerCallbacks.size;
+    h.sdk.setGuideState({
+      stepId: "work.complete",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "완료", text: "마무리됐어요.", actionId: "continue" },
+    });
+    assert.equal(h.timerCallbacks.size, timerCount);
+    assert.equal(h.sdk.notifyScreenChange("work.start"), true);
+    assert.equal(h.sdk.completionState.active, false);
+    assert.equal(returned, 0);
+    h.sdk.beginCompletion(() => { returned += 1; });
+    await h.sdk.finishCompletion();
+    assert.equal(returned, 1);
+    h.sdk.beginCompletion(() => { returned += 1; });
+    const staleCompletionTimer = [...h.timerCallbacks.keys()].at(-1);
+    h.sdk.endSession();
+    assert.equal(h.clearedTimers.has(staleCompletionTimer), true);
+    h.timerCallbacks.get(staleCompletionTimer)?.();
+    assert.equal(h.sdk.completionState.active, false);
+    assert.equal(returned, 1);
+  } finally {
+    h.restore();
+  }
+});
+
 test("endSession is repeatable, cancels host-registered QR work and allows a fresh guarded profile", async () => {
   const h = createSessionHarness();
   const client = sdk.createQrProfileClient({

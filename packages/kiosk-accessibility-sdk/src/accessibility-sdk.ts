@@ -20,6 +20,11 @@ import {
 import { cancelSpeech, speakText } from "./speech.ts";
 import { createScreenChangeController } from "./screen-change.ts";
 import { syncQrEntryDockViewportMode } from "./qr-entry-dock.ts";
+import {
+  createCompletionController,
+  type CompletionReturnCallback,
+  type CompletionState,
+} from "./completion.ts";
 
 export interface AccessibilitySdkOptions {
   root: HTMLElement;
@@ -41,6 +46,12 @@ export interface AccessibilitySdk {
   notifyScreenChange(screenId: string): boolean;
   setViewportMode(config: BottomViewportConfig | null): boolean;
   setGuideState(state: GuideState): void;
+  beginCompletion(onReturn: CompletionReturnCallback): void;
+  extendCompletion(): boolean;
+  cancelCompletion(): void;
+  finishCompletion(): Promise<void>;
+  subscribeCompletion(listener: (state: CompletionState) => void): () => void;
+  readonly completionState: CompletionState;
   resetIdleTimer(): void;
   speak(text: string): boolean;
   inspectLayout(): AccessibilityDiagnostic[];
@@ -233,6 +244,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let destroyed = false;
   let sessionEnded = false;
   let sessionGeneration = 0;
+  let completionScreenId: string | null = null;
+  let completionActive = false;
   const sessionCleanups = new Set<SessionCleanup>();
   type HorizontalDirection = "backward" | "forward";
   type NavigationState = {
@@ -256,6 +269,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const menuHint = createScrollGuidance(root, adapter);
   const bottomViewport = createBottomViewportController(root, adapter);
   const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
+  const completion = createCompletionController((state) => { completionActive = state.active; });
 
   function refreshNextItemButtons(): void {
     if (sessionEnded || destroyed) return;
@@ -411,6 +425,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   function showGuide(): void {
     if (
       destroyed ||
+      completionActive ||
       !currentProfile.smartGuide ||
       !guideState.enabled ||
       guideState.paused ||
@@ -452,6 +467,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     timer.cancel();
     if (
       destroyed ||
+      completionActive ||
       !currentProfile.smartGuide ||
       !guideState.enabled ||
       guideState.paused ||
@@ -604,6 +620,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   function notifyScreenChange(screenId: string): boolean {
     const changed = screenChange.notify(screenId);
     if (changed) {
+      if (completionActive && completionScreenId !== screenId) {
+        completion.cancel();
+        completionScreenId = null;
+      }
       timer.cancel();
       removeGuide();
       menuHint.refresh();
@@ -611,10 +631,24 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     return changed;
   }
 
+  function beginCompletion(onReturn: CompletionReturnCallback): void {
+    if (destroyed || sessionEnded) return;
+    timer.cancel();
+    removeGuide();
+    completionScreenId = adapter.getSnapshot().screenId;
+    completion.begin(onReturn);
+  }
+
+  function cancelCompletion(): void {
+    completionScreenId = null;
+    completion.cancel();
+  }
+
   function endSession(): void {
     sessionGeneration += 1;
     screenChange.reset();
     timer.cancel();
+    cancelCompletion();
     for (const cleanup of [...sessionCleanups]) {
       try {
         cleanup();
@@ -689,6 +723,12 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     notifyScreenChange,
     setViewportMode,
     setGuideState,
+    beginCompletion,
+    extendCompletion: () => completion.extend(),
+    cancelCompletion,
+    finishCompletion: () => completion.finish(),
+    subscribeCompletion: (listener) => completion.subscribe(listener),
+    get completionState() { return completion.state; },
     resetIdleTimer,
     speak,
     inspectLayout,
@@ -706,6 +746,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       for (const button of emphasizedNextButtons) button.classList.remove("a11y-next-item-emphasis");
       emphasizedNextButtons.clear();
       timer.dispose();
+      completion.dispose();
       removeGuide();
       layoutEnhancer.destroy();
       bottomViewport.destroy();

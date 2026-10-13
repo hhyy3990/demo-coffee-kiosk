@@ -68,3 +68,9 @@ Smart Guide visibility has a separate 10-second default display timeout with a 1
 **Why:** Returning `false` whenever ordinary actions cover every preferred position silently removes guidance for users in compact layouts; a bounded display period avoids leaving a transient guide over task controls indefinitely.
 
 **How to apply:** Keep the display lifetime distinct from the pre-display idle delay, cap configured display durations at 15 seconds, clear the overlay and emphasis on every dismissal path, and browser-test constrained work areas before claiming placement succeeded.
+
+The shared SDK owns only the completion countdown and its state notifications. The kiosk host decides when work is truly complete, owns all business data, and supplies the return-home callback; start the timer only after receipts, printing, or other final host work has finished.
+
+**Why:** A generic accessibility SDK must not infer that a payment, application, or clinical workflow has completed, and its session reset cannot clear host-owned data by itself.
+
+**How to apply:** Have the host signal a committed final-completion state, then use the SDK completion API for countdown/extension/cancel/finish. In the callback, clear host state and call `endSession()` before exposing the next user's welcome screen.

@@ -11,6 +11,7 @@ import {
   DEFAULT_ACCESSIBILITY_PROFILE,
   type AccessibilityProfile,
   type AccessibilitySdk,
+  type CompletionState,
   type SessionCleanup,
 } from "@naebangsik/kiosk-accessibility-sdk";
 import { createQrProfileClient } from "@naebangsik/kiosk-accessibility-sdk";
@@ -98,6 +99,9 @@ export default function App() {
   const qrRequestInFlightRef = useRef(false);
   const qrRequestGenerationRef = useRef(0);
   const [orderNumber, setOrderNumber] = useState("");
+  const [completionState, setCompletionState] = useState<CompletionState>({
+    active: false, returning: false, remainingSeconds: 0, error: false,
+  });
   const [interactionCount, setInteractionCount] = useState(0);
   const [menuFocusIndex, setMenuFocusIndex] = useState(0);
   const kioskRootRef = useRef<HTMLDivElement>(null);
@@ -447,7 +451,7 @@ export default function App() {
     setStage("menu");
     say(`${type} 주문을 선택했어요.`);
   };
-  const returnToStart = () => {
+  const returnToStart = useCallback(() => {
     accessibilitySdkRef.current?.endSession();
     setCart([]);
     setReceiptChoice(null);
@@ -458,9 +462,32 @@ export default function App() {
     setProfileDetailsOpen(false);
     setQrOpen(false);
     setQrLoading(false);
+    setQrMode("camera");
     setTokenInput("");
+    setOrderType("매장");
+    setCategory("coffee");
+    setSelectedProduct(PRODUCTS[0]);
+    setItemOptions(productDefaultOptions(PRODUCTS[0]));
+    setItemQuantity(1);
+    setHelpOpen(false);
     setStage("start");
-  };
+  }, []);
+
+  useEffect(() => {
+    const sdk = accessibilitySdkRef.current;
+    if (!sdk) return;
+    return sdk.subscribeCompletion(setCompletionState);
+  }, []);
+
+  useEffect(() => {
+    const sdk = accessibilitySdkRef.current;
+    if (stage !== "complete" || receiptChoice === null || !sdk) {
+      sdk?.cancelCompletion();
+      return;
+    }
+    sdk.beginCompletion(() => returnToStart());
+    return () => sdk.cancelCompletion();
+  }, [stage, receiptChoice, returnToStart]);
   const lineDescription = (line: CartLine) => {
     if (!line.product.optionsSupported) return categoryNames[line.product.category];
     const pieces = [line.options.temperature === "hot" ? "따뜻하게" : "차갑게", line.options.size === "large" ? "큰 사이즈" : "보통 사이즈", line.options.cup === "tumbler" ? "개인 텀블러" : "매장 컵"];
@@ -795,7 +822,32 @@ export default function App() {
                   </div>
                 </> : <div className="receipt-result" aria-live="polite">{receiptChoice === "yes" ? "영수증을 준비했어요. (데모)" : "영수증 없이 마무리했어요."}</div>}
               </div>
-              <button type="button" className="primary-button accent" id="complete-reset" data-a11y-action-id="complete-reset" data-a11y-primary="true" style={{ marginTop: 20 }} onClick={returnToStart}><RotateCcw size={18} /> 처음으로 돌아가기</button>
+              <section className="completion-countdown">
+                {completionState.active && (
+                  <p aria-live="polite" aria-atomic="true">
+                    {completionState.error ? "자동으로 돌아가지 못했어요. 다시 시도해 주세요." :
+                      completionState.returning ? "처음 화면으로 돌아가는 중이에요." :
+                      `${completionState.remainingSeconds}초 후 처음 화면으로 돌아갑니다.`}
+                  </p>
+                )}
+                <div className="completion-actions">
+                  {completionState.active && (
+                    <button type="button" className="secondary-button" disabled={completionState.returning}
+                      onClick={() => accessibilitySdkRef.current?.extendCompletion()}>
+                      시간 연장
+                    </button>
+                  )}
+                  <button type="button" className="primary-button accent" id="complete-reset"
+                    data-a11y-action-id="complete-reset" data-a11y-primary="true" disabled={completionState.returning}
+                    onClick={() => {
+                      const sdk = accessibilitySdkRef.current;
+                      if (sdk?.completionState.active) void sdk.finishCompletion();
+                      else returnToStart();
+                    }}>
+                    <RotateCcw size={18} /> 처음 화면으로
+                  </button>
+                </div>
+              </section>
             </section>
           )}
         </main>

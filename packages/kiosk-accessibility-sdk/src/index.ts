@@ -17,6 +17,11 @@ export {
   type SessionCleanup,
 } from "./accessibility-sdk.ts";
 export {
+  DEFAULT_COMPLETION_SECONDS,
+  type CompletionReturnCallback,
+  type CompletionState,
+} from "./completion.ts";
+export {
   type BottomViewportConfig,
   type BottomViewportHeightPercent,
 } from "./bottom-viewport.ts";

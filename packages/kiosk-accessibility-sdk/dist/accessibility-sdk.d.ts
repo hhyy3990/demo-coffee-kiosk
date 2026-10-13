@@ -4,6 +4,7 @@ import { type AccessibilityDiagnostic } from "./diagnostics.ts";
 import { type LayoutCorrectionResult } from "./layout-enhancements.ts";
 import { type GuideState } from "./guide.ts";
 import { type AccessibilityProfile } from "./profile.ts";
+import { type CompletionReturnCallback, type CompletionState } from "./completion.ts";
 export interface AccessibilitySdkOptions {
     root: HTMLElement;
     adapter: AccessibilityAdapter;
@@ -22,6 +23,12 @@ export interface AccessibilitySdk {
     notifyScreenChange(screenId: string): boolean;
     setViewportMode(config: BottomViewportConfig | null): boolean;
     setGuideState(state: GuideState): void;
+    beginCompletion(onReturn: CompletionReturnCallback): void;
+    extendCompletion(): boolean;
+    cancelCompletion(): void;
+    finishCompletion(): Promise<void>;
+    subscribeCompletion(listener: (state: CompletionState) => void): () => void;
+    readonly completionState: CompletionState;
     resetIdleTimer(): void;
     speak(text: string): boolean;
     inspectLayout(): AccessibilityDiagnostic[];
