@@ -69,11 +69,11 @@ Do not impose SDK-wide minimum font floors: scale the host-computed base size by
 
 **How to apply:** Register only noncritical supporting copy and safe reflow regions; report attempt percentages, residual issue types, and overlap measurements. Test 5%/10% success, rollback, unregistered copy, real button hitboxes, and style restoration in an independent browser fixture.
 
-Smart Guide visibility has a separate 10-second default display timeout with a 15-second maximum; the profile's 10/15/20-second delay controls only when it first appears. When there is no unobstructed popup position, prefer a visible placement inside the usable work area that avoids fixed controls, QR docks, and explicit avoidance regions, even if it overlaps ordinary buttons.
+Smart Guide visibility has a separate 10-second default display timeout with a 15-second maximum; the profile's 10/15/20-second delay controls only when it first appears. In bottom-viewport mode, the fixed guide can use the viewport area above the scroll region's start edge; constrain it by real primary-action, keypad/avoidance, overlay, QR-dock, and fixed-control rectangles instead.
 
-**Why:** Returning `false` whenever ordinary actions cover every preferred position silently removes guidance for users in compact layouts; a bounded display period avoids leaving a transient guide over task controls indefinitely.
+**Why:** Returning `false` whenever ordinary actions cover every preferred position silently removes guidance for users in compact layouts. Constraining a fixed overlay to the scroll area's top can leave only a narrow strip between a keypad and footer, causing overlap even though free viewport space exists above it. A bounded display period avoids leaving a transient guide over task controls indefinitely.
 
-**How to apply:** Keep the display lifetime distinct from the pre-display idle delay, cap configured display durations at 15 seconds, clear the overlay and emphasis on every dismissal path, and browser-test constrained work areas before claiming placement succeeded.
+**How to apply:** Keep the display lifetime distinct from the pre-display idle delay, cap configured display durations at 15 seconds, clear the overlay and emphasis on every dismissal path, and browser-test settled DOM rectangles after scrolling at short/narrow viewports before claiming placement succeeded.
 
 The shared SDK owns only the completion countdown and its state notifications. The kiosk host decides when work is truly complete, owns all business data, and supplies the return-home callback; start the timer only after receipts, printing, or other final host work has finished.
 

@@ -15,6 +15,14 @@
           이 화면은 카페 코드 없이 SDK 패키지를 불러옵니다.
         </p>
         <p data-a11y-detail>개인 데이터 없이 샘플 상태만 사용합니다.</p>
+        <label for="test-pin">확인 번호</label>
+        <input id="test-pin" value="12" inputmode="numeric" />
+        <div class="keypad" aria-label="숫자 키패드">
+          <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+          <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+          <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+          <button type="button">지움</button><button type="button">0</button><button type="button">확인</button>
+        </div>
         <output id="host-state" aria-live="polite">업무 작업 0회</output>
       </main>
       <footer class="bottom-controls" data-a11y-slot="bottom-controls">

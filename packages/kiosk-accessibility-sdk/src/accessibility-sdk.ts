@@ -111,7 +111,9 @@ function positionGuide(
     );
     const safeBottom = controls.reduce((edge, el) =>
       Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.bottom)) - 8;
-    const safeTop = Math.max(0, shell.top) + 8;
+    // The guide is a viewport overlay, so the scroll area's lower start edge
+    // must not trap it between a keypad and the fixed bottom controls.
+    const safeTop = 8;
     const availableHeight = safeBottom - safeTop;
     if (availableHeight < 72) return false;
     overlay.style.position = "fixed";

@@ -51,6 +51,13 @@ sdk.setGuideState({
   delaySeconds: profile.guideDelaySeconds,
   message: { title: "Continue", text: "Use the button.", actionId: "independent.confirm" },
 });
+sdk.setEasyLanguageState({
+  stepId: "independent.confirm.continue",
+  explanations: [
+    { title: "Review", text: "Check the information." },
+    { title: "Continue", text: "Select the continue button." },
+  ],
+});
 sdk.inspectLayout();
 sdk.correctLayout();
 sdk.getLastLayoutCorrections();

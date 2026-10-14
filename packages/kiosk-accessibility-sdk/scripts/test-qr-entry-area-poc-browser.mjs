@@ -14,6 +14,7 @@ const reports = [];
 
 for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
   const [viewWidth, viewHeight] = viewport;
+  let completionAutoReturnMs = null;
   const externalPort = process.env.CDP_PORT ? Number(process.env.CDP_PORT) : undefined;
   const port = externalPort ?? 9690 + index;
   const child = externalPort ? null : spawn(chromium, [
@@ -113,6 +114,21 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!optionReady) throw new Error(`Menu selection/options failed at ${viewWidth}x${viewHeight}.`);
+    await evaluate("document.querySelector('.back-button').click()");
+    let backReady = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      backReady = await evaluate("Boolean(document.querySelector('#menu-product-0'))");
+      if (backReady) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!backReady) throw new Error(`Back from options did not restore menu at ${viewWidth}x${viewHeight}.`);
+    await evaluate("document.querySelector('#menu-product-0').click()");
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      optionReady = await evaluate("Boolean(document.querySelector('#item-add'))");
+      if (optionReady) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!optionReady) throw new Error(`Reopening options after Back failed at ${viewWidth}x${viewHeight}.`);
     await evaluate("document.querySelector('#item-add').click()");
     let confirmReady = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -145,14 +161,33 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!completeReady) throw new Error(`Demo payment completion failed at ${viewWidth}x${viewHeight}.`);
-    await evaluate("document.querySelector('#complete-reset').click()");
-    let resetReady = false;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      resetReady = await evaluate("Boolean(document.querySelector('#start-store') && document.querySelector('.a11y-qr-entry-dock-button'))");
-      if (resetReady) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    const receiptChoiceReady = await evaluate("Boolean(document.querySelector('.receipt-actions button'))");
+    if (!receiptChoiceReady) throw new Error(`Receipt choice missing at ${viewWidth}x${viewHeight}.`);
+    await evaluate("document.querySelector('.receipt-actions button').click()");
+    const receiptResult = await evaluate("document.querySelector('.receipt-result')?.innerText ?? ''");
+    if (!receiptResult.includes("준비했어요")) throw new Error(`Receipt selection failed: ${receiptResult}`);
+    if (viewWidth === 320 && structure === "long-menu" && percent === 60) {
+      const started = await evaluate("performance.now()");
+      let resetReady = false;
+      for (let attempt = 0; attempt < 180; attempt += 1) {
+        resetReady = await evaluate("Boolean(document.querySelector('#start-store') && document.querySelector('.a11y-qr-entry-dock-button'))");
+        if (resetReady) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      completionAutoReturnMs = await evaluate(`performance.now() - ${started}`);
+      if (!resetReady || completionAutoReturnMs < 14_000 || completionAutoReturnMs > 18_000) {
+        throw new Error(`Timed completion auto-return failed (${completionAutoReturnMs}ms) at ${viewWidth}x${viewHeight}.`);
+      }
+    } else {
+      await evaluate("document.querySelector('#complete-reset').click()");
+      let resetReady = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        resetReady = await evaluate("Boolean(document.querySelector('#start-store') && document.querySelector('.a11y-qr-entry-dock-button'))");
+        if (resetReady) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (!resetReady) throw new Error(`Completion reset did not restore the home QR dock at ${viewWidth}x${viewHeight}.`);
     }
-    if (!resetReady) throw new Error(`Completion reset did not restore the home QR dock at ${viewWidth}x${viewHeight}.`);
     }
     await send("Page.navigate", {
       url: `http://127.0.0.1:5000/qr-entry-area-poc.html?structure=${structure}&percent=${percent}`,
@@ -164,7 +199,7 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!result) throw new Error(`QR entry fixture did not finish for ${viewWidth}x${viewHeight} (${structure}).`);
-    reports.push({ viewport: `${viewWidth}x${viewHeight}`, percent, ...result });
+    reports.push({ viewport: `${viewWidth}x${viewHeight}`, percent, ...result, completionAutoReturnMs });
   } finally {
     try { socket?.close(); } catch {}
     if (child?.pid) {

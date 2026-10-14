@@ -35,6 +35,31 @@ body { margin: 0; }
 .eyebrow { color: var(--muted); font-weight: 700; letter-spacing: .08em; }
 h1 { line-height: 1.2; }
 #host-state { display: block; margin-top: 28px; color: var(--muted); }
+input {
+  display: block;
+  width: min(100%, 240px);
+  min-height: 52px;
+  margin: 8px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+.keypad {
+  display: grid;
+  width: min(100%, 260px);
+  grid-template-columns: repeat(3, minmax(44px, 1fr));
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.keypad button {
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
 
 .bottom-controls {
   display: flex;

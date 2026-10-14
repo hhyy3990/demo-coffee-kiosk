@@ -33,7 +33,9 @@ function positionGuide(overlay, target, root, regions) {
         const qrDocks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
         const controls = [...(regions?.bottomControls ?? []), ...qrDocks].filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
         const safeBottom = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.bottom)) - 8;
-        const safeTop = Math.max(0, shell.top) + 8;
+        // The guide is a viewport overlay, so the scroll area's lower start edge
+        // must not trap it between a keypad and the fixed bottom controls.
+        const safeTop = 8;
         const availableHeight = safeBottom - safeTop;
         if (availableHeight < 72)
             return false;

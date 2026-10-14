@@ -33,10 +33,16 @@ const adapter = {
     id: element.dataset.a11yId,
     element,
   })),
-  getLayoutRegions: () => ({
-    bottomControls: [document.querySelector(".bottom-controls")],
-    scrollArea: document.querySelector(".content"),
-  }),
+    getLayoutRegions: () => ({
+      bottomControls: [document.querySelector(".bottom-controls")],
+      scrollArea: document.querySelector(".content"),
+      primaryActions: [
+        continueButton,
+        root.querySelector("#test-pin"),
+        ...root.querySelectorAll(".keypad button"),
+      ].filter(Boolean).map((element) => ({ element })),
+      guidanceAvoidAreas: [root.querySelector(".keypad")].filter(Boolean),
+    }),
 };
 
 const sdk = createAccessibilitySdk({ root, adapter });
@@ -52,10 +58,17 @@ const profile = validateAccessibilityProfile({
 });
 
 sdk.applyProfile(profile);
+const easyExplanations = [
+  { title: "확인 단계", text: "입력한 내용을 확인하는 화면입니다." },
+  { title: "다음으로 이동", text: "내용이 맞으면 계속 버튼을 누릅니다." },
+  { title: "도움 요청", text: "어려우면 직원에게 도움을 요청할 수 있습니다." },
+];
+const guideStep = "host.review.continue";
+sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
 sdk.setGuideState({
-  stepId: "host.review.continue",
+  stepId: guideStep,
   enabled: profile.smartGuide,
-  paused: false,
+  paused: true,
   delaySeconds: profile.guideDelaySeconds,
   message: {
     title: "다음 단계",
@@ -137,7 +150,7 @@ window.__sdkPackageSmoke = {
   },
   updateGuideCopy(text) {
     sdk.setGuideState({
-      stepId: "host.review.continue",
+      stepId: guideStep,
       enabled: profile.smartGuide,
       paused: false,
       delaySeconds: profile.guideDelaySeconds,
@@ -147,6 +160,63 @@ window.__sdkPackageSmoke = {
         actionId: "host.review.continue",
       },
     });
+  },
+  readGuidance() {
+    const panel = root.querySelector(".a11y-guide-toast");
+    const rect = panel?.getBoundingClientRect();
+    return {
+      visible: Boolean(panel),
+      title: panel?.querySelector("[data-a11y-guide-title]")?.textContent ?? "",
+      text: panel?.querySelector("[data-a11y-guide-text]")?.textContent ?? "",
+      page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
+      collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false,
+      pagerHidden: panel?.querySelector("[data-a11y-guide-pager]")?.hidden ?? true,
+      countdown: panel?.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
+      panelRect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
+      actionRect: (() => {
+        const button = continueButton.getBoundingClientRect();
+        return { left: button.left, top: button.top, right: button.right, bottom: button.bottom };
+      })(),
+      keypadRect: (() => {
+        const keypad = root.querySelector(".keypad")?.getBoundingClientRect();
+        return keypad ? { left: keypad.left, top: keypad.top, right: keypad.right, bottom: keypad.bottom } : null;
+      })(),
+    };
+  },
+  startGuide(slow = false, delaySeconds = 10) {
+    const current = validateAccessibilityProfile({ ...profile, slowGuidance: slow });
+    sdk.applyProfile(current);
+    sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
+    sdk.setGuideState({
+      stepId: guideStep,
+      enabled: true,
+      paused: false,
+      delaySeconds,
+      message: { title: "스마트 길잡이", text: "계속 버튼을 눌러 진행하세요.", actionId: "host.review.continue" },
+    });
+    return performance.now();
+  },
+  setViewport(percent) {
+    return sdk.setViewportMode(percent ? { mode: "bottom", heightPercent: percent } : null);
+  },
+  moveToStep(step) {
+    sdk.notifyScreenChange(step);
+    sdk.setEasyLanguageState({
+      stepId: step,
+      explanations: [{ title: "새 단계", text: "새 화면의 안내입니다." }],
+    });
+    sdk.setGuideState({
+      stepId: step,
+      enabled: true,
+      paused: true,
+      delaySeconds: 10,
+      message: { title: "새 단계 안내", text: "새 화면 내용을 확인하세요.", actionId: "host.review.continue" },
+    });
+  },
+  endSession() {
+    const actionCount = hostState.actionCount;
+    sdk.endSession();
+    return { panelVisible: Boolean(root.querySelector(".a11y-guide-toast")), actionCount: hostState.actionCount };
   },
   destroy() {
     sdk.destroy();

@@ -386,33 +386,216 @@ try {
   if (cases.length !== expectedCases) {
     throw new Error(`Expected ${expectedCases} consumer browser cases, got ${cases.length}.`);
   }
+  const guidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
+  const guidanceLayouts = [];
   await send("Page.navigate", { url: baseUrl });
   let guideFixtureLoaded = false;
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    guideFixtureLoaded = await evaluate("Boolean(window.__sdkPackageSmoke)");
+    guideFixtureLoaded = await evaluate("Boolean(window.__sdkPackageSmoke?.readGuidance)");
     if (guideFixtureLoaded) break;
     await wait(50);
   }
-  if (!guideFixtureLoaded) throw new Error("Independent Smart Guide fixture did not load.");
-  await wait(2_000);
-  await evaluate(`window.__sdkPackageSmoke.updateGuideCopy("같은 업무 단계에서 갱신한 안내 문구입니다.")`);
-  await wait(8_300);
-  const independentGuide = await evaluate(`(() => {
-    const guide = document.querySelector(".a11y-guide-toast");
-    return {
-      visible: Boolean(guide),
-      text: guide?.innerText ?? "",
-      actionHighlighted: document.querySelector("#host-continue")?.classList.contains("a11y-guide-emphasis") ?? false,
-    };
-  })()`);
-  if (!independentGuide.visible ||
-    !independentGuide.text.includes("같은 업무 단계에서 갱신한 안내 문구입니다.") ||
-    !independentGuide.actionHighlighted) {
-    throw new Error(`Independent Smart Guide step/timer update failed: ${JSON.stringify(independentGuide)}`);
+  if (!guideFixtureLoaded) throw new Error("Independent shared-guidance fixture did not load.");
+  let easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (!easy.visible || easy.page !== "1/3") throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
+  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
+  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
+  if ((await evaluate("window.__sdkPackageSmoke.readGuidance()")).page !== "3/3") {
+    throw new Error("Next-page clicks did not reach explanation 3/3.");
+  }
+  await evaluate("document.querySelector('[data-a11y-guide-previous]').click()");
+  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (easy.page !== "2/3" || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
+
+  for (const [width, height] of guidanceViewports) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
+    });
+    for (const percent of [60, 70, 80]) {
+      await evaluate(`window.__sdkPackageSmoke.setViewport(${percent})`);
+      await wait(80);
+      const state = await evaluate(`(async () => {
+        const selectors = ["#host-continue", "#test-pin", ".keypad button"];
+        const hitTargets = selectors.map((selector) => {
+          const target = document.querySelector(selector);
+          target?.scrollIntoView({ block: "center" });
+          const r = target?.getBoundingClientRect();
+          const hit = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+          return Boolean(target && r && r.width && r.height && (hit === target || target.contains(hit)));
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const panel = document.querySelector(".a11y-guide-toast");
+        const p = panel?.getBoundingClientRect();
+        const rect = (el) => {
+          const r = el?.getBoundingClientRect();
+          return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom } : null;
+        };
+        return {
+          visible: Boolean(panel), page: panel?.querySelector("[data-a11y-guide-page]")?.textContent,
+          collapsed: panel?.classList.contains("a11y-guide-collapsed"),
+          panel: rect(panel), action: rect(document.querySelector("#host-continue")),
+          keypad: rect(document.querySelector(".keypad")), hitTargets,
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+        };
+      })()`);
+      const overlaps = (a, b) => a && b &&
+        Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) > 1 &&
+        Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) > 1;
+      const safe = state.visible && !state.horizontalOverflow &&
+        !overlaps(state.panel, state.action) && !overlaps(state.panel, state.keypad) &&
+        state.hitTargets.every(Boolean);
+      guidanceLayouts.push({ viewport: `${width}x${height}`, bottomPercent: percent, ...state, safe });
+      if (!safe) throw new Error(`Guidance panel blocks controls or is unreachable: ${JSON.stringify(guidanceLayouts.at(-1))}`);
+    }
+    await evaluate("window.__sdkPackageSmoke.setViewport(null)");
+  }
+
+  await evaluate(`window.__sdkPackageSmoke.moveToStep("host.payment")`);
+  const singlePage = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (!singlePage.visible || !singlePage.pagerHidden || singlePage.title !== "새 단계") {
+    throw new Error(`Single explanation or step change failed: ${JSON.stringify(singlePage)}`);
+  }
+  const beforeEnd = await evaluate("window.__sdkPackageSmoke.read().actionCount");
+  const ended = await evaluate("window.__sdkPackageSmoke.endSession()");
+  if (ended.panelVisible || ended.actionCount !== beforeEnd) {
+    throw new Error(`endSession left guidance active or changed host business data: ${JSON.stringify(ended)}`);
+  }
+
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
+  });
+  await send("Page.navigate", { url: baseUrl });
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    guideFixtureLoaded = await evaluate("Boolean(window.__sdkPackageSmoke?.readGuidance)");
+    if (guideFixtureLoaded) break;
+    await wait(50);
+  }
+  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
+  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  const delayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+  let defaultGuide;
+  for (let attempt = 0; attempt < 115; attempt += 1) {
+    defaultGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (defaultGuide.title === "스마트 길잡이") break;
+    await wait(100);
+  }
+  const defaultDelayMs = await evaluate(`performance.now() - ${delayStarted}`);
+  if (defaultGuide?.title !== "스마트 길잡이" || defaultDelayMs < 9_500 || defaultDelayMs > 11_500 ||
+    !defaultGuide.collapsed || !defaultGuide.countdown.includes("10")) {
+    throw new Error(`Real 10-second delay/guide start failed (${defaultDelayMs}ms): ${JSON.stringify(defaultGuide)}`);
+  }
+  const defaultVisibleAt = await evaluate("performance.now()");
+  await wait(1_200);
+  const defaultCountdownAfter = await evaluate("window.__sdkPackageSmoke.readGuidance().countdown");
+  if (Number.parseInt(defaultCountdownAfter, 10) >= 10) {
+    throw new Error(`Default guide countdown did not decrease: ${defaultCountdownAfter}`);
+  }
+  let defaultReturned;
+  for (let attempt = 0; attempt < 115; attempt += 1) {
+    defaultReturned = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (defaultReturned.title === "다음으로 이동") break;
+    await wait(100);
+  }
+  const defaultVisibleMs = await evaluate(`performance.now() - ${defaultVisibleAt}`);
+  if (defaultReturned?.title !== "다음으로 이동" || defaultReturned.page !== "2/3" ||
+    !defaultReturned.collapsed || defaultVisibleMs < 9_300 || defaultVisibleMs > 11_500) {
+    throw new Error(`Real 10-second guide return failed (${defaultVisibleMs}ms): ${JSON.stringify(defaultReturned)}`);
+  }
+  const slowDelayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(true, 10)");
+  let slowGuide;
+  for (let attempt = 0; attempt < 115; attempt += 1) {
+    slowGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (slowGuide.title === "스마트 길잡이") break;
+    await wait(100);
+  }
+  const slowDelayMs = await evaluate(`performance.now() - ${slowDelayStarted}`);
+  if (slowGuide?.title !== "스마트 길잡이" || slowDelayMs < 9_500 || slowDelayMs > 11_500 ||
+    !slowGuide.collapsed || !slowGuide.countdown.includes("15")) {
+    throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
+  }
+  const slowVisibleAt = await evaluate("performance.now()");
+  await wait(1_200);
+  const slowCountdownAfter = await evaluate("window.__sdkPackageSmoke.readGuidance().countdown");
+  if (Number.parseInt(slowCountdownAfter, 10) >= 15) {
+    throw new Error(`Slow guide countdown did not decrease: ${slowCountdownAfter}`);
+  }
+  let slowReturned;
+  for (let attempt = 0; attempt < 165; attempt += 1) {
+    slowReturned = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (slowReturned.title === "다음으로 이동") break;
+    await wait(100);
+  }
+  const slowVisibleMs = await evaluate(`performance.now() - ${slowVisibleAt}`);
+  if (slowReturned?.title !== "다음으로 이동" || slowReturned.page !== "2/3" ||
+    !slowReturned.collapsed || slowVisibleMs < 14_300 || slowVisibleMs > 16_500) {
+    throw new Error(`Real 15-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
+  }
+
+  const delay15Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 15)");
+  let guide15;
+  for (let attempt = 0; attempt < 165; attempt += 1) {
+    guide15 = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (guide15.title === "스마트 길잡이") break;
+    await wait(100);
+  }
+  const guideDelay15 = await evaluate(`performance.now() - ${delay15Started}`);
+  if (guide15?.title !== "스마트 길잡이" || guideDelay15 < 14_300 || guideDelay15 > 16_500) {
+    throw new Error(`Real guideDelaySeconds=15 failed (${guideDelay15}ms): ${JSON.stringify(guide15)}`);
+  }
+  await evaluate("document.querySelector('.a11y-guide-close').click()");
+  if ((await evaluate("window.__sdkPackageSmoke.readGuidance()")).title !== "다음으로 이동") {
+    throw new Error("Closing the 15-second-delay guide did not return to easy-language page 2/3.");
+  }
+
+  const delay20Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 20)");
+  let guide20;
+  for (let attempt = 0; attempt < 215; attempt += 1) {
+    guide20 = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (guide20.title === "스마트 길잡이") break;
+    await wait(100);
+  }
+  const guideDelay20 = await evaluate(`performance.now() - ${delay20Started}`);
+  if (guide20?.title !== "스마트 길잡이" || guideDelay20 < 19_300 || guideDelay20 > 21_500) {
+    throw new Error(`Real guideDelaySeconds=20 failed (${guideDelay20}ms): ${JSON.stringify(guide20)}`);
+  }
+  await evaluate("document.querySelector('.a11y-guide-close').click()");
+  await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+  let staleTimerGuide;
+  for (let attempt = 0; attempt < 115; attempt += 1) {
+    staleTimerGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (staleTimerGuide.title === "스마트 길잡이") break;
+    await wait(100);
+  }
+  if (staleTimerGuide?.title !== "스마트 길잡이") {
+    throw new Error(`Could not start the guide for the stale-timer transition check: ${JSON.stringify(staleTimerGuide)}`);
+  }
+  await wait(1_800);
+  await evaluate(`window.__sdkPackageSmoke.moveToStep("host.payment")`);
+  await wait(9_000);
+  const afterOldDismissDeadline = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (afterOldDismissDeadline.title !== "새 단계" || !afterOldDismissDeadline.visible ||
+    !afterOldDismissDeadline.pagerHidden) {
+    throw new Error(`An old guide timeout affected the next step: ${JSON.stringify(afterOldDismissDeadline)}`);
+  }
+  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  const expanded = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (expanded.collapsed || expanded.title !== "새 단계" || !expanded.pagerHidden) {
+    throw new Error(`Single-page panel could not reopen after the timer check: ${JSON.stringify(expanded)}`);
   }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
-    independentGuideStepUpdate: independentGuide,
+    sharedGuidanceLayouts: guidanceLayouts,
+    easyPageAfterEndSession: ended,
+    realTimingMs: {
+      guideDelay10: defaultDelayMs,
+      defaultDisplay10: defaultVisibleMs,
+      slowDelay10: slowDelayMs,
+      slowDisplay15: slowVisibleMs,
+      guideDelay15,
+      guideDelay20,
+      countdownDecreased: { default: defaultCountdownAfter, slow: slowCountdownAfter },
+    },
     fontCorrectionCases,
     cases,
     result: "PASS",
