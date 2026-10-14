@@ -1,4 +1,4 @@
-import { validateAccessibilityProfile } from "./profile.js";
+import { PROFILE_LANGUAGES, validateAccessibilityProfile, } from "./profile.js";
 export const CENTRAL_QR_ORIGIN = "https://naebangsikqr.replit.app";
 const TOKEN_PATTERN = /^[A-Za-z0-9._~+\/=-]{20,128}$/;
 const PROFILE_ENDPOINT = "/api/qr-profile";
@@ -36,7 +36,8 @@ function profileFromCentralResponse(body) {
     if (!body || typeof body !== "object" || Array.isArray(body))
         throw new Error("QR_UNAVAILABLE");
     const record = body;
-    if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== 3) {
+    if (record.schemaVersion !== 1 && record.schemaVersion !== 2 &&
+        record.schemaVersion !== 3 && record.schemaVersion !== 4) {
         throw new Error("QR_UNAVAILABLE");
     }
     if (typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) {
@@ -50,6 +51,7 @@ function profileFromCentralResponse(body) {
     if (record.schemaVersion >= 2 && "simplifiedLayout" in profileData) {
         throw new Error("QR_UNAVAILABLE");
     }
+    const schemaVersion = record.schemaVersion;
     const validEnums = (profileData.textSize === "standard" || profileData.textSize === "large" || profileData.textSize === "extraLarge") &&
         (profileData.buttonSize === "standard" || profileData.buttonSize === "large") &&
         (profileData.contrast === "standard" || profileData.contrast === "high") &&
@@ -59,11 +61,18 @@ function profileFromCentralResponse(body) {
         typeof profileData.voiceGuidance === "boolean";
     if (!validEnums || !validBooleans)
         throw new Error("QR_UNAVAILABLE");
-    if (record.schemaVersion < 3) {
+    if (schemaVersion < 3) {
         if (typeof profileData.bottomControls !== "boolean")
             throw new Error("QR_UNAVAILABLE");
         const { simplifiedLayout: _legacySimplifiedLayout, ...supportedPreferences } = profileData;
-        return validateAccessibilityProfile({ ...supportedPreferences, viewportMode: null });
+        return validateAccessibilityProfile({
+            ...supportedPreferences,
+            viewportMode: null,
+            language: "ko",
+            stepByStepGuidance: false,
+            conciseGuidance: false,
+            slowGuidance: false,
+        });
     }
     if ("bottomControls" in profileData || "simplifiedLayout" in profileData)
         throw new Error("QR_UNAVAILABLE");
@@ -81,7 +90,24 @@ function profileFromCentralResponse(body) {
         !("viewportMode" in profileData)) {
         throw new Error("QR_UNAVAILABLE");
     }
-    return validateAccessibilityProfile({ ...profileData, bottomControls: false });
+    if (schemaVersion === 4) {
+        if (!PROFILE_LANGUAGES.includes(profileData.language) ||
+            typeof profileData.stepByStepGuidance !== "boolean" ||
+            typeof profileData.conciseGuidance !== "boolean" ||
+            typeof profileData.slowGuidance !== "boolean") {
+            throw new Error("QR_UNAVAILABLE");
+        }
+    }
+    return validateAccessibilityProfile({
+        ...profileData,
+        bottomControls: false,
+        ...(schemaVersion === 3 ? {
+            language: "ko",
+            stepByStepGuidance: false,
+            conciseGuidance: false,
+            slowGuidance: false,
+        } : {}),
+    });
 }
 export function createQrProfileClient(options = {}) {
     const fetcher = options.fetcher ?? fetch;

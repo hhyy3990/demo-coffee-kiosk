@@ -1,4 +1,4 @@
-export { ACCESSIBILITY_PROFILE_SCHEMA_VERSION, ACCESSIBILITY_SDK_VERSION, DEFAULT_ACCESSIBILITY_PROFILE, accessibilityClasses, validateAccessibilityProfile, } from "./profile.js";
+export { ACCESSIBILITY_PROFILE_SCHEMA_VERSION, ACCESSIBILITY_SDK_VERSION, DEFAULT_ACCESSIBILITY_PROFILE, PROFILE_LANGUAGES, accessibilityClasses, validateAccessibilityProfile, } from "./profile.js";
 export { createAccessibilitySdk, } from "./accessibility-sdk.js";
 export { DEFAULT_COMPLETION_SECONDS, } from "./completion.js";
 export {} from "./bottom-viewport.js";

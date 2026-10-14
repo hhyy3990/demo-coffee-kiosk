@@ -2,12 +2,14 @@ export {
   ACCESSIBILITY_PROFILE_SCHEMA_VERSION,
   ACCESSIBILITY_SDK_VERSION,
   DEFAULT_ACCESSIBILITY_PROFILE,
+  PROFILE_LANGUAGES,
   accessibilityClasses,
   validateAccessibilityProfile,
   type AccessibilityProfile,
   type ButtonSize,
   type ContrastMode,
   type GuideDelaySeconds,
+  type ProfileLanguage,
   type TextSize,
 } from "./profile.ts";
 export {

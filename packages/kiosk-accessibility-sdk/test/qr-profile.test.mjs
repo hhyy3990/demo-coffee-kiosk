@@ -8,6 +8,12 @@ const goodProfile = {
   bottomControls: true, smartGuide: true,
   voiceGuidance: true, guideDelaySeconds: 10,
 };
+const v4Profile = {
+  textSize: "standard", buttonSize: "standard", contrast: "standard",
+  easyLanguage: false, viewportMode: null, smartGuide: false,
+  guideDelaySeconds: 15, voiceGuidance: false, language: "ko",
+  stepByStepGuidance: false, conciseGuidance: false, slowGuidance: false,
+};
 const token = "valid-test-token-123456789";
 const officialUrl = `${CENTRAL_QR_ORIGIN}/profile?token=${token}`;
 const centralResponse = (schemaVersion, preferences = goodProfile) => ({
@@ -58,6 +64,28 @@ test("v1 and v2 profiles apply only after strict required-field validation", asy
     assert.equal(profile.textSize, "extraLarge");
     assert.equal(profile.viewportMode, null);
     assert.equal("simplifiedLayout" in profile, false);
+  }
+});
+
+test("v1-v3 normalize all v4-only preferences to inactive defaults", async () => {
+  for (const schemaVersion of [1, 2, 3]) {
+    const preferences = schemaVersion < 3
+      ? { ...goodProfile, language: "en", stepByStepGuidance: true, conciseGuidance: true, slowGuidance: true }
+      : {
+          textSize: "large", buttonSize: "large", contrast: "high", easyLanguage: true,
+          viewportMode: { mode: "bottom", heightPercent: 60 }, smartGuide: true,
+          guideDelaySeconds: 20, voiceGuidance: true,
+          language: "vi", stepByStepGuidance: true, conciseGuidance: true, slowGuidance: true,
+        };
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify(centralResponse(schemaVersion, preferences)), { status: 200 }),
+    });
+    const profile = await client.resolve(token);
+    assert.deepEqual(
+      [profile.language, profile.stepByStepGuidance, profile.conciseGuidance, profile.slowGuidance],
+      ["ko", false, false, false],
+    );
+    if (schemaVersion === 3) assert.deepEqual(profile.viewportMode, { mode: "bottom", heightPercent: 60 });
   }
 });
 
@@ -130,10 +158,66 @@ test("v3 rejects invalid, missing, string-valued and legacy viewport settings", 
   }
 });
 
+test("v4 accepts seven languages, all guidance-preference combinations, and every supported viewport", async () => {
+  const languages = ["ko", "zh", "vi", "en", "th", "uz", "ja"];
+  for (const language of languages) {
+    for (let flags = 0; flags < 8; flags += 1) {
+      const preferences = {
+        ...v4Profile,
+        language,
+        stepByStepGuidance: Boolean(flags & 1),
+        conciseGuidance: Boolean(flags & 2),
+        slowGuidance: Boolean(flags & 4),
+      };
+      const client = createQrProfileClient({
+        fetcher: async () => new Response(JSON.stringify(centralResponse(4, preferences)), { status: 200 }),
+      });
+      const profile = await client.resolve(token);
+      assert.equal(profile.language, language);
+      assert.deepEqual(
+        [profile.stepByStepGuidance, profile.conciseGuidance, profile.slowGuidance],
+        [preferences.stepByStepGuidance, preferences.conciseGuidance, preferences.slowGuidance],
+      );
+    }
+  }
+  for (const viewportMode of [null, ...[60, 70, 80].map((heightPercent) => ({
+    mode: "bottom", heightPercent,
+  }))]) {
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(
+        JSON.stringify(centralResponse(4, { ...v4Profile, viewportMode })),
+        { status: 200 },
+      ),
+    });
+    assert.deepEqual((await client.resolve(token)).viewportMode, viewportMode);
+  }
+});
+
+test("v4 rejects malformed or incomplete language and guidance preferences", async () => {
+  const invalidPreferences = [
+    { ...v4Profile, language: "fr" },
+    { ...v4Profile, language: "" },
+    { ...v4Profile, language: 7 },
+    { ...v4Profile, language: undefined },
+    { ...v4Profile, stepByStepGuidance: "true" },
+    { ...v4Profile, stepByStepGuidance: undefined },
+    { ...v4Profile, conciseGuidance: 0 },
+    { ...v4Profile, conciseGuidance: undefined },
+    { ...v4Profile, slowGuidance: null },
+    { ...v4Profile, slowGuidance: undefined },
+  ];
+  for (const preferences of invalidPreferences) {
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify(centralResponse(4, preferences)), { status: 200 }),
+    });
+    await assert.rejects(client.resolve(token), /QR_UNAVAILABLE/);
+  }
+});
+
 test("invalid QR data, unknown schema and unsupported response envelopes fail closed", async () => {
   let requests = 0;
   const unsupportedCases = [
-    { schemaVersion: 4, preferences: goodProfile },
+    { schemaVersion: 5, preferences: goodProfile },
     { schemaVersion: 2, preferences: { ...goodProfile, simplifiedLayout: true } },
     { schemaVersion: 2, preferences: { ...goodProfile, textSize: "huge" } },
     { schemaVersion: 2, profile: { preferences: goodProfile } },

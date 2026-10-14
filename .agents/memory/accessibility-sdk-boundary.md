@@ -15,11 +15,11 @@ Observers that trigger profile or layout work must ignore SDK-owned hint/guide i
 
 **How to apply:** When integrating another kiosk, implement its semantic adapter and host-specific guide rules, then use the SDK only for presentation, timing, voice, and observation. Filter SDK-owned nodes at observer boundaries; prefer verified CSS adjustments, and never let diagnostics or AI mutate business DOM or execute actions.
 
-The SDK's lower-viewport method accepts 60%, 70%, and 80% heights. Central QR profile v3 carries an explicit `preferences.viewportMode` (`null` or `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`) and the SDK applies it through the shared layout path. Normalize v1/v2 to `null`; never infer viewport mode from legacy `bottomControls`. Measure the SDK-owned QR dock and registered fixed controls when calculating the usable viewport.
+The SDK's lower-viewport method accepts 60%, 70%, and 80% heights. Central QR profiles v3/v4 carry explicit `preferences.viewportMode` (`null` or `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`) and the SDK applies it through the shared layout path. Normalize v1/v2 to `null`; never infer viewport mode from legacy `bottomControls`. v4 adds language and guidance-style preferences; older schemas must normalize these to inactive defaults.
 
-**Why:** v3 makes the requested viewport mode explicit without reinterpreting legacy flags; each host still has different fixed controls and scroll ownership. Browser verification showed those obstacles must be measured to keep the final item reachable.
+**Why:** Explicit viewport modes avoid reinterpreting legacy flags, while version-gating the new v4 preferences prevents stale QR profiles from unexpectedly enabling new behavior. Each host still has different fixed controls and scroll ownership.
 
-**How to apply:** Route validated v3 profile settings through the SDK's common viewport controller; keep v1/v2 behavior unchanged. Restore SDK-owned classes and inline styles on `endSession()`. Verify host scroll ownership, fixed/modal overlays, and guidance placement on each kiosk. Transform/contain ancestors and unusual nested scroll layouts still require host-specific testing.
+**How to apply:** Route validated v3/v4 profile settings through the SDK's common viewport controller; preserve v1-v3 behavior and keep v4-only preferences inert for older schemas. Restore SDK-owned classes and inline styles on `endSession()`. Verify host scroll ownership, fixed/modal overlays, and guidance placement on each kiosk. Transform/contain ancestors and unusual nested scroll layouts still require host-specific testing.
 
 Overlay-only DOM mutations should update the overlay registry without reconfiguring the underlying scroll owner or fixed-control geometry. Re-measure only when the registered scroll target or anchored control set changes.
 

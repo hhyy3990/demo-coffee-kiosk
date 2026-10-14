@@ -1,0 +1,256 @@
+# 내 방식 QR — 공통 SDK의 QR v4 프로필 지원 개발
+
+## 0. 작업 대상
+
+현재 프로젝트는 **데모커피 Replit**입니다.
+
+이 프로젝트에서 공통 접근성 SDK의 원본을 관리하고 있습니다.
+
+현재 공통 SDK 릴리스 버전은 `@naebangsik/kiosk-accessibility-sdk@0.5.11`입니다.
+
+중앙 '내 방식 QR' 프로젝트에서는 QR 프로필 v4를 Development에 구현하고 검증했습니다.
+
+이번 작업의 목표는 **공통 SDK가 중앙 QR v4 응답을 안전하게 읽고 네 가지 신규 안내 선호를 보존하도록 확장하는 것**입니다.
+
+이번 단계에서는 새로운 안내창 UI를 구현하지 않습니다.
+
+## 1. 기존 SDK 분석
+
+작업 전에 다음을 확인하세요.
+
+- SDK의 QR 조회 및 응답 검증 구조
+- 지원하는 schemaVersion 범위
+- v1/v2/v3 프로필 정규화 및 기본값
+- SDK가 프로필 설정을 저장·적용·초기화하는 구조
+- 호스트에 전달하는 접근성 프로필 타입
+- notifyScreenChange(), endSession(), setGuideState() 등 기존 API
+- v0.5.11 완료 후 15초 자동 복귀 기능
+- 기존 SDK 테스트 및 tarball 패키징 방식
+
+기존 코드를 무조건 재작성하지 말고 필요한 부분만 변경하세요.
+
+## 2. 중앙 QR v4 응답 계약
+
+중앙 서비스의 v4 응답 구조는 다음과 같습니다.
+
+```json
+{
+  "schemaVersion": 4,
+  "preferences": {
+    "textSize": "standard",
+    "buttonSize": "standard",
+    "contrast": "standard",
+    "easyLanguage": false,
+    "viewportMode": null,
+    "smartGuide": false,
+    "guideDelaySeconds": 15,
+    "voiceGuidance": false,
+    "language": "ko",
+    "stepByStepGuidance": false,
+    "conciseGuidance": false,
+    "slowGuidance": false
+  },
+  "updatedAt": "2026-01-01T00:00:00.000Z"
+}
+```
+
+신규 필드는 다음과 같습니다.
+
+| 필드 | 타입 | 기본값 |
+|---|---|---|
+| language | ko, zh, vi, en, th, uz, ja | ko |
+| stepByStepGuidance | boolean | false |
+| conciseGuidance | boolean | false |
+| slowGuidance | boolean | false |
+
+이 계약을 기준으로 SDK v4 응답 검증을 구현하세요.
+
+## 3. QR v1~v3 하위 호환성
+
+기존 QR 사용자들의 동작을 유지해야 합니다.
+
+- v1 응답 지원 유지
+- v2 응답 지원 유지
+- v3 응답 지원 유지
+- v4 응답 신규 지원
+- v1~v3에 없는 신규 설정은 기본값으로 정규화
+- v3 viewportMode 유지
+- 레거시 bottomControls로 v3 하단 모드를 잘못 활성화하지 않기
+- 제거된 simplifiedLayout 기능 복원 금지
+- QR 토큰 조회 방식 유지
+- 새 프로필 적용 후 endSession()에서 설정 초기화
+
+구버전 QR에서 신규 선호가 활성화되는 일이 없어야 합니다.
+
+## 4. 신규 선호값 처리
+
+### language
+
+허용값:
+
+- ko
+- zh
+- vi
+- en
+- th
+- uz
+- ja
+
+현재는 선호 언어 정보를 SDK가 보존하고 호스트에서 사용할 수 있는 형태로 노출합니다.
+
+**이번 단계에서 키오스크 UI를 자동 번역하지 않습니다.**
+
+### stepByStepGuidance
+
+순서대로 안내받기 선호를 boolean으로 보존합니다.
+
+향후 AI 스마트 길잡이 문구에 사용될 값입니다.
+
+### conciseGuidance
+
+짧게 안내받기 선호를 boolean으로 보존합니다.
+
+stepByStepGuidance와 동시에 true일 수 있어야 합니다.
+
+### slowGuidance
+
+천천히 안내받기 선호를 boolean으로 보존합니다.
+
+향후 스마트 길잡이 표시 유지 시간을 다음과 같이 설정할 예정입니다.
+
+- false: 10초
+- true: 15초
+
+하지만 이번 단계에서는 기존 v0.5.11의 10초 자동 닫힘 동작을 임의 변경하지 않습니다.
+
+`guideDelaySeconds` 10·15·20초는 표시 전 대기 시간으로 계속 유지합니다.
+
+## 5. SDK 공개 API 및 타입
+
+실제 SDK 코드 관례에 맞춰 신규 필드를 기존 프로필 타입과 적용 상태에 안전하게 추가하세요.
+
+다음 요구사항을 만족해야 합니다.
+
+- 기존 호스트가 사용하는 공개 API 호환성 유지
+- 새 필드를 받지 않는 기존 호출자도 정상 동작
+- SDK 소비자가 신규 값을 읽을 수 있음
+- 새 필드가 누락된 레거시 데이터에도 안전한 기본값 사용
+- 잘못된 언어 코드 및 타입 거부
+- 지원하지 않는 schemaVersion은 명확한 오류 처리
+- v4 프로필 적용 후 호스트가 현재 설정을 읽을 때 값 일치
+- 세션 종료 후 기본 설정으로 복원
+
+신규 필드를 읽지 못하는 상태를 조용히 성공으로 처리하지 마세요.
+
+## 6. 독립 소비자 검증
+
+데모커피 호스트에 의존하지 않는 독립 HTML·JavaScript 소비자 fixture에서 테스트하세요.
+
+검증할 내용:
+
+1. v1 QR 적용
+2. v2 QR 적용
+3. v3 QR 적용
+4. v4 QR 적용
+5. 신규 언어 7개 각각 적용
+6. 신규 안내 선호 ON/OFF 조합
+7. 기존 글씨·버튼·고대비 적용 유지
+8. viewportMode null / 60 / 70 / 80
+9. 잘못된 신규 설정 거부
+10. endSession() 뒤 기본값 복귀
+
+중앙 QR API를 실제로 호출할 수 없다면 동일한 응답 계약의 모의 fixture를 사용하고, 실제 중앙 API 검증 여부는 분리하여 보고하세요.
+
+## 7. 기존 SDK 회귀
+
+아래 기능을 유지합니다.
+
+- 큰 글씨·매우 큰 글씨
+- 큰 버튼
+- 고대비
+- 쉬운 말
+- 스마트 길잡이
+- 음성 안내
+- QR 도크
+- 하단 조작 60·70·80%
+- 스크롤 안내
+- 선택적 글씨 크기 보정
+- 스마트 길잡이 stepId
+- 스마트 길잡이 표시 전 10/15/20초
+- 표시 후 10초 자동 닫힘
+- 완료 후 15초 자동 복귀
+- 시간 연장
+- 세션 초기화
+- 기존 SDK 호스트 연동
+
+v4 설정을 읽기 위한 변경 때문에 기존 안내창이나 QR 도크가 달라지면 안 됩니다.
+
+## 8. 패키지 릴리스
+
+SDK 검증이 모두 성공하면 버전을 **v0.5.12**로 올리고 tarball을 생성하세요.
+
+패키지명:
+
+`@naebangsik/kiosk-accessibility-sdk`
+
+출력 파일:
+
+`packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.12.tgz`
+
+기존 v0.5.5~v0.5.11 tarball은 보존하세요.
+
+단위 테스트, 타입 검사, 빌드, 독립 소비자 설치 및 브라우저 검증이 모두 통과해야 합니다.
+
+## 9. 작업 범위 제한
+
+- 데모커피 프로젝트의 공통 SDK만 수정
+- 중앙 QR 프로젝트 수정 금지
+- 무인민원발급기 프로젝트 수정 금지
+- Production DB 변경 금지
+- Publish 금지
+- 공통 안내창 접기·펼치기 구현 금지
+- 스마트 길잡이 15초 표시 기능 구현 금지
+- 새로운 AI 설명 API 구현 금지
+- 실제 다국어 번역 구현 금지
+- 새로운 병원 키오스크 개발 금지
+- 검색엔진 등록 금지
+
+기존 데모커피 주문 흐름은 정상 동작해야 합니다.
+
+## 10. 완료 보고
+
+다음 항목을 보고하세요.
+
+A. 기존 SDK의 QR 스키마 처리 구조
+
+B. v4 필드 지원 방식
+
+C. v1~v3 하위 호환성
+
+D. 신규 언어 7개 검증
+
+E. 안내 선호 3개 검증
+
+F. 현재 SDK 공개 API 변경 사항
+
+G. v4 프로필 적용 및 endSession() 초기화
+
+H. 독립 소비자 fixture 결과
+
+I. 기존 SDK 회귀 테스트 결과
+
+J. 데모커피 주문 흐름 회귀 결과
+
+K. 타입 검사·빌드·tarball 검증
+
+L. 생성한 v0.5.12 tarball 위치
+
+M. 변경 파일 목록
+
+N. 남아 있는 제한사항
+
+O. Publish 미실행 확인
+
+**성공 기준: QR v4 응답을 공통 SDK가 안전하게 해석·적용하고 신규 설정을 보존하며, 기존 QR v1~v3와 기존 키오스크 기능이 모두 유지되는 것입니다.**
+
+실제 다국어 표시나 AI 설명 기능까지 구현했다고 보고하지 마세요.

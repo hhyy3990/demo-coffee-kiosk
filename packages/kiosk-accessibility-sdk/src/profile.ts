@@ -1,12 +1,14 @@
 import type { BottomViewportConfig } from "./bottom-viewport.ts";
 
-export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 3 as const;
-export const ACCESSIBILITY_SDK_VERSION = "0.5.11" as const;
+export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 4 as const;
+export const ACCESSIBILITY_SDK_VERSION = "0.5.12" as const;
 
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
 export type ContrastMode = "standard" | "high";
 export type GuideDelaySeconds = 10 | 15 | 20;
+export const PROFILE_LANGUAGES = Object.freeze(["ko", "zh", "vi", "en", "th", "uz", "ja"] as const);
+export type ProfileLanguage = (typeof PROFILE_LANGUAGES)[number];
 
 /**
  * This field set intentionally matches the existing central QR profile.
@@ -24,6 +26,10 @@ export interface AccessibilityProfile {
   smartGuide: boolean;
   voiceGuidance: boolean;
   guideDelaySeconds: GuideDelaySeconds;
+  language: ProfileLanguage;
+  stepByStepGuidance: boolean;
+  conciseGuidance: boolean;
+  slowGuidance: boolean;
 }
 
 export const DEFAULT_ACCESSIBILITY_PROFILE: Readonly<AccessibilityProfile> = Object.freeze({
@@ -36,6 +42,10 @@ export const DEFAULT_ACCESSIBILITY_PROFILE: Readonly<AccessibilityProfile> = Obj
   smartGuide: false,
   voiceGuidance: false,
   guideDelaySeconds: 15,
+  language: "ko",
+  stepByStepGuidance: false,
+  conciseGuidance: false,
+  slowGuidance: false,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -56,6 +66,9 @@ export function validateAccessibilityProfile(input: unknown): AccessibilityProfi
     (requestedViewportPercent === 60 || requestedViewportPercent === 70 || requestedViewportPercent === 80)
     ? { mode: "bottom" as const, heightPercent: requestedViewportPercent as 60 | 70 | 80 }
     : null;
+  const language = PROFILE_LANGUAGES.includes(input.language as ProfileLanguage)
+    ? input.language as ProfileLanguage
+    : "ko";
 
   return {
     textSize,
@@ -67,6 +80,10 @@ export function validateAccessibilityProfile(input: unknown): AccessibilityProfi
     smartGuide: input.smartGuide === true,
     voiceGuidance: input.voiceGuidance === true,
     guideDelaySeconds,
+    language,
+    stepByStepGuidance: input.stepByStepGuidance === true,
+    conciseGuidance: input.conciseGuidance === true,
+    slowGuidance: input.slowGuidance === true,
   };
 }
 

@@ -361,6 +361,7 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
       ...sdk.DEFAULT_ACCESSIBILITY_PROFILE,
       textSize: "extraLarge", buttonSize: "large", contrast: "high",
       bottomControls: true, smartGuide: true, voiceGuidance: true,
+      language: "ja", stepByStepGuidance: true, conciseGuidance: true, slowGuidance: true,
     });
     h.sdk.setGuideState({
       enabled: true,
@@ -391,6 +392,37 @@ test("endSession clears profile classes, pending guide and speech, and leaves ho
     staleGuideTimer?.();
     h.timerCallbacks.get(dismissTimerId)?.();
     assert.equal(h.children.length, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test("a resolved v4 QR profile is exposed through the SDK and reset by endSession", async () => {
+  const h = createSessionHarness();
+  try {
+    const preferences = {
+      textSize: "extraLarge", buttonSize: "large", contrast: "high",
+      easyLanguage: true, viewportMode: null,
+      smartGuide: true, guideDelaySeconds: 20, voiceGuidance: true,
+      language: "th", stepByStepGuidance: true,
+      conciseGuidance: true, slowGuidance: true,
+    };
+    const client = sdk.createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify({
+        schemaVersion: 4,
+        preferences,
+        updatedAt: "2026-10-14T00:00:00.000Z",
+      }), { status: 200 }),
+    });
+    const profile = await client.resolve("valid-test-token-123456789");
+    h.sdk.applyProfile(profile);
+    assert.deepEqual(
+      [h.sdk.profile.language, h.sdk.profile.stepByStepGuidance, h.sdk.profile.conciseGuidance, h.sdk.profile.slowGuidance],
+      ["th", true, true, true],
+    );
+    assert.equal(h.sdk.profile.viewportMode, null);
+    h.sdk.endSession();
+    assert.deepEqual(h.sdk.profile, sdk.DEFAULT_ACCESSIBILITY_PROFILE);
   } finally {
     h.restore();
   }

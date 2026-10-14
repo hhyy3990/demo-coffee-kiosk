@@ -1,5 +1,6 @@
-export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 3;
-export const ACCESSIBILITY_SDK_VERSION = "0.5.11";
+export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 4;
+export const ACCESSIBILITY_SDK_VERSION = "0.5.12";
+export const PROFILE_LANGUAGES = Object.freeze(["ko", "zh", "vi", "en", "th", "uz", "ja"]);
 export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     textSize: "standard",
     buttonSize: "standard",
@@ -10,6 +11,10 @@ export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     smartGuide: false,
     voiceGuidance: false,
     guideDelaySeconds: 15,
+    language: "ko",
+    stepByStepGuidance: false,
+    conciseGuidance: false,
+    slowGuidance: false,
 });
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -27,6 +32,9 @@ export function validateAccessibilityProfile(input) {
         (requestedViewportPercent === 60 || requestedViewportPercent === 70 || requestedViewportPercent === 80)
         ? { mode: "bottom", heightPercent: requestedViewportPercent }
         : null;
+    const language = PROFILE_LANGUAGES.includes(input.language)
+        ? input.language
+        : "ko";
     return {
         textSize,
         buttonSize,
@@ -37,6 +45,10 @@ export function validateAccessibilityProfile(input) {
         smartGuide: input.smartGuide === true,
         voiceGuidance: input.voiceGuidance === true,
         guideDelaySeconds,
+        language,
+        stepByStepGuidance: input.stepByStepGuidance === true,
+        conciseGuidance: input.conciseGuidance === true,
+        slowGuidance: input.slowGuidance === true,
     };
 }
 export function accessibilityClasses(profile) {
