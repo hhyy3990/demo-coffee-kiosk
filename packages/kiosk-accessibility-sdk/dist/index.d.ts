@@ -1,5 +1,5 @@
 export { ACCESSIBILITY_PROFILE_SCHEMA_VERSION, ACCESSIBILITY_SDK_VERSION, DEFAULT_ACCESSIBILITY_PROFILE, PROFILE_LANGUAGES, accessibilityClasses, validateAccessibilityProfile, type AccessibilityProfile, type ButtonSize, type ContrastMode, type GuideDelaySeconds, type ProfileLanguage, type TextSize, } from "./profile.ts";
-export { createAccessibilitySdk, type AccessibilitySdk, type AccessibilitySdkOptions, type SessionCleanup, } from "./accessibility-sdk.ts";
+export { createAccessibilitySdk, type AccessibilitySdk, type AccessibilitySdkOptions, type SessionCleanup, type EasyLanguageExplanation, type EasyLanguageState, } from "./accessibility-sdk.ts";
 export { DEFAULT_COMPLETION_SECONDS, type CompletionReturnCallback, type CompletionState, } from "./completion.ts";
 export { type BottomViewportConfig, type BottomViewportHeightPercent, } from "./bottom-viewport.ts";
 export { type AccessibilityAdapter, type AccessibilityGuideMessage, type KioskAction, type KioskFontCorrectionTarget, type KioskLayoutRegions, type KioskSnapshot, type KioskTextTarget, } from "./adapter.ts";

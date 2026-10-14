@@ -14,6 +14,15 @@ export interface AccessibilitySdkOptions {
     onDiagnostics?: (issues: readonly AccessibilityDiagnostic[]) => void;
     onSessionCleanupError?: (error: unknown) => void;
 }
+export interface EasyLanguageExplanation {
+    title: string;
+    text: string;
+}
+export interface EasyLanguageState {
+    /** Host-owned current business step ID. */
+    stepId: string;
+    explanations: readonly EasyLanguageExplanation[];
+}
 export type SessionCleanup = () => void;
 export interface AccessibilitySdk {
     readonly version: string;
@@ -23,6 +32,8 @@ export interface AccessibilitySdk {
     notifyScreenChange(screenId: string): boolean;
     setViewportMode(config: BottomViewportConfig | null): boolean;
     setGuideState(state: GuideState): void;
+    /** Supply host-authored plain-language help; the SDK owns paging and presentation. */
+    setEasyLanguageState(state: EasyLanguageState): void;
     beginCompletion(onReturn: CompletionReturnCallback): void;
     extendCompletion(): boolean;
     cancelCompletion(): void;

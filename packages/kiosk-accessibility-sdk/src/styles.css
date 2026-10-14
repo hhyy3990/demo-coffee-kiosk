@@ -346,11 +346,72 @@
   color: #3c3a2b;
   border: 1px solid #e3d78e;
   box-shadow: 0 12px 32px rgba(45,43,28,.18);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
   animation: a11y-toast-in .28s ease-out;
 }
+
+.kiosk .a11y-guide-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.kiosk .a11y-guide-countdown {
+  min-width: 2.6em;
+  font-size: .82em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.kiosk .a11y-guide-collapse,
+.kiosk .a11y-guide-pager button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 1px solid currentColor;
+  border-radius: 11px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.kiosk .a11y-guide-copy {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-right: 42px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.kiosk .a11y-guide-copy strong,
+.kiosk .a11y-guide-copy span { display: block; }
+.kiosk .a11y-guide-copy strong { margin-bottom: 3px; }
+.kiosk .a11y-guide-pager {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kiosk .a11y-guide-pager [data-a11y-guide-page] { font-weight: 800; font-variant-numeric: tabular-nums; }
+.kiosk .a11y-guide-close {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  z-index: 1;
+}
+.kiosk .a11y-guide-collapsed .a11y-guide-copy [data-a11y-guide-text],
+.kiosk .a11y-guide-collapsed .a11y-guide-icon,
+.kiosk .a11y-guide-collapsed .a11y-guide-pager { display: none; }
+.kiosk .a11y-guide-collapsed .a11y-guide-copy { padding-right: 44px; }
+.kiosk .a11y-guide-collapse:focus-visible,
+.kiosk .a11y-guide-pager button:focus-visible,
+.kiosk .a11y-guide-close:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.kiosk.a11y-high-contrast .a11y-guide-collapse,
+.kiosk.a11y-high-contrast .a11y-guide-pager button { border-width: 2px; }
 
 .kiosk .a11y-additional-menu-hint {
   position: fixed;
@@ -405,19 +466,6 @@
   background: rgba(83,71,40,.12);
   font-weight: 900;
 }
-
-.kiosk .a11y-guide-toast p {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  line-height: 1.45;
-  font-size: .88em;
-  overflow-wrap: anywhere;
-}
-
-.kiosk .a11y-guide-toast strong,
-.kiosk .a11y-guide-toast p span { display: block; }
-.kiosk .a11y-guide-toast strong { margin-bottom: 3px; }
 
 .kiosk .a11y-guide-close {
   flex: none;

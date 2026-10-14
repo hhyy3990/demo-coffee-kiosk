@@ -306,6 +306,42 @@ export default function App() {
     });
   }, [guideCopy, preferences.smartGuide, preferences.guideDelaySeconds, qrOpen, stage]);
 
+  const easyExplanations = useMemo(() => {
+    if (!preferences.easyLanguage) return [];
+    if (stage === "start") return [
+      { title: "매장 이용", text: "매장에서 드시려면 매장 이용을 선택해 주세요." },
+      { title: "포장하기", text: "음료를 가져가시려면 포장하기를 선택해 주세요." },
+    ];
+    if (stage === "menu") return [
+      { title: "메뉴 분류", text: "커피와 음료, 디저트 중에서 보고 싶은 분류를 고를 수 있어요." },
+      { title: "음료 선택", text: "원하는 음료를 누르면 다음 화면에서 옵션을 고를 수 있어요." },
+    ];
+    if (stage === "options") return [
+      { title: "음료 옵션", text: "따뜻한 음료나 차가운 음료, 크기와 컵을 고를 수 있어요." },
+      { title: "메뉴 담기", text: "고른 내용을 확인한 뒤 메뉴 담기를 누르면 장바구니에 들어가요." },
+    ];
+    if (stage === "cart") return [
+      { title: "주문 확인", text: "수량을 바꾸거나 필요 없는 메뉴를 뺄 수 있어요." },
+      { title: "결제하기", text: "주문이 맞으면 결제하기를 눌러 주세요." },
+    ];
+    if (stage === "payment") return [
+      { title: "결제 방법", text: "사용할 결제 방법을 선택해 주세요." },
+      { title: "결제 완료", text: "결제하기를 누르면 주문이 접수돼요." },
+    ];
+    if (stage === "complete") return [
+      { title: "주문 완료", text: "주문이 완료됐어요. 음료가 준비될 때까지 기다려 주세요." },
+      { title: "처음 화면", text: "주문을 마쳤다면 처음 화면으로 돌아가 다음 이용자가 사용할 수 있게 해 주세요." },
+    ];
+    return [];
+  }, [preferences.easyLanguage, stage]);
+
+  useLayoutEffect(() => {
+    accessibilitySdkRef.current?.setEasyLanguageState({
+      stepId: `cafe.${stage}:${guideCopy?.actionId ?? "none"}`,
+      explanations: easyExplanations,
+    });
+  }, [easyExplanations, guideCopy?.actionId, stage]);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const frame = requestAnimationFrame(() => accessibilitySdkRef.current?.inspectLayout());

@@ -17,6 +17,8 @@ export {
   type AccessibilitySdk,
   type AccessibilitySdkOptions,
   type SessionCleanup,
+  type EasyLanguageExplanation,
+  type EasyLanguageState,
 } from "./accessibility-sdk.ts";
 export {
   DEFAULT_COMPLETION_SECONDS,

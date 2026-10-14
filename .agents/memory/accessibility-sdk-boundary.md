@@ -51,6 +51,12 @@ Smart Guide state uses a separate host-owned `stepId`, distinct from the scroll 
 
 **How to apply:** Give each meaningful host task step a stable, non-personal ID; update the message in place for value changes, and call `notifyScreenChange()` only when the actual screen/scroll owner changes.
 
+The unified easy-language/Smart Guide panel renders only host-supplied explanations. Keep the host's explanation `stepId` aligned with the corresponding guide step when they describe the same task state; after a committed screen change, replace the old explanation with the new screen's copy.
+
+**Why:** Shared presentation can be reused across unrelated kiosks, but only the host knows what its screens mean. Mismatched or stale step IDs can clear useful explanations or show copy from the prior workflow step.
+
+**How to apply:** Supply concise text through the common explanation API, use stable step IDs for the host's current task state, and let the SDK own only paging, collapse state, guide timing, and overlay rendering. Do not generate business instructions or alter host actions.
+
 When the SDK constrains a registered flex-column scroll area, an unsafe `justify-content:center` can move oversized minimum-height content above the scrollport. Use safe centering for centered alignment and restore the host's original inline alignment when the viewport mode ends.
 
 **Why:** An independent 1440×900 fixture reproduced a clipped first heading with the viewport starting at y=166 and a 780px minimum-height child; safe alignment kept the heading and final action reachable without scaling content.
