@@ -80,3 +80,9 @@ The shared SDK owns only the completion countdown and its state notifications. T
 **Why:** A generic accessibility SDK must not infer that a payment, application, or clinical workflow has completed, and its session reset cannot clear host-owned data by itself.
 
 **How to apply:** Have the host signal a committed final-completion state, then use the SDK completion API for countdown/extension/cancel/finish. In the callback, clear host state and call `endSession()` before exposing the next user's welcome screen.
+
+In SDK v0.5.14, the unified Smart Guide/easy-language panel can overlap a primary action in a short 320×844 bottom-viewport layout. Closing the timed guide returns to the easy-language panel, which can still block the action's hit target.
+
+**Why:** A real browser hit test found the `item-add` button overlapped by the SDK-owned panel even after the timed guide closed; the host cannot safely reposition or dismiss this shared overlay without changing SDK behavior.
+
+**How to apply:** Do not claim critical actions remain pointer-accessible solely from layout diagnostics. Record the target/panel rectangles and hit-test result; report this reproduction to the SDK owner, and avoid kiosk-specific CSS or changes to host order logic as a workaround.

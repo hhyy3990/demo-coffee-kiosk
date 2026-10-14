@@ -9,6 +9,7 @@ import {
   createAccessibilitySdk,
   createBottomViewportPoc,
   DEFAULT_ACCESSIBILITY_PROFILE,
+  validateAccessibilityProfile,
   type AccessibilityProfile,
   type AccessibilitySdk,
   type CompletionState,
@@ -85,7 +86,8 @@ export default function App() {
   const [selectedPayment, setSelectedPayment] = useState<string>("card");
   const [receiptChoice, setReceiptChoice] = useState<"yes" | "no" | null>(null);
   const [preferences, setPreferences] = useState<Preferences>({ ...DEFAULT_PREFERENCES });
-  const [activeProfile, setActiveProfile] = useState<"none" | "central">("none");
+  const [activeProfile, setActiveProfile] = useState<"none" | "central" | "demo">("none");
+  const [demoAccessibilityActive, setDemoAccessibilityActive] = useState(false);
   const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const qrProfileClientRef = useRef<ReturnType<typeof createQrProfileClient> | null>(null);
@@ -228,7 +230,7 @@ export default function App() {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    if (activeProfile === "central") return;
+    if (activeProfile !== "none") return;
     const params = new URLSearchParams(window.location.search);
     const sdkViewport = params.has("bottom-sdk");
     const rawPercent = Number(params.get(sdkViewport ? "bottom-sdk" : "bottom-poc"));
@@ -438,6 +440,28 @@ export default function App() {
     setActiveProfile("none");
     setProfileDetailsOpen(false);
   };
+  const startAccessibilityExperience = () => {
+    if (!import.meta.env.DEV || activeProfile === "central") return;
+    const profile = validateAccessibilityProfile({
+      ...DEFAULT_PREFERENCES,
+      textSize: "extraLarge",
+      buttonSize: "large",
+      contrast: "high",
+      easyLanguage: true,
+      viewportMode: { mode: "bottom", heightPercent: 60 },
+      smartGuide: true,
+      guideDelaySeconds: 10,
+      voiceGuidance: false,
+      language: "ko",
+      stepByStepGuidance: false,
+      conciseGuidance: false,
+      slowGuidance: true,
+    });
+    setPreferences(profile);
+    setActiveProfile("demo");
+    setDemoAccessibilityActive(true);
+    setProfileDetailsOpen(false);
+  };
   const loadProfileToken = async (value: string, inputKind: "scan" | "manual") => {
     if (qrRequestInFlightRef.current) return;
     const requestGeneration = ++qrRequestGenerationRef.current;
@@ -450,6 +474,7 @@ export default function App() {
       if (!isCurrentSession()) return;
       setPreferences(resolved);
       setActiveProfile("central");
+      setDemoAccessibilityActive(false);
       setProfileDetailsOpen(false);
       setQrOpen(false);
       setTokenInput("");
@@ -495,6 +520,7 @@ export default function App() {
     setOrderNumber("");
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
+    setDemoAccessibilityActive(false);
     setProfileDetailsOpen(false);
     setQrOpen(false);
     setQrLoading(false);
@@ -542,7 +568,7 @@ export default function App() {
     const root = kioskRootRef.current;
     if (!root) return;
     const params = new URLSearchParams(window.location.search);
-    const candidate = import.meta.env.DEV && activeProfile !== "central"
+    const candidate = import.meta.env.DEV && activeProfile === "none"
       ? Number(params.get("bottom-sdk") ?? params.get("bottom-poc"))
       : Number.NaN;
     const percent = candidate === 60 || candidate === 70 || candidate === 80
@@ -585,7 +611,25 @@ export default function App() {
             </button>
           </div>
         </header>
-        {activeProfile !== "none" && (
+        {import.meta.env.DEV && stage === "start" && activeProfile === "none" && (
+          <div className="demo-entry-area">
+            <button type="button" className="demo-entry-button" onClick={startAccessibilityExperience}>
+              <span className="demo-entry-icon"><Accessibility size={18} /></span>
+              <span className="demo-entry-copy">
+                <strong>접근성 체험하기</strong>
+                <small>QR 없이 큰 글씨와 쉬운 안내를 체험해 보세요.</small>
+              </span>
+              <ChevronRight className="demo-entry-arrow" size={18} />
+            </button>
+          </div>
+        )}
+        {demoAccessibilityActive && import.meta.env.DEV && (
+          <section className="demo-experience-strip" aria-live="polite">
+            <strong>접근성 체험 중</strong>
+            <button type="button" onClick={returnToStart}>체험 종료</button>
+          </section>
+        )}
+        {activeProfile === "central" && (
           <section className={`profile-strip ${profileDetailsOpen ? "expanded" : ""}`} aria-label="적용된 화면 설정">
             <div className="profile-strip-main">
             <div className="profile-label"><Accessibility size={18} /> 내 QR 설정 적용 중</div>
