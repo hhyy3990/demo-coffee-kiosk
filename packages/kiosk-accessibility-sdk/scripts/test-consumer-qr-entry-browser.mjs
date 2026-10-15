@@ -627,7 +627,9 @@ try {
     !afterOldDismissDeadline.pagerHidden) {
     throw new Error(`An old guide timeout affected the next step: ${JSON.stringify(afterOldDismissDeadline)}`);
   }
-  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  if (afterOldDismissDeadline.collapsed) {
+    await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  }
   const expanded = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (expanded.collapsed || expanded.title !== "새 단계" || !expanded.pagerHidden) {
     throw new Error(`Single-page panel could not reopen after the timer check: ${JSON.stringify(expanded)}`);

@@ -86,3 +86,9 @@ Smart Guide placement must be rechecked after host screen changes and guide-cont
 **Why:** A real browser hit test found the SDK panel covering a host action after the task view changed, even though the earlier placement had been accepted. Layout changes and content expansion can invalidate a previously safe position.
 
 **How to apply:** Re-evaluate on relevant host DOM changes and guide-content changes, filter SDK-owned geometry/style mutations to prevent observer loops, and verify settled positions with `elementFromPoint` in a browser. Keep the host responsible for its actions; never work around an overlay by changing business logic or kiosk-specific CSS.
+
+When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
+
+**Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.
+
+**How to apply:** Test the real host flow at short/narrow viewports with wheel and touch scroll, verify body and page controls remain visible when safe, and wait through the configured guide lifetime before confirming page/fold restoration.

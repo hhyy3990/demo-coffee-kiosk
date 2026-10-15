@@ -91,6 +91,32 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function getVisibleClientRect(
+  element: HTMLElement,
+  viewportWidth = document.documentElement?.clientWidth || window.innerWidth,
+  viewportHeight = document.documentElement?.clientHeight || window.innerHeight,
+): { left: number; top: number; right: number; bottom: number } | null {
+  const rect = element.getBoundingClientRect();
+  let left = Math.max(0, rect.left);
+  let top = Math.max(0, rect.top);
+  let right = Math.min(viewportWidth, rect.right);
+  let bottom = Math.min(viewportHeight, rect.bottom);
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    const style = getComputedStyle(ancestor);
+    const clipRect = ancestor.getBoundingClientRect();
+    if (["hidden", "clip", "scroll", "auto"].includes(style.overflowX)) {
+      left = Math.max(left, clipRect.left);
+      right = Math.min(right, clipRect.right);
+    }
+    if (["hidden", "clip", "scroll", "auto"].includes(style.overflowY)) {
+      top = Math.max(top, clipRect.top);
+      bottom = Math.min(bottom, clipRect.bottom);
+    }
+    if (right <= left || bottom <= top) return null;
+  }
+  return right > left && bottom > top ? { left, top, right, bottom } : null;
+}
+
 function getGuideProtectedActions(regions?: KioskLayoutRegions): HTMLElement[] {
   const markedActions = typeof document.querySelectorAll === "function"
     ? Array.from(document.querySelectorAll<HTMLElement>('[data-a11y-primary="true"]'))
@@ -111,11 +137,11 @@ function primaryActionsRemainHitTestable(
   if (!view || !hitTest) return true;
   return getGuideProtectedActions(regions).every((element) => {
     if (!element.isConnected || ("disabled" in element && Boolean((element as HTMLButtonElement).disabled))) return true;
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0 || getComputedStyle(element).visibility === "hidden") return true;
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    if (x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight) return true;
+    if (getComputedStyle(element).display === "none" || getComputedStyle(element).visibility === "hidden") return true;
+    const rect = getVisibleClientRect(element, view.innerWidth, view.innerHeight);
+    if (!rect) return true;
+    const x = rect.left + (rect.right - rect.left) / 2;
+    const y = rect.top + (rect.bottom - rect.top) / 2;
     const hit = hitTest(x, y);
     return hit === element || element.contains(hit);
   });
@@ -159,7 +185,9 @@ function positionGuide(
     overlay.style.top = `${safeTop}px`;
     overlay.style.bottom = "auto";
     overlay.style.width = `min(500px, calc(100vw - 24px))`;
-    overlay.style.maxHeight = `${availableHeight}px`;
+    // Leave a small subpixel tolerance so a panel at the exact safe-area
+    // height does not fail placement from fractional font metrics.
+    overlay.style.maxHeight = `${Math.max(0, availableHeight - 2)}px`;
     overlay.style.overflowY = "auto";
     overlay.style.visibility = "hidden";
     const height = overlay.getBoundingClientRect().height;
@@ -175,9 +203,9 @@ function positionGuide(
       ...controls,
     ].filter((el) => el !== overlay && el.isConnected &&
       getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
-      el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+      getVisibleClientRect(el, vw, vh) !== null);
     const obstacleEdges = obstacles.flatMap((element) => {
-      const rect = element.getBoundingClientRect();
+      const rect = getVisibleClientRect(element, vw, vh)!;
       return [rect.top - height - 8, rect.bottom + 8]
         .map((candidate) => clamp(candidate, minimum, maximum));
     });
@@ -189,7 +217,8 @@ function positionGuide(
       ...obstacleEdges,
     ].filter(Number.isFinite))];
     const overlapsAt = (candidate: number, element: HTMLElement) => {
-      const rect = element.getBoundingClientRect();
+      const rect = getVisibleClientRect(element, vw, vh);
+      if (!rect) return false;
       return 12 < rect.right && vw - 12 > rect.left &&
         candidate < rect.bottom && candidate + height > rect.top;
     };
@@ -245,13 +274,15 @@ function positionGuide(
       ? Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"))
       : []),
   ].filter((element) => element !== overlay && element.isConnected &&
-    getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
+    getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden" &&
+    getVisibleClientRect(element, viewportWidth, viewportHeight) !== null);
   const obstacleEdges = obstacles.flatMap((element) => {
-    const rect = element.getBoundingClientRect();
+    const rect = getVisibleClientRect(element, viewportWidth, viewportHeight)!;
     return [clampToViewport(rect.top - overlayRect.height - margin), clampToViewport(rect.bottom + margin)];
   });
   const overlap = (top: number) => obstacles.reduce((sum, element) => {
-    const rect = element.getBoundingClientRect();
+    const rect = getVisibleClientRect(element, viewportWidth, viewportHeight);
+    if (!rect) return sum;
     return sum + Math.max(0, Math.min(left + overlayRect.width, rect.right) - Math.max(left, rect.left)) *
       Math.max(0, Math.min(top + overlayRect.height, rect.bottom) - Math.max(top, rect.top));
   }, 0);
@@ -462,7 +493,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           scheduleGuide();
         },
         onCollapse: () => {
-          guidanceCollapsed = !guidanceCollapsed;
+          guidanceCollapsed = guidanceCollapsed || guidanceSafetyCollapsed
+            ? false
+            : true;
           guidanceSafetyCollapsed = false;
           renderGuidancePanel();
         },
@@ -884,6 +917,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const now = Date.now();
     if (now - lastScrollAt < 250) return;
     lastScrollAt = now;
+    if (smartGuideVisible) {
+      interactionCount += 1;
+      options.onInteractionCount?.(interactionCount);
+      return;
+    }
     recordInteraction();
   }
 
@@ -925,7 +963,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
         item.title.trim().length > 0 && item.text.trim().length > 0,
       ).map((item) => ({ title: item.title.slice(0, 300), text: item.text.slice(0, 3000) }))
       : [];
-    if (easyLanguageState?.stepId !== stepId) easyLanguageIndex = 0;
+    if (easyLanguageState?.stepId !== stepId) {
+      easyLanguageIndex = 0;
+      guidanceCollapsed = false;
+      guidanceSafetyCollapsed = false;
+    }
     easyLanguageState = stepId && explanations.length > 0 ? { stepId, explanations } : null;
     easyLanguageIndex = Math.min(easyLanguageIndex, Math.max(0, explanations.length - 1));
     if (!smartGuideVisible) renderGuidancePanel();
@@ -1129,7 +1171,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   });
   refreshNextItemButtons();
   if (!("PointerEvent" in window)) root.addEventListener("touchstart", recordInteraction, { passive: true });
-  window.addEventListener("scroll", recordScrollInteraction, { passive: true });
+  window.addEventListener("scroll", recordScrollInteraction, { capture: true, passive: true });
 
   const sdk: AccessibilitySdk = {
     version: ACCESSIBILITY_SDK_VERSION,
@@ -1177,7 +1219,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       root.removeEventListener("click", onNavigationClick, true);
       window.removeEventListener("resize", refreshNextItemButtons);
       root.removeEventListener("touchstart", recordInteraction);
-      window.removeEventListener("scroll", recordScrollInteraction);
+      window.removeEventListener("scroll", recordScrollInteraction, true);
       for (const className of MANAGED_CLASSES) {
         root.classList.toggle(className, originalManagedClasses.has(className));
       }
