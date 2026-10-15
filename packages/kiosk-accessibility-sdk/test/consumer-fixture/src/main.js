@@ -165,6 +165,102 @@ window.__sdkPackageSmoke = {
       scannerContainersCleaned: host.childNodes.length === 0,
     };
   },
+  async runStageGuidanceProbe(heightPercent = null, enableSmart = false) {
+    root.classList.add("stage-fixture");
+    const stage = root.querySelector(".content");
+    const next = root.querySelector("#host-continue");
+    profile = validateAccessibilityProfile({
+      ...profile,
+      viewportMode: heightPercent === null ? null : { mode: "bottom", heightPercent },
+      easyLanguage: true,
+      smartGuide: true,
+      slowGuidance: true,
+      guideDelaySeconds: 10,
+    });
+    sdk.applyProfile(profile);
+    sdk.setEasyLanguageState({
+      stepId: guideStep,
+      explanations: [{ title: "확인 단계", text: "입력한 내용을 확인한 뒤 계속 진행합니다." }],
+    });
+    const guideMessage = {
+      title: "다음 단계",
+      text: "내용을 확인한 뒤 계속 버튼을 눌러 주세요.",
+      actionId: "host.review.continue",
+    };
+    sdk.setGuideState({
+      stepId: guideStep, enabled: true, paused: true,
+      delaySeconds: 10, message: guideMessage,
+    });
+    const frame = () => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const sample = async (state, requestedTop) => {
+      stage.scrollTop = requestedTop;
+      await frame();
+      const guide = root.querySelector(".a11y-guide-toast");
+      const hint = root.querySelector(".a11y-additional-menu-hint");
+      const rect = (element) => element?.getBoundingClientRect().toJSON() ?? null;
+      const stageRect = stage.getBoundingClientRect();
+      const actions = [...root.querySelectorAll(".keypad button, .fixture-choices input, .fixture-quantity button, #host-continue")];
+      const overlaps = (a, b) => a && b && a.left < b.right && a.right > b.left &&
+        a.top < b.bottom && a.bottom > b.top;
+      const guideRect = rect(guide);
+      const hintRect = rect(hint);
+      const hitTests = actions.map((element) => {
+        const r = element.getBoundingClientRect();
+        const left = Math.max(r.left, stageRect.left, 0);
+        const right = Math.min(r.right, stageRect.right, innerWidth);
+        const top = Math.max(r.top, stageRect.top, 0);
+        const bottom = Math.min(r.bottom, stageRect.bottom, innerHeight);
+        const visible = right > left && bottom > top;
+        if (!visible) return { id: element.id || element.textContent.trim(), visible, hit: true,
+          guideOverlap: false, hintOverlap: false };
+        const x = left + (right - left) / 2;
+        const y = top + (bottom - top) / 2;
+        const hit = document.elementFromPoint(x, y);
+        const label = element instanceof HTMLInputElement ? element.labels?.[0] : null;
+        return {
+          id: element.id || element.textContent.trim(), visible,
+          hit: hit === element || element.contains(hit) || Boolean(label?.contains(hit)),
+          guideOverlap: guide?.isConnected && getComputedStyle(guide).visibility === "visible" &&
+            overlaps(r, guideRect),
+          hintOverlap: hint?.isConnected && getComputedStyle(hint).visibility === "visible" &&
+            overlaps(r, hintRect),
+        };
+      });
+      return {
+        state, requestedTop, scrollTop: stage.scrollTop,
+        stage: rect(stage),
+        guide: guide ? { rect: rect(guide), smart: guide.classList.contains("a11y-guide-smart"),
+          visible: getComputedStyle(guide).visibility === "visible" } : null,
+        hint: hint ? { rect: rect(hint), visible: getComputedStyle(hint).visibility === "visible" } : null,
+        nextAction: rect(next), hitTests,
+      };
+    };
+    const max = stage.scrollHeight - stage.clientHeight;
+    const tops = [0, 240, 480, max, 0].map((top) => Math.min(max, top));
+    const easy = [];
+    for (const top of tops) easy.push(await sample("easy", top));
+    let smartVisible = false;
+    if (enableSmart) {
+      sdk.setGuideState({
+        stepId: guideStep, enabled: true, paused: false,
+        delaySeconds: 10, message: guideMessage,
+      });
+      for (let attempt = 0; attempt < 115; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        smartVisible = Boolean(root.querySelector(".a11y-guide-toast.a11y-guide-smart"));
+        if (smartVisible) break;
+      }
+    }
+    const smart = [];
+    if (smartVisible && enableSmart) {
+      for (const top of tops) smart.push(await sample("smart", top));
+    }
+    return { viewport: { width: innerWidth, height: innerHeight },
+      stageScrollHeight: stage.scrollHeight, stageClientHeight: stage.clientHeight,
+      noSafeSpace: root.dataset.a11yScrollGuidance === "no-safe-space",
+      smartVisible, easy, smart };
+  },
   read() {
     return {
       profile,

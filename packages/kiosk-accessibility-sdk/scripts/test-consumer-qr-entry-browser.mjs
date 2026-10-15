@@ -836,6 +836,63 @@ try {
   if (reducedMotion.animationName !== "none" || !reducedMotion.visible) {
     throw new Error(`Reduced-motion preference was not honored: ${JSON.stringify(reducedMotion)}`);
   }
+  const stageGuidanceCases = [];
+  const topDrift = (samples, selector) => {
+    const visible = samples.filter((sample) => sample[selector]?.visible);
+    return visible.length < 2 ? null : Math.max(...visible.map((sample) =>
+      Math.abs(sample[selector].rect.top - visible[0][selector].rect.top)));
+  };
+  for (const [width, height] of [[320, 844], [360, 667], [390, 844], [1080, 1920]]) {
+    for (const percent of [null, 60, 70, 80]) {
+      const enableSmart = width === 390 && height === 844 && percent === 60;
+      await send("Emulation.setDeviceMetricsOverride", {
+        width, height, deviceScaleFactor: 1, mobile: width < 600,
+        screenWidth: width, screenHeight: height,
+      });
+      await send("Page.navigate", { url: `${baseUrl}/` });
+      let ready = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        ready = await evaluate("Boolean(window.__sdkPackageSmoke?.runStageGuidanceProbe)");
+        if (ready) break;
+        await wait(50);
+      }
+      if (!ready) throw new Error("The .stage guidance fixture did not load.");
+      const probe = await evaluate(
+        `window.__sdkPackageSmoke.runStageGuidanceProbe(${JSON.stringify(percent)}, ${enableSmart})`,
+      );
+      const easyGuideDrift = topDrift(probe.easy, "guide");
+      const easyHintSamples = probe.easy.filter((sample) => sample.hint?.visible);
+      const easyHintDrift = topDrift(probe.easy, "hint");
+      const smartGuideDrift = topDrift(probe.smart, "guide");
+      const badActionHits = [...probe.easy, ...probe.smart]
+        .flatMap((sample) => sample.hitTests.filter((item) => item.visible &&
+          (!item.hit || item.guideOverlap || item.hintOverlap)));
+      const result = {
+        width, height, percent, easyGuideDrift, easyHintDrift, smartGuideDrift,
+        visibleHintSamples: easyHintSamples.length, noSafeSpace: probe.noSafeSpace,
+        smartVisible: probe.smartVisible,
+        badActionHits,
+        easy: probe.easy.map((sample) => ({
+          scrollTop: sample.scrollTop, stageTop: sample.stage.top,
+          guideTop: sample.guide?.rect.top, hintTop: sample.hint?.rect.top,
+          hintVisible: sample.hint?.visible,
+        })),
+        smart: probe.smart.map((sample) => ({
+          scrollTop: sample.scrollTop, guideTop: sample.guide?.rect.top,
+          hintVisible: sample.hint?.visible,
+        })),
+      };
+      const exactKioskCase = width === 390 && height === 844 && percent === 60;
+      if (probe.stageScrollHeight <= probe.stageClientHeight ||
+          (easyHintSamples.length < 1 && !probe.noSafeSpace) ||
+          badActionHits.length ||
+          (exactKioskCase && (easyGuideDrift > 1 || easyHintDrift > 1 ||
+            easyHintSamples.length < 3 || !probe.smartVisible || smartGuideDrift > 1))) {
+        throw new Error(`.stage guidance geometry was unstable: ${JSON.stringify(result)}`);
+      }
+      stageGuidanceCases.push(result);
+    }
+  }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
     sharedGuidanceLayouts: guidanceLayouts,
@@ -857,6 +914,7 @@ try {
     keyboardForward,
     keyboardBackward,
     reducedMotion,
+    stageGuidanceCases,
     cases,
     result: "PASS",
   }, null, 2));

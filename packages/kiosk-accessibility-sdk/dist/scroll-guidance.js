@@ -152,29 +152,32 @@ function placeHint(hint, root, regions) {
         const rect = hint.getBoundingClientRect();
         const left = Math.max(12, (vw - rect.width) / 2);
         hint.style.left = `${left}px`;
-        const controls = (regions.bottomControls ?? []).filter((el) => viewportAnchored(el) && visibleObstacle(el, root));
-        const lowerEdge = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, rootRect.bottom)) - 8;
-        const upperEdge = Math.max(0, rootRect.top) + 8;
-        if (lowerEdge - upperEdge < rect.height || rect.height <= 0) {
+        const safeTop = 8;
+        const safeBottom = Math.min(vh, rootRect.top) - 8;
+        if (safeBottom - safeTop < rect.height || rect.height <= 0) {
             if (root.dataset)
                 root.dataset.a11yScrollGuidance = "no-safe-space";
             hint.style.visibility = "hidden";
             return false;
         }
-        const obstacles = getGuidanceObstacles(root, regions, hint);
-        const top = lowerEdge - rect.height;
+        const scrollArea = regions.scrollArea && root.contains(regions.scrollArea)
+            ? regions.scrollArea
+            : activeArea;
+        // Keep the hint in the fixed band above the scrollport. Obstacles inside
+        // the scrolling content move on every scroll and must not force the hint
+        // to alternate between the top and bottom of the viewport.
+        const obstacles = getGuidanceObstacles(root, regions, hint).filter((element) => {
+            const position = getComputedStyle(element).position;
+            return !scrollArea.contains(element) || position === "fixed" || position === "sticky";
+        });
+        const mandatory = obstacles;
         const candidates = [
-            top,
-            upperEdge,
-            upperEdge + (lowerEdge - upperEdge - rect.height) / 2,
-        ].map((candidateTop) => new DOMRect(left, candidateTop, rect.width, rect.height));
-        const docks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
-        const mandatory = [
-            ...(regions.viewportOverlays ?? []),
-            ...(regions.guidanceAvoidAreas ?? []),
-            ...controls,
-            ...docks,
-        ].filter((element) => visibleObstacle(element, root));
+            ...obstacles.map((element) => element.getBoundingClientRect().bottom + 8),
+            safeTop,
+            safeBottom - rect.height,
+        ].map((candidateTop) => new DOMRect(left, candidateTop, rect.width, rect.height))
+            .filter((candidate) => candidate.top >= safeTop &&
+            candidate.bottom <= safeBottom);
         const placement = chooseHintPlacement(candidates, obstacles, mandatory);
         if (!placement) {
             if (root.dataset)
@@ -194,7 +197,17 @@ function placeHint(hint, root, regions) {
     hint.style.top = "0px";
     hint.style.visibility = "hidden";
     const height = hint.getBoundingClientRect().height;
-    const obstacles = getGuidanceObstacles(root, regions, hint);
+    const scrollArea = regions.scrollArea && root.contains(regions.scrollArea)
+        ? regions.scrollArea
+        : null;
+    const allObstacles = getGuidanceObstacles(root, regions, hint);
+    const isViewportStable = (element) => {
+        const position = getComputedStyle(element).position;
+        return position === "fixed" || position === "sticky" ||
+            !scrollArea?.contains(element);
+    };
+    const obstacles = allObstacles.filter(isViewportStable);
+    const movingObstacles = allObstacles.filter((element) => !isViewportStable(element));
     const bottomControls = (regions.bottomControls ?? []).filter((element) => viewportAnchored(element) && visibleObstacle(element, root));
     const bottomDockAndControls = [
         ...bottomControls,
@@ -216,15 +229,9 @@ function placeHint(hint, root, regions) {
             continue;
         candidates.push(new DOMRect(parseFloat(hint.style.left), top, width, height));
     }
-    const docks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
-    const mandatory = [
-        ...(regions.viewportOverlays ?? []),
-        ...(regions.guidanceAvoidAreas ?? []),
-        ...bottomControls,
-        ...docks,
-    ].filter((element) => visibleObstacle(element, root));
+    const mandatory = obstacles;
     const placement = chooseHintPlacement(candidates, obstacles, mandatory);
-    if (placement) {
+    if (placement && !movingObstacles.some((element) => overlap(placement, element.getBoundingClientRect()))) {
         hint.style.left = `${placement.left}px`;
         hint.style.top = `${placement.top}px`;
         hint.style.visibility = "visible";

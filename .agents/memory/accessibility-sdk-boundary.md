@@ -99,8 +99,14 @@ When a protected action is inside a scrollport, placement and hit testing must u
 
 **How to apply:** Test the real host flow at short/narrow viewports with wheel and touch scroll, verify body and page controls remain visible when safe, and wait through the configured guide lifetime before confirming page/fold restoration.
 
-While Smart Guide is visible, pointer/keyboard activity on the same task step may be counted but must neither dismiss the guide nor start a replacement idle timer. Only the fixed display deadline, explicit close, actual step transition, or session end may finish it. Easy Language may coexist with the scroll hint when the hint can avoid the panel; suppress it for Smart Guide or modal overlays.
+While Smart Guide is visible, pointer/keyboard activity on the same task step may be counted but must neither dismiss the guide nor start a replacement idle timer. Only the fixed display deadline, explicit close, actual step transition, or session end may finish it. Easy Language may coexist with the scroll hint when the hint can avoid the panel; suppress it for Smart Guide or modal overlays. In bottom-viewport mode, keep the hint in a stable band outside the scrollport; moving guidanceAvoidAreas inside the scrollport must not swap the hint between viewport positions.
 
-**Why:** The shared root listener treated every pointer/keyboard event as a dismissal, and the scroll cue was disabled for every guidance panel. That made numeric entry end the timer and left scrollable screens without a cue while persistent Easy Language was open.
+**Why:** The shared root listener treated every pointer/keyboard event as a dismissal, and the scroll cue was disabled for every guidance panel. In a 390×844/60% fixture, the hint also jumped 379.89px as a moving keypad obstacle changed which placement candidate was safe, while both guide panels stayed fixed.
 
-**How to apply:** Keep `stepId` stable across same-screen value edits, let `notifyScreenChange()` identify committed screen/scroll-owner transitions, and place the hint in fixed viewport-band candidates that do not depend on scrolling list-item rectangles. Browser-test start/middle/near-end positions and record the Smart Guide's observed display time after real input.
+**How to apply:** Keep `stepId` stable across same-screen value edits, let `notifyScreenChange()` identify committed screen/scroll-owner transitions, and place the hint outside the scrollport or hide it if no safe stationary space exists. Exclude moving scroll-content obstacles from viewport-band reselection. Browser-test start/middle/near-end positions, action hit tests, and actual guide timing after input.
+
+The v0.5.21 viewport matrix also showed two deliberate limits: in a 320×844/80% bottom viewport there is no stationary hint lane, so suppress the hint rather than cover controls; in standard (non-bottom-viewport) 320×844 mode, guide/hint placement can still change to avoid visible actions.
+
+**Why:** The safe fixed band is only guaranteed for the target 390×844/60% kiosk mode; claiming universal fixed placement would hide responsive fallback behavior and the no-safe-space case.
+
+**How to apply:** Report the tested viewport/profile separately, preserve action hit tests in fallback layouts, and treat only a state with remaining scrollable content and safe space as eligible for a visible scroll hint.

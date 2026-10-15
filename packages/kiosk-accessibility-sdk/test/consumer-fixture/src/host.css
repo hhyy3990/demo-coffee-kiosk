@@ -24,6 +24,22 @@ body { margin: 0; }
   background: var(--paper);
 }
 
+#kiosk-root.stage-fixture .bottom-controls {
+  position: fixed;
+  z-index: 20;
+  inset-inline: 0;
+  bottom: 0;
+  min-height: 88px;
+  padding: 12px 24px;
+  background: var(--accent-deep);
+}
+
+#kiosk-root.stage-fixture .content {
+  height: 65dvh;
+  min-height: 0;
+  overflow: auto;
+}
+
 .content {
   min-height: 60vh;
   padding: 28px;
