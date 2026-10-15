@@ -75,6 +75,12 @@ Smart Guide visibility has a separate 10-second default display timeout with a 1
 
 **How to apply:** Keep the display lifetime distinct from the pre-display idle delay, cap configured display durations at 15 seconds, clear the overlay and emphasis on every dismissal path, and browser-test settled hit targets after scrolling at short/narrow viewports. Coalesce observer/scroll repositioning to one animation frame and exclude SDK-only mutations.
 
+When reducing shared guidance-panel height, compress icon and control chrome rather than the explanatory text. Keep all pager, close, and fold controls at least 44×44 CSS px, and keep the decorative information mark out of the screen-reader name.
+
+**Why:** The small-screen/large-type regression came from oversized controls and a standalone icon row, not from the explanatory copy; shrinking the copy would harm the users who need it most.
+
+**How to apply:** Prefer a compact single-line header, preserve inherited profile-scaled body text and safe wrapping, and measure actual control rectangles at 320px widths in both normal and bottom-viewport modes.
+
 The shared SDK owns only the completion countdown and its state notifications. The kiosk host decides when work is truly complete, owns all business data, and supplies the return-home callback; start the timer only after receipts, printing, or other final host work has finished.
 
 **Why:** A generic accessibility SDK must not infer that a payment, application, or clinical workflow has completed, and its session reset cannot clear host-owned data by itself.

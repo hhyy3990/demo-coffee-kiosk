@@ -340,15 +340,16 @@
   width: min(500px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
   overflow: auto;
-  padding: 11px 13px;
-  border-radius: 16px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 14px;
   background: #f5edc5;
   color: #3c3a2b;
   border: 1px solid #e3d78e;
   box-shadow: 0 12px 32px rgba(45,43,28,.18);
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   animation: a11y-toast-in .28s ease-out;
 }
 
@@ -358,57 +359,85 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
   min-height: 44px;
 }
+.kiosk .a11y-guide-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1em;
+  line-height: 1.25;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
 .kiosk .a11y-guide-countdown {
-  min-width: 2.6em;
-  font-size: .82em;
+  flex: none;
+  min-width: 2.4em;
+  font-size: .78em;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 .kiosk .a11y-guide-collapse,
-.kiosk .a11y-guide-pager button {
+.kiosk .a11y-guide-pager button,
+.kiosk .a11y-guide-close {
+  box-sizing: border-box;
+  flex: none;
   min-width: 44px;
   min-height: 44px;
-  padding: 7px 12px;
+  padding: 3px 8px;
   border: 1px solid currentColor;
-  border-radius: 11px;
+  border-radius: 10px;
   background: transparent;
   color: inherit;
   font: inherit;
-  font-weight: 750;
-  white-space: nowrap;
+  font-size: .84em;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: normal;
+}
+.kiosk .a11y-guide-collapse {
+  width: 44px;
+  padding: 0;
+  font-size: 1.2em;
 }
 .kiosk .a11y-guide-copy {
   grid-column: 1 / -1;
   min-width: 0;
-  padding-right: 42px;
+  padding: 0;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.kiosk .a11y-guide-copy strong,
 .kiosk .a11y-guide-copy span { display: block; }
-.kiosk .a11y-guide-copy strong { margin-bottom: 3px; }
 .kiosk .a11y-guide-pager {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
-.kiosk .a11y-guide-pager [data-a11y-guide-page] { font-weight: 800; font-variant-numeric: tabular-nums; }
+.kiosk .a11y-guide-pager [data-a11y-guide-page] {
+  min-width: 3em;
+  font-size: .78em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 .kiosk .a11y-guide-close {
-  position: absolute;
-  right: 7px;
-  top: 7px;
-  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  margin: 0;
+  border-radius: 10px;
+  font-size: 1em;
+  line-height: 1;
 }
+.kiosk .a11y-guide-toast.a11y-guide-smart .a11y-guide-icon { display: none; }
+.kiosk .a11y-guide-toast.a11y-guide-smart .a11y-guide-countdown { font-size: .82em; }
 .kiosk .a11y-guide-collapsed .a11y-guide-copy [data-a11y-guide-text],
-.kiosk .a11y-guide-collapsed .a11y-guide-icon,
 .kiosk .a11y-guide-collapsed .a11y-guide-pager { display: none; }
-.kiosk .a11y-guide-collapsed .a11y-guide-copy { padding-right: 44px; }
 .kiosk .a11y-guide-collapse:focus-visible,
 .kiosk .a11y-guide-pager button:focus-visible,
 .kiosk .a11y-guide-close:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
@@ -461,28 +490,19 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-top: 1px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: rgba(83,71,40,.12);
   font-weight: 900;
+  font-size: .72em;
 }
 
 .kiosk .a11y-guide-close {
-  flex: none;
-  width: 44px;
-  min-height: 44px;
-  display: grid;
-  place-items: center;
-  margin: -3px -5px 0 0;
   border: 0;
-  border-radius: 11px;
   background: transparent;
   color: #4d4433;
-  font: inherit;
-  font-size: 1.5em;
-  line-height: 1;
+  font-size: 1.15em;
 }
 
 .kiosk .a11y-next-item-emphasis {
@@ -503,6 +523,7 @@
   50% { background-color: #fff1a8; box-shadow: 0 0 0 3px #111; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .kiosk .a11y-guide-toast { animation: none; }
   .kiosk .a11y-next-item-emphasis { animation: none; background-color: #f2dfaa; }
   .kiosk.a11y-high-contrast .a11y-next-item-emphasis { background-color: #fff1a8; }
 }

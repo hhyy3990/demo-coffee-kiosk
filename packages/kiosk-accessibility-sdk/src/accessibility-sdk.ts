@@ -135,13 +135,19 @@ function primaryActionsRemainHitTestable(
   const view = document?.defaultView;
   const hitTest = document?.elementFromPoint?.bind(document);
   if (!view || !hitTest) return true;
+  const overlayRect = overlay.getBoundingClientRect();
   return getGuideProtectedActions(regions).every((element) => {
     if (!element.isConnected || ("disabled" in element && Boolean((element as HTMLButtonElement).disabled))) return true;
     if (getComputedStyle(element).display === "none" || getComputedStyle(element).visibility === "hidden") return true;
     const rect = getVisibleClientRect(element, view.innerWidth, view.innerHeight);
     if (!rect) return true;
-    const x = rect.left + (rect.right - rect.left) / 2;
-    const y = rect.top + (rect.bottom - rect.top) / 2;
+    const left = Math.max(rect.left, overlayRect.left);
+    const right = Math.min(rect.right, overlayRect.right);
+    const top = Math.max(rect.top, overlayRect.top);
+    const bottom = Math.min(rect.bottom, overlayRect.bottom);
+    if (right <= left || bottom <= top) return true;
+    const x = left + (right - left) / 2;
+    const y = top + (bottom - top) / 2;
     const hit = hitTest(x, y);
     return hit === element || element.contains(hit);
   });
@@ -318,34 +324,35 @@ function createGuideOverlay(
   icon.setAttribute("aria-hidden", "true");
   icon.textContent = "i";
 
-  const copy = document.createElement("div");
-  copy.className = "a11y-guide-copy";
-  copy.setAttribute("aria-live", "polite");
-  const title = document.createElement("strong");
-  title.dataset.a11yGuideTitle = "true";
-  const text = document.createElement("span");
-  text.dataset.a11yGuideText = "true";
-  copy.append(title, text);
-
   const header = document.createElement("div");
   header.className = "a11y-guide-header";
+  const title = document.createElement("strong");
+  title.className = "a11y-guide-title";
+  title.dataset.a11yGuideTitle = "true";
+
   const countdown = document.createElement("span");
   countdown.className = "a11y-guide-countdown";
   countdown.dataset.a11yGuideCountdown = "true";
   countdown.setAttribute("aria-live", "off");
-  header.append(countdown);
+
+  const copy = document.createElement("div");
+  copy.className = "a11y-guide-copy";
+  copy.setAttribute("aria-live", "polite");
+  const text = document.createElement("span");
+  text.dataset.a11yGuideText = "true";
+  copy.append(text);
 
   const collapse = document.createElement("button");
   collapse.type = "button";
   collapse.className = "a11y-guide-collapse";
   collapse.dataset.a11yGuideCollapse = "true";
   collapse.setAttribute("aria-expanded", "true");
-  collapse.textContent = "∨ 접기";
+  collapse.setAttribute("aria-label", "안내 접기");
+  collapse.textContent = "⌄";
   collapse.addEventListener("click", (event) => {
     event.stopPropagation();
     handlers.onCollapse();
   });
-  header.append(collapse);
 
   const pager = document.createElement("nav");
   pager.className = "a11y-guide-pager";
@@ -381,7 +388,8 @@ function createGuideOverlay(
     handlers.onClose();
   });
 
-  aside.append(header, icon, copy, pager, close);
+  header.append(icon, countdown, title, close, collapse);
+  aside.append(header, copy, pager);
   const slot = !root.classList.contains("a11y-bottom-viewport-poc-shell") &&
     typeof root.querySelector === "function"
     ? root.querySelector<HTMLElement>(".a11y-guidance-slot")
@@ -546,8 +554,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     }
     if (close) close.hidden = !smartGuideVisible;
     if (collapse) {
-      collapse.textContent = guidanceCollapsed || guidanceSafetyCollapsed ? "∧ 펼치기" : "∨ 접기";
-      collapse.setAttribute("aria-expanded", String(!(guidanceCollapsed || guidanceSafetyCollapsed)));
+      const collapsed = guidanceCollapsed || guidanceSafetyCollapsed;
+      collapse.textContent = collapsed ? "⌃" : "⌄";
+      collapse.setAttribute("aria-label", collapsed ? "안내 펼치기" : "안내 접기");
+      collapse.setAttribute("aria-expanded", String(!collapsed));
     }
     guideOverlay.classList.toggle("a11y-guide-collapsed", guidanceCollapsed || guidanceSafetyCollapsed);
     guideOverlay.classList.toggle("a11y-guide-smart", smartGuideVisible);

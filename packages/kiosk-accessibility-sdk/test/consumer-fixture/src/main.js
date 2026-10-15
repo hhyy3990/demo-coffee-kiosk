@@ -57,7 +57,7 @@ const sdk = createAccessibilitySdk({
     ...issues.filter((issue) => issue.issueType === "guide-suppressed"),
   ),
 });
-const profile = validateAccessibilityProfile({
+let profile = validateAccessibilityProfile({
   ...DEFAULT_ACCESSIBILITY_PROFILE,
   textSize: "extraLarge",
   buttonSize: "large",
@@ -177,10 +177,25 @@ window.__sdkPackageSmoke = {
   readGuidance() {
     const panel = root.querySelector(".a11y-guide-toast");
     const rect = panel?.getBoundingClientRect();
+    const panelStyle = panel ? getComputedStyle(panel) : null;
+    const measure = (selector) => {
+      const element = panel?.querySelector(selector);
+      const box = element?.getBoundingClientRect();
+      return box ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+        width: box.width, height: box.height } : null;
+    };
     return {
-      visible: Boolean(panel),
+      visible: Boolean(panel && panelStyle?.display !== "none" && panelStyle?.visibility === "visible" &&
+        Number(panelStyle.opacity) > 0 && rect.width > 0 && rect.height > 0 &&
+        rect.bottom > 0 && rect.top < innerHeight),
+      panelVisibility: panelStyle?.visibility ?? "",
+      panelOpacity: panelStyle?.opacity ?? "",
+      ariaHidden: panel?.getAttribute("aria-hidden") ?? "",
+      suppressed: panel?.dataset.a11yPositionSuppressed === "true",
       title: panel?.querySelector("[data-a11y-guide-title]")?.textContent ?? "",
       text: panel?.querySelector("[data-a11y-guide-text]")?.textContent ?? "",
+      textVisible: Boolean(panel?.querySelector("[data-a11y-guide-text]")?.getClientRects().length &&
+        getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).display !== "none"),
       page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
       collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false,
       pagerHidden: panel?.querySelector("[data-a11y-guide-pager]")?.hidden ?? true,
@@ -188,6 +203,22 @@ window.__sdkPackageSmoke = {
       nextHidden: panel?.querySelector("[data-a11y-guide-next]")?.hidden ?? true,
       countdown: panel?.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
       panelRect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
+      headerRect: measure(".a11y-guide-header"),
+      titleRect: measure("[data-a11y-guide-title]"),
+      iconRect: measure(".a11y-guide-icon"),
+      iconAriaHidden: panel?.querySelector(".a11y-guide-icon")?.getAttribute("aria-hidden") ?? "",
+      countdownRect: measure("[data-a11y-guide-countdown]"),
+      collapseRect: measure("[data-a11y-guide-collapse]"),
+      collapseLabel: panel?.querySelector("[data-a11y-guide-collapse]")?.textContent ?? "",
+      collapseAccessibleName: panel?.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
+      closeRect: measure(".a11y-guide-close"),
+      closeLabel: panel?.querySelector(".a11y-guide-close")?.getAttribute("aria-label") ?? "",
+      textRect: measure("[data-a11y-guide-text]"),
+      previousRect: measure("[data-a11y-guide-previous]"),
+      nextRect: measure("[data-a11y-guide-next]"),
+      pageRect: measure("[data-a11y-guide-page]"),
+      titleFontSize: panel ? getComputedStyle(panel.querySelector("[data-a11y-guide-title]")).fontSize : "",
+      bodyFontSize: panel ? getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).fontSize : "",
       actionRect: (() => {
         const button = continueButton.getBoundingClientRect();
         return { left: button.left, top: button.top, right: button.right, bottom: button.bottom };
@@ -213,6 +244,19 @@ window.__sdkPackageSmoke = {
   },
   setViewport(percent) {
     return sdk.setViewportMode(percent ? { mode: "bottom", heightPercent: percent } : null);
+  },
+  setTestProfile(overrides = {}) {
+    profile = validateAccessibilityProfile({ ...profile, ...overrides });
+    sdk.applyProfile(profile);
+    sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
+    sdk.setGuideState({
+      stepId: guideStep,
+      enabled: profile.smartGuide,
+      paused: true,
+      delaySeconds: 10,
+      message: { title: "스마트 길잡이", text: "계속 버튼을 눌러 진행하세요.", actionId: "host.review.continue" },
+    });
+    return profile;
   },
   moveToStep(step) {
     sdk.notifyScreenChange(step);

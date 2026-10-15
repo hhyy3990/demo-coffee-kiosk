@@ -414,7 +414,7 @@ try {
   if (cases.length !== expectedCases) {
     throw new Error(`Expected ${expectedCases} consumer browser cases, got ${cases.length}.`);
   }
-  const guidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
+  const panelGuidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
   const guidanceLayouts = [];
   await send("Page.navigate", { url: baseUrl });
   let guideFixtureLoaded = false;
@@ -424,6 +424,7 @@ try {
     await wait(50);
   }
   if (!guideFixtureLoaded) throw new Error("Independent shared-guidance fixture did not load.");
+  await wait(350);
   let easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!easy.visible || easy.page !== "1/3") throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
    await pointerClick("[data-a11y-guide-next]");
@@ -436,7 +437,7 @@ try {
   easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (easy.page !== "2/3" || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
 
-  for (const [width, height] of guidanceViewports) {
+  for (const [width, height] of panelGuidanceViewports) {
     await send("Emulation.setDeviceMetricsOverride", {
       width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
     });
@@ -492,6 +493,7 @@ try {
   }
 
   await evaluate(`window.__sdkPackageSmoke.moveToStep("host.payment")`);
+  await wait(350);
   const singlePage = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!singlePage.visible || !singlePage.pagerHidden || singlePage.title !== "새 단계") {
     throw new Error(`Single explanation or step change failed: ${JSON.stringify(singlePage)}`);
@@ -634,6 +636,129 @@ try {
   if (expanded.collapsed || expanded.title !== "새 단계" || !expanded.pagerHidden) {
     throw new Error(`Single-page panel could not reopen after the timer check: ${JSON.stringify(expanded)}`);
   }
+  const guidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
+  const viewportModes = [null, 60, 70, 80];
+  const profiles = [
+    { textSize: "standard", buttonSize: "standard", contrast: "standard", easyLanguage: true, smartGuide: false },
+    { textSize: "extraLarge", buttonSize: "large", contrast: "high", easyLanguage: true, smartGuide: false },
+    { textSize: "large", buttonSize: "standard", contrast: "standard", easyLanguage: true, smartGuide: true },
+    { textSize: "extraLarge", buttonSize: "large", contrast: "high", easyLanguage: true, smartGuide: true },
+  ];
+  const guidanceLayoutMatrix = [];
+  for (const [width, height] of guidanceViewports) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
+    });
+    for (const percent of viewportModes) {
+      for (const variant of profiles) {
+        const viewportMode = percent === null ? null : { mode: "bottom", heightPercent: percent };
+        await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({ ...variant, viewportMode })})`);
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        const state = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+        const controls = [
+          state.collapseRect,
+          state.previousRect,
+          state.nextRect,
+        ];
+        const buttonsFit = controls.every((rect) => rect && rect.width >= 44 && rect.height >= 44);
+        const minBodyFont = variant.textSize === "extraLarge" ? 20 :
+          variant.textSize === "large" ? 17.5 : 16;
+        const panel = state.panelRect;
+        const overlaps = (a, b) => a && b && a.left < b.right && a.right > b.left &&
+          a.top < b.bottom && a.bottom > b.top;
+        if (!state.visible || !state.textVisible || state.collapsed || !buttonsFit ||
+          !state.textRect || !panel || state.panelRect.left < 0 || state.panelRect.right > width ||
+          overlaps(panel, state.actionRect) || overlaps(panel, state.keypadRect) ||
+          Number.parseFloat(state.bodyFontSize) < minBodyFont ||
+          state.iconAriaHidden !== "true" || state.iconRect.width > 20 ||
+          state.collapseAccessibleName !== "안내 접기" || state.headerRect.height > 44 ||
+          state.page !== "1/3") {
+          throw new Error(`Guidance layout failed at ${width}x${height}, viewport=${percent}: ${JSON.stringify(state)}`);
+        }
+        guidanceLayoutMatrix.push({
+          viewport: `${width}x${height}`,
+          viewportMode: percent ?? "null",
+          profile: `${variant.textSize}/${variant.buttonSize}/${variant.contrast}`,
+          panelHeight: Math.round(panel.bottom - panel.top),
+          collapseTarget: `${Math.round(state.collapseRect.width)}x${Math.round(state.collapseRect.height)}`,
+          previousTarget: `${Math.round(state.previousRect.width)}x${Math.round(state.previousRect.height)}`,
+          nextTarget: `${Math.round(state.nextRect.width)}x${Math.round(state.nextRect.height)}`,
+          bodyFontSize: state.bodyFontSize,
+        });
+      }
+    }
+  }
+  const smartOnlyLayouts = [];
+  for (const [width, height, percent] of [[320, 844, null], [1080, 1920, 80]]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height, deviceScaleFactor: 1, mobile: width < 600, screenWidth: width, screenHeight: height,
+    });
+    const viewportMode = percent === null ? null : { mode: "bottom", heightPercent: percent };
+    await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({
+      textSize: "extraLarge", buttonSize: "large", contrast: "high",
+      easyLanguage: false, smartGuide: true, viewportMode,
+    })})`);
+    const started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+    let smart;
+    for (let attempt = 0; attempt < 115; attempt += 1) {
+      smart = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+      if (smart.title === "스마트 길잡이") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await wait(350);
+    smart = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (smart?.title !== "스마트 길잡이" || !smart.visible || !smart.pagerHidden ||
+      !smart.previousHidden || !smart.nextHidden || !smart.countdown ||
+      smart.closeRect.width < 44 || smart.closeRect.height < 44 ||
+      smart.collapseRect.width < 44 || smart.collapseRect.height < 44 ||
+      smart.iconRect.width !== 0 || smart.closeLabel !== "안내 닫기" ||
+      smart.collapseAccessibleName !== "안내 접기" || smart.headerRect.height > 44) {
+      throw new Error(`Smart Guide-only layout failed at ${width}x${height}: ${JSON.stringify(smart)}`);
+    }
+    smartOnlyLayouts.push({ viewport: `${width}x${height}`, viewportMode: percent ?? "null",
+      elapsedMs: Math.round((await evaluate(`performance.now() - ${started}`))),
+      panelHeight: Math.round(smart.panelRect.bottom - smart.panelRect.top) });
+    await evaluate("document.querySelector('.a11y-guide-close').click()");
+  }
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
+  });
+  await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({
+    textSize: "extraLarge", buttonSize: "large", contrast: "high",
+    easyLanguage: true, smartGuide: false, viewportMode: null,
+  })})`);
+  await wait(350);
+  await evaluate("document.querySelector('[data-a11y-guide-collapse]').focus()");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  const keyboardForward = await evaluate(`({
+    nextFocused: document.activeElement?.dataset?.a11yGuideNext === "true",
+    outline: getComputedStyle(document.activeElement).outlineStyle,
+  })`);
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8,
+  });
+  await send("Input.dispatchKeyEvent", {
+    type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8,
+  });
+  const keyboardBackward = await evaluate(`({
+    collapseFocused: document.activeElement?.dataset?.a11yGuideCollapse === "true",
+    outline: getComputedStyle(document.activeElement).outlineStyle,
+  })`);
+  if (!keyboardForward.nextFocused || keyboardForward.outline === "none" ||
+    !keyboardBackward.collapseFocused || keyboardBackward.outline === "none") {
+    throw new Error(`Guide controls are not keyboard reachable: ${JSON.stringify({ keyboardForward, keyboardBackward })}`);
+  }
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
+  const reducedMotion = await evaluate(`({
+    animationName: getComputedStyle(document.querySelector(".a11y-guide-toast")).animationName,
+    visible: getComputedStyle(document.querySelector(".a11y-guide-toast")).visibility === "visible",
+  })`);
+  if (reducedMotion.animationName !== "none" || !reducedMotion.visible) {
+    throw new Error(`Reduced-motion preference was not honored: ${JSON.stringify(reducedMotion)}`);
+  }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
     sharedGuidanceLayouts: guidanceLayouts,
@@ -648,6 +773,12 @@ try {
       countdownDecreased: { default: defaultCountdownAfter, slow: slowCountdownAfter },
     },
     fontCorrectionCases,
+    guidanceLayoutCases: guidanceLayoutMatrix.length,
+    guidanceLayoutMatrix,
+    smartOnlyLayouts,
+    keyboardForward,
+    keyboardBackward,
+    reducedMotion,
     cases,
     result: "PASS",
   }, null, 2));

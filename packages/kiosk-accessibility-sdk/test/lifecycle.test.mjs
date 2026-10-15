@@ -326,7 +326,7 @@ test("closing the Smart Guide directly removes it and cancels its auto-dismiss t
     h.timerCallbacks.get([...h.timerCallbacks.keys()].at(-1))?.();
     const dismissTimer = [...h.scheduledDelays.entries()]
       .filter(([, delay]) => delay === 10_000).at(-1)?.[0];
-    const close = h.children[0].children.find((element) => element.className === "a11y-guide-close");
+    const close = h.children[0].querySelector(".a11y-guide-close");
     close.dispatch("click", { stopPropagation() {} });
     assert.equal(h.children.length, 0);
     assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
