@@ -766,14 +766,14 @@ export default function App() {
                   <button type="button" id="menu-order-confirm" data-a11y-action-id="menu-order-confirm" data-a11y-primary="true" className="primary-button" onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
                 </div>
               )}
-              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" onClick={returnToStart}><ArrowLeft size={17} /> 처음으로</button></div>
+              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" data-a11y-primary="true" onClick={returnToStart}><ArrowLeft size={17} /> 처음으로</button></div>
             </>
           )}
 
           {stage === "options" && (
             <>
               <div className="page-heading">
-                <div><button type="button" className="back-button" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴로 돌아가기</button><div className="eyebrow">MENU OPTIONS</div><h2 data-a11y-text data-a11y-id="cafe.options.title">{selectedProduct.koreanName}</h2><p className="lede" data-a11y-text data-a11y-id="cafe.options.description">{selectedProduct.note}</p></div>
+                <div><button type="button" className="back-button" data-a11y-primary="true" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴로 돌아가기</button><div className="eyebrow">MENU OPTIONS</div><h2 data-a11y-text data-a11y-id="cafe.options.title">{selectedProduct.koreanName}</h2><p className="lede" data-a11y-text data-a11y-id="cafe.options.description">{selectedProduct.note}</p></div>
                 <span className="steps"><span className="step-dot active" /><span className="step-dot" /><span className="step-dot" /></span>
               </div>
               <div className="item-detail">
@@ -821,7 +821,7 @@ export default function App() {
           {stage === "cart" && (
             <>
               <div className="page-heading">
-                <div><button type="button" className="back-button" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴 더 고르기</button><div className="eyebrow">ORDER / 02</div><h2>주문을 확인해 주세요</h2><p className="lede">{preferences.easyLanguage ? "수량을 바꾸거나 빼도 괜찮아요." : "메뉴와 수량을 확인한 뒤 결제로 이동해 주세요."}</p></div>
+                <div><button type="button" className="back-button" data-a11y-primary="true" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴 더 고르기</button><div className="eyebrow">ORDER / 02</div><h2>주문을 확인해 주세요</h2><p className="lede">{preferences.easyLanguage ? "수량을 바꾸거나 빼도 괜찮아요." : "메뉴와 수량을 확인한 뒤 결제로 이동해 주세요."}</p></div>
               </div>
               {cart.length === 0 ? (
                 <div className="empty-state"><ShoppingBag size={31} /><h3>아직 담긴 메뉴가 없어요</h3><p>메뉴에서 먹고 싶은 것을 골라 주세요.</p><button type="button" id="cart-empty-menu" data-a11y-action-id="cart-empty-menu" data-a11y-primary="true" className="primary-button" onClick={() => setStage("menu")}>메뉴 고르기 <ArrowRight size={17} /></button></div>
@@ -855,7 +855,7 @@ export default function App() {
           {stage === "payment" && (
             <>
               <div className="page-heading">
-                <div><button type="button" className="back-button" onClick={() => setStage("cart")}><ArrowLeft size={17} /> 주문 확인으로</button><div className="eyebrow">ORDER / 03</div><h2>어떻게 결제할까요?</h2><p className="lede">결제는 이 화면에서만 시뮬레이션됩니다. 실제 결제는 진행되지 않아요.</p></div>
+                <div><button type="button" className="back-button" data-a11y-primary="true" onClick={() => setStage("cart")}><ArrowLeft size={17} /> 주문 확인으로</button><div className="eyebrow">ORDER / 03</div><h2>어떻게 결제할까요?</h2><p className="lede">결제는 이 화면에서만 시뮬레이션됩니다. 실제 결제는 진행되지 않아요.</p></div>
                 <div className="steps"><span className="step-dot active" /><span className="step-dot active" /><span className="step-dot active" /></div>
               </div>
               <div className="payment-grid" role="group" aria-label="결제 방법">

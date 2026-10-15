@@ -147,9 +147,9 @@ function positionGuide(
       el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none",
     );
     const safeBottom = controls.reduce((edge, el) =>
-      Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.bottom)) - 8;
-    // The guide is a viewport overlay, so the scroll area's lower start edge
-    // must not trap it between a keypad and the fixed bottom controls.
+      Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.top)) - 8;
+    // Keep the shared guide in the non-scrolling viewport band above the
+    // scroll owner; placing it over scrolled content can cover menu actions.
     const safeTop = 8;
     const availableHeight = safeBottom - safeTop;
     if (availableHeight < 72) return false;
@@ -167,6 +167,7 @@ function positionGuide(
     const maximum = safeBottom - height;
     const positions = [action.top - height - 12, action.bottom + 12];
     const obstacles = [
+      ...(typeof getComputedStyle === "function" ? [target] : []),
       ...getGuideProtectedActions(regions),
       ...(regions?.viewportOverlays ?? []),
       ...(regions?.guidanceAvoidAreas ?? []),
@@ -223,6 +224,7 @@ function positionGuide(
     Math.max(margin, viewportWidth - overlayRect.width - margin),
   );
   const obstacles = [
+    ...(typeof getComputedStyle === "function" ? [target] : []),
     ...getGuideProtectedActions(regions),
     ...(regions?.guidanceAvoidAreas ?? []),
     ...(regions?.viewportOverlays ?? []),
@@ -362,6 +364,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   };
   let guideOverlay: HTMLElement | null = null;
   let guideValidationFrame = 0;
+  let guidePositionFrame = 0;
+  let nextItemRefreshFrame = 0;
   let highlightedAction: HTMLElement | null = null;
   let easyLanguageState: EasyLanguageState | null = null;
   let easyLanguageIndex = 0;
@@ -391,12 +395,23 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const nextItemObserver = typeof MutationObserver === "undefined"
     ? null
     : new MutationObserver((mutations) => {
-      const hostLayoutChanged = mutations.some(({ target, type }) =>
-        !guideOverlay || !guideOverlay.contains(target) || type === "childList",
-      );
-      if (!hostLayoutChanged) return;
-      refreshNextItemButtons();
-      if (guideOverlay) updateGuidePosition();
+      const hostLayoutChanged = mutations.some(({ target, type, attributeName }) => {
+        if (guideOverlay?.contains(target)) return type === "childList";
+        // SDK emphasis classes are presentation-only. Observing them here
+        // makes the observer react to its own button highlighting.
+        if (type === "attributes" && attributeName === "class" &&
+            target instanceof HTMLElement &&
+            (target.classList.contains("a11y-next-item-emphasis") ||
+             target.classList.contains("a11y-guide-emphasis"))) return false;
+        return true;
+      });
+      if (!hostLayoutChanged || nextItemRefreshFrame) return;
+      nextItemRefreshFrame = window.requestAnimationFrame(() => {
+        nextItemRefreshFrame = 0;
+        if (destroyed) return;
+        refreshNextItemButtons();
+        if (guideOverlay) scheduleGuidePosition();
+      });
     });
   let timer = createIdleTimer(showGuide);
   let guideDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -448,8 +463,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           renderGuidancePanel();
         },
       });
-      window.addEventListener("resize", updateGuidePosition);
-      window.addEventListener("scroll", updateGuidePosition, true);
+      window.addEventListener("resize", scheduleGuidePosition, { passive: true });
+      window.addEventListener("scroll", scheduleGuidePosition, { capture: true, passive: true });
     }
     const title = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-title]");
     const text = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-text]");
@@ -612,11 +627,15 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       globalThis.clearTimeout(guideCountdownTimer);
       guideCountdownTimer = null;
     }
+    if (guidePositionFrame) {
+      window.cancelAnimationFrame(guidePositionFrame);
+      guidePositionFrame = 0;
+    }
     if (guideOverlay) {
       guideOverlay.remove();
       guideOverlay = null;
-      window.removeEventListener("resize", updateGuidePosition);
-      window.removeEventListener("scroll", updateGuidePosition, true);
+      window.removeEventListener("resize", scheduleGuidePosition);
+      window.removeEventListener("scroll", scheduleGuidePosition, true);
     }
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
@@ -737,6 +756,14 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       removeGuide();
     }
     if (guideOverlay) scheduleGuideHitTest(target, action);
+  }
+
+  function scheduleGuidePosition(): void {
+    if (destroyed || guidePositionFrame) return;
+    guidePositionFrame = window.requestAnimationFrame(() => {
+      guidePositionFrame = 0;
+      updateGuidePosition();
+    });
   }
 
   function showGuide(): void {
@@ -1052,7 +1079,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled", "hidden", "aria-hidden", "class"],
+    attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled", "hidden", "aria-hidden"],
   });
   refreshNextItemButtons();
   if (!("PointerEvent" in window)) root.addEventListener("touchstart", recordInteraction, { passive: true });
@@ -1088,6 +1115,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       destroyed = true;
       screenChange.destroy();
       nextItemObserver?.disconnect();
+      if (nextItemRefreshFrame) window.cancelAnimationFrame(nextItemRefreshFrame);
+      if (guidePositionFrame) window.cancelAnimationFrame(guidePositionFrame);
       for (const button of emphasizedNextButtons) button.classList.remove("a11y-next-item-emphasis");
       emphasizedNextButtons.clear();
       timer.dispose();

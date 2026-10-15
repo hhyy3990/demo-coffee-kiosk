@@ -2,9 +2,10 @@ import { spawn } from "node:child_process";
 
 const chromium = process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium";
 const scenarios = [
-  { viewport: [320, 844], structure: "fixed-controls", percent: 60 },
-  { viewport: [390, 844], structure: "fixed-controls", percent: 70 },
-  { viewport: [1080, 1920], structure: "fixed-controls", percent: 80 },
+  { viewport: [320, 844], structure: "long-menu", percent: 60 },
+  { viewport: [360, 667], structure: "long-menu", percent: 60 },
+  { viewport: [390, 844], structure: "long-menu", percent: 60 },
+  { viewport: [1080, 1920], structure: "long-menu", percent: 80 },
 ];
 const reports = [];
 const guideObstructions = [];
@@ -12,6 +13,7 @@ const guideObstructions = [];
 for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
   const [viewWidth, viewHeight] = viewport;
   let completionAutoReturnMs = null;
+  let menuStability = null;
   const externalPort = process.env.CDP_PORT ? Number(process.env.CDP_PORT) : undefined;
   const port = externalPort ?? 9690 + index;
   const child = externalPort ? null : spawn(chromium, [
@@ -134,8 +136,9 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 80));
     };
     await send("Emulation.setDeviceMetricsOverride", {
-      width: viewWidth, height: viewHeight, deviceScaleFactor: 1, mobile: false,
+      width: viewWidth, height: viewHeight, deviceScaleFactor: 1, mobile: viewWidth < 700,
       screenWidth: viewWidth, screenHeight: viewHeight,
+      ...(viewWidth < 700 ? { screenOrientation: { type: "portraitPrimary", angle: 0 } } : {}),
     });
     if (structure === "long-menu") {
       await send("Page.navigate", { url: `http://127.0.0.1:5000/?bottom-sdk=${percent}` });
@@ -226,6 +229,45 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
     const orderViewportHeight = await evaluate("document.querySelector('.shell').getBoundingClientRect().height");
     if (Math.abs(orderViewportHeight - viewHeight * 0.6) > 2) {
       throw new Error(`Order viewport did not use the profile's 60% at ${viewWidth}x${viewHeight}: ${orderViewportHeight}px.`);
+    }
+    if (viewWidth === 320) {
+      await evaluate("window.__a11yLongTasks=[]; new PerformanceObserver(list => window.__a11yLongTasks.push(...list.getEntries().map(entry => Math.round(entry.duration)))).observe({type:'longtask', buffered:true})");
+      const scrollRect = await evaluate("document.querySelector('.shell').getBoundingClientRect().toJSON()");
+      const touchX = Math.max(12, Math.floor(scrollRect.right - 20));
+      const touchY = Math.floor(scrollRect.top + Math.min(280, scrollRect.height * 0.7));
+      await send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: touchX, y: touchY }],
+      });
+      await send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: touchX, y: touchY - 160 }],
+      });
+      await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      for (let index = 0; index < 6; index += 1) {
+        await send("Input.dispatchMouseEvent", {
+          type: "mouseWheel",
+          x: touchX,
+          y: touchY,
+          deltaX: 0,
+          deltaY: index % 2 ? -240 : 240,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+      menuStability = await evaluate(`(() => {
+        const shell = document.querySelector(".shell");
+        return {
+          responsive: Boolean(document.querySelector(".section-heading")),
+          longTasksMs: window.__a11yLongTasks ?? [],
+          scrollTop: shell?.scrollTop ?? -1,
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+          easyOrGuideVisible: Boolean(document.querySelector(".a11y-guide-toast")),
+        };
+      })()`);
+      if (!menuStability.responsive || menuStability.horizontalOverflow) {
+        throw new Error(`The 30-second menu stress test failed: ${JSON.stringify(menuStability)}`);
+      }
     }
     await clickTarget("#menu-product-0");
     let optionReady = false;
@@ -345,7 +387,7 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!result) throw new Error(`QR entry fixture did not finish for ${viewWidth}x${viewHeight} (${structure}).`);
-    reports.push({ viewport: `${viewWidth}x${viewHeight}`, percent, ...result, completionAutoReturnMs });
+    reports.push({ viewport: `${viewWidth}x${viewHeight}`, percent, ...result, completionAutoReturnMs, menuStability });
   } finally {
     try { socket?.close(); } catch {}
     if (child?.pid) {
