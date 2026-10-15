@@ -12,6 +12,8 @@ const root = document.querySelector("#kiosk-root");
 const continueButton = document.querySelector("#host-continue");
 const hostState = { step: "review", actionCount: 0 };
 let keypadClicks = 0;
+let quantity = 1;
+let optionChanges = 0;
 const guidePlacementDiagnostics = [];
 
 continueButton.addEventListener("click", () => {
@@ -21,6 +23,17 @@ continueButton.addEventListener("click", () => {
 root.querySelectorAll(".keypad button").forEach((button) => button.addEventListener("click", () => {
   keypadClicks += 1;
 }));
+root.querySelectorAll(".fixture-choices input").forEach((input) => input.addEventListener("change", () => {
+  optionChanges += 1;
+}));
+document.querySelector("#quantity-minus").addEventListener("click", () => {
+  quantity = Math.max(1, quantity - 1);
+  document.querySelector("#quantity-count").textContent = String(quantity);
+});
+document.querySelector("#quantity-plus").addEventListener("click", () => {
+  quantity += 1;
+  document.querySelector("#quantity-count").textContent = String(quantity);
+});
 
 const adapter = {
   getSnapshot: () => ({
@@ -45,7 +58,10 @@ const adapter = {
         continueButton,
         root.querySelector("#test-pin"),
         ...root.querySelectorAll(".keypad button"),
+        ...root.querySelectorAll(".fixture-choices input"),
+        ...root.querySelectorAll(".fixture-quantity button"),
       ].filter(Boolean).map((element) => ({ element })),
+      menuItems: [...root.querySelectorAll(".fixture-menu-item")],
       guidanceAvoidAreas: [root.querySelector(".keypad")].filter(Boolean),
     }),
 };
@@ -155,11 +171,17 @@ window.__sdkPackageSmoke = {
       classes: [...root.classList].filter((name) => name.startsWith("a11y-")),
       actionCount: hostState.actionCount,
       keypadClicks,
+      quantity,
+      optionChanges,
       guidePlacementDiagnostics,
       guideVisible: Boolean(root.querySelector(".a11y-guide-toast")),
       actionHighlighted: continueButton.classList.contains("a11y-guide-emphasis"),
       diagnostics: sdk.inspectLayout(),
     };
+  },
+  readInteractionState() {
+    return { keypadClicks, quantity, optionChanges, scrollTop: window.scrollY,
+      guide: this.readGuidance() };
   },
   updateGuideCopy(text) {
     sdk.setGuideState({

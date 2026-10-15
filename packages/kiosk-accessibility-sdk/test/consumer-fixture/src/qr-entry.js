@@ -233,7 +233,7 @@ window.qrConsumerTest = {
   },
   async guidanceOverlayPriority(kind) {
     const overlay = document.createElement("aside");
-    overlay.className = kind === "guide" ? "a11y-guide-toast" : "fixture-modal";
+    overlay.className = kind === "guide" ? "a11y-guide-toast a11y-guide-smart" : "fixture-modal";
     overlay.textContent = kind;
     root.append(overlay);
     if (kind === "guide") {

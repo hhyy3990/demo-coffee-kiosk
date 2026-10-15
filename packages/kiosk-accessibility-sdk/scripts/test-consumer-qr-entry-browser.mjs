@@ -197,6 +197,43 @@ try {
           return { x: Math.min(innerWidth - 4, rect.left + rect.width / 2),
             y: Math.max(4, Math.min(innerHeight - 4, rect.top + rect.height / 2)) };
         })()`);
+        const setScrollProgress = async (ratio) => evaluate(`(() => {
+          const owner = document.body.classList.contains("document-host")
+            ? (document.body.dataset.qrScrollOwner === "inner"
+              ? document.querySelector(".content")
+              : document.scrollingElement)
+            : document.querySelector(".content");
+          owner.scrollTop = (owner.scrollHeight - owner.clientHeight) * ${ratio};
+          return owner.scrollTop;
+        })()`);
+        let hintDrift = [];
+        if (started.guidanceEnabled) {
+          await setScrollProgress(0.5);
+          await wait(120);
+          const atMidScroll = await evaluate("window.qrConsumerTest.get()");
+          await setScrollProgress(0.85);
+          await wait(120);
+          const nearScrollEnd = await evaluate("window.qrConsumerTest.get()");
+          const scrollHintSamples = [started, atMidScroll, nearScrollEnd];
+          if (scrollHintSamples.some((state) => !state.hintVisible || !state.hintRect)) {
+            throw new Error(`Scroll hint disappeared before the end of content: ${
+              JSON.stringify(scrollHintSamples.map(({ hintVisible, hintRect, ownerRange, ownerScrollTop }) =>
+                ({ hintVisible, hintRect, ownerRange, ownerScrollTop })))
+            }`);
+          }
+          hintDrift = scrollHintSamples.slice(1).map((state) => ({
+            x: Math.abs(state.hintRect.left - started.hintRect.left),
+            y: Math.abs(state.hintRect.top - started.hintRect.top),
+          }));
+          if (
+            hintDrift.some(({ x, y }) => x > 1 || y > 1) ||
+            !atMidScroll.hintAvoidsDockAndControls || !nearScrollEnd.hintAvoidsDockAndControls) {
+            throw new Error(`Scroll hint moved or conflicted while scrolling: ${
+              JSON.stringify({ started: started.hintRect, atMidScroll: atMidScroll.hintRect,
+                nearScrollEnd: nearScrollEnd.hintRect, hintDrift })
+            }`);
+          }
+        }
         await send("Input.dispatchMouseEvent", {
           type: "mouseWheel", x: ownerPoint.x, y: ownerPoint.y, deltaX: 0, deltaY: 12000,
         });
@@ -308,7 +345,7 @@ try {
           scrollAreaHasDockClass: atEnd.scrollAreaHasDockClass,
           scrollAreaHasViewportClass: atEnd.scrollAreaHasViewportClass,
           hostTail: atEnd.hostTail, hostNoticeRect: atEnd.hostNoticeRect,
-          contentHeight: atEnd.rootHeight, lastVisible: atEnd.lastVisible,
+          contentHeight: atEnd.rootHeight, lastVisible: atEnd.lastVisible, hintDrift,
           lastClicked: clicked === 1, hintAtStart: atStart.hintVisible, overlays, touchScroll,
         });
       }
@@ -427,6 +464,22 @@ try {
   await wait(350);
   let easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!easy.visible || easy.page !== "1/3") throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
+  const easyScrollHint = await evaluate(`(() => {
+    const hint = document.querySelector(".a11y-additional-menu-hint");
+    const guide = document.querySelector(".a11y-guide-toast");
+    const action = document.querySelector("#host-continue");
+    const rect = (el) => el?.getBoundingClientRect();
+    const h = rect(hint), g = rect(guide), a = rect(action);
+    const overlaps = (x, y) => x && y && x.left < y.right && x.right > y.left &&
+      x.top < y.bottom && x.bottom > y.top;
+    return { visible: Boolean(hint && getComputedStyle(hint).visibility === "visible"),
+      hint: h?.toJSON(), overlapsGuide: overlaps(h, g), overlapsAction: overlaps(h, a),
+      role: hint?.getAttribute("role"), pointerEvents: hint && getComputedStyle(hint).pointerEvents };
+  })()`);
+  if (!easyScrollHint.visible || easyScrollHint.overlapsGuide || easyScrollHint.overlapsAction ||
+    easyScrollHint.role !== "status" || easyScrollHint.pointerEvents !== "none") {
+    throw new Error(`Scroll hint was missing or collided with Easy Language: ${JSON.stringify(easyScrollHint)}`);
+  }
    await pointerClick("[data-a11y-guide-next]");
    await pointerClick("[data-a11y-guide-next]");
   if ((await evaluate("window.__sdkPackageSmoke.readGuidance()")).page !== "3/3") {
@@ -505,7 +558,7 @@ try {
   }
 
   await send("Emulation.setDeviceMetricsOverride", {
-    width: 1080, height: 1920, deviceScaleFactor: 1, mobile: false, screenWidth: 1080, screenHeight: 1920,
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
   });
   await send("Page.navigate", { url: baseUrl });
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -566,6 +619,20 @@ try {
     throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
   }
   const slowVisibleAt = await evaluate("performance.now()");
+  for (let index = 0; index < 3; index += 1) {
+    await pointerClick(".keypad button:first-child");
+    await pointerClick(".fixture-choices label:first-of-type");
+    await pointerClick("#quantity-plus");
+    await pointerClick("#quantity-minus");
+  }
+  await evaluate("window.scrollBy(0, 240)");
+  await wait(200);
+  const duringInteractions = await evaluate("window.__sdkPackageSmoke.readInteractionState()");
+  if (!duringInteractions.guide.visible || duringInteractions.guide.title !== "스마트 길잡이" ||
+    duringInteractions.keypadClicks < 3 || duringInteractions.optionChanges < 3 ||
+    duringInteractions.quantity !== 1 || duringInteractions.scrollTop <= 0) {
+    throw new Error(`Same-step input dismissed Smart Guide early: ${JSON.stringify(duringInteractions)}`);
+  }
   await wait(1_200);
   const slowCountdownAfter = await evaluate("window.__sdkPackageSmoke.readGuidance().countdown");
   if (Number.parseInt(slowCountdownAfter, 10) >= 15) {
@@ -582,6 +649,16 @@ try {
     !slowReturned.collapsed || slowVisibleMs < 14_300 || slowVisibleMs > 16_500) {
     throw new Error(`Real 15-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
   }
+  const sameStepInteractionResult = {
+    keypadInputs: duringInteractions.keypadClicks,
+    optionChanges: duringInteractions.optionChanges,
+    quantityAfterIncreaseDecrease: duringInteractions.quantity,
+    scrollTop: duringInteractions.scrollTop,
+    guideVisibleAfterInput: duringInteractions.guide.visible,
+    remainingAtObservation: duringInteractions.guide.countdown,
+    totalVisibleMs: Math.round(slowVisibleMs),
+    endedBy: "slowGuidance 15-second display deadline; Easy Language page restored",
+  };
 
   const delay15Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 15)");
   let guide15;
@@ -772,6 +849,7 @@ try {
       guideDelay20,
       countdownDecreased: { default: defaultCountdownAfter, slow: slowCountdownAfter },
     },
+    sameStepInteractionResult,
     fontCorrectionCases,
     guidanceLayoutCases: guidanceLayoutMatrix.length,
     guidanceLayoutMatrix,

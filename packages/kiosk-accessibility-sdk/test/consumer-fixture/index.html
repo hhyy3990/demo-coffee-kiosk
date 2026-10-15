@@ -23,6 +23,32 @@
           <button type="button">7</button><button type="button">8</button><button type="button">9</button>
           <button type="button">지움</button><button type="button">0</button><button type="button">확인</button>
         </div>
+        <fieldset class="fixture-choices">
+          <legend>표시 항목</legend>
+          <label><input type="checkbox" value="address" /> 주소</label>
+          <label><input type="checkbox" value="date" /> 날짜</label>
+          <label><input type="checkbox" value="purpose" /> 발급 목적</label>
+        </fieldset>
+        <div class="fixture-quantity" aria-label="발급 부수">
+          <button id="quantity-minus" type="button" aria-label="부수 감소">−</button>
+          <output id="quantity-count">1</output>
+          <button id="quantity-plus" type="button" aria-label="부수 증가">+</button>
+        </div>
+        <section class="fixture-menu-list" aria-label="추가 항목">
+          <h2>추가 항목</h2>
+          <button class="fixture-menu-item" type="button">항목 1</button>
+          <button class="fixture-menu-item" type="button">항목 2</button>
+          <button class="fixture-menu-item" type="button">항목 3</button>
+          <button class="fixture-menu-item" type="button">항목 4</button>
+          <button class="fixture-menu-item" type="button">항목 5</button>
+          <button class="fixture-menu-item" type="button">항목 6</button>
+          <button class="fixture-menu-item" type="button">항목 7</button>
+          <button class="fixture-menu-item" type="button">항목 8</button>
+          <button class="fixture-menu-item" type="button">항목 9</button>
+          <button class="fixture-menu-item" type="button">항목 10</button>
+          <button class="fixture-menu-item" type="button">항목 11</button>
+          <button class="fixture-menu-item" type="button">항목 12</button>
+        </section>
         <output id="host-state" aria-live="polite">업무 작업 0회</output>
       </main>
       <footer class="bottom-controls" data-a11y-slot="bottom-controls">

@@ -98,3 +98,9 @@ When a protected action is inside a scrollport, placement and hit testing must u
 **Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.
 
 **How to apply:** Test the real host flow at short/narrow viewports with wheel and touch scroll, verify body and page controls remain visible when safe, and wait through the configured guide lifetime before confirming page/fold restoration.
+
+While Smart Guide is visible, pointer/keyboard activity on the same task step may be counted but must neither dismiss the guide nor start a replacement idle timer. Only the fixed display deadline, explicit close, actual step transition, or session end may finish it. Easy Language may coexist with the scroll hint when the hint can avoid the panel; suppress it for Smart Guide or modal overlays.
+
+**Why:** The shared root listener treated every pointer/keyboard event as a dismissal, and the scroll cue was disabled for every guidance panel. That made numeric entry end the timer and left scrollable screens without a cue while persistent Easy Language was open.
+
+**How to apply:** Keep `stepId` stable across same-screen value edits, let `notifyScreenChange()` identify committed screen/scroll-owner transitions, and place the hint in fixed viewport-band candidates that do not depend on scrolling list-item rectangles. Browser-test start/middle/near-end positions and record the Smart Guide's observed display time after real input.

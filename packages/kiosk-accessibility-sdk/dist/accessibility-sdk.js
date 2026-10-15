@@ -384,8 +384,8 @@ export function createAccessibilitySdk(options) {
             removeGuide();
             return;
         }
+        menuHint.setEnabled(!smartGuideVisible);
         if (!guideOverlay) {
-            menuHint.setEnabled(false);
             guideOverlay = createGuideOverlay(root, {
                 onClose: () => {
                     interactionCount += 1;
@@ -702,7 +702,7 @@ export function createAccessibilitySdk(options) {
                 if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
                     guideOverlay.setAttribute("aria-hidden", "false");
                     delete guideOverlay.dataset.a11yPositionSuppressed;
-                    menuHint.setEnabled(false);
+                    menuHint.setEnabled(!smartGuideVisible);
                     scheduleGuideHitTest(target, action);
                     return;
                 }
@@ -747,7 +747,7 @@ export function createAccessibilitySdk(options) {
         }
         guideOverlay.setAttribute("aria-hidden", "false");
         delete guideOverlay.dataset.a11yPositionSuppressed;
-        menuHint.setEnabled(false);
+        menuHint.setEnabled(!smartGuideVisible);
         if (guideOverlay)
             scheduleGuideHitTest(target, action);
     }
@@ -762,6 +762,7 @@ export function createAccessibilitySdk(options) {
     function showGuide() {
         if (destroyed ||
             completionActive ||
+            smartGuideVisible ||
             !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
@@ -813,6 +814,7 @@ export function createAccessibilitySdk(options) {
         timer.cancel();
         if (destroyed ||
             completionActive ||
+            smartGuideVisible ||
             !currentProfile.smartGuide ||
             !guideState.enabled ||
             guideState.paused ||
@@ -828,8 +830,10 @@ export function createAccessibilitySdk(options) {
             return;
         interactionCount += 1;
         options.onInteractionCount?.(interactionCount);
+        // User activity on the current screen must not end or extend the visible
+        // guide. Only a host-reported step transition or the display deadline does.
         if (smartGuideVisible)
-            finishSmartGuide();
+            return;
         scheduleGuide();
     }
     function recordScrollInteraction() {
@@ -846,7 +850,7 @@ export function createAccessibilitySdk(options) {
     }
     function applyProfile(input) {
         sessionEnded = false;
-        menuHint.setEnabled(guideOverlay === null);
+        menuHint.setEnabled(!smartGuideVisible);
         const previousVoiceGuidance = currentProfile.voiceGuidance;
         currentProfile = validateAccessibilityProfile(input);
         const nextClasses = new Set(accessibilityClasses(currentProfile));

@@ -123,7 +123,7 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
   if (typeof document === "undefined" || typeof window === "undefined") return null;
   const regions = adapter.getLayoutRegions();
   const smartGuideVisible = typeof root.querySelectorAll === "function" &&
-    [...root.querySelectorAll(".a11y-guide-toast")].some((element) =>
+    [...root.querySelectorAll(".a11y-guide-toast.a11y-guide-smart")].some((element) =>
         element instanceof HTMLElement && shown(element)
     );
   if ((regions.viewportOverlays ?? []).some(shown) || smartGuideVisible) return null;
@@ -233,13 +233,12 @@ function placeHint(
     const r = el.getBoundingClientRect();
     return r.top < vh && r.bottom > 0 ? Math.min(top, r.top) : top;
   }, vh - 12) - 8;
+  const lowestTop = safeBottom - height;
   const positions = [...new Set([
-    safeBottom - height,
-    vh - height - 12,
+    lowestTop,
+    12 + Math.max(0, (lowestTop - 12) / 2),
     12,
-    Math.max(12, root.getBoundingClientRect().top + 12),
-    ...obstacles.map((element) => element.getBoundingClientRect().top - height - 8),
-  ])].filter((top) => top >= 12).sort((a, b) => b - a);
+  ])].filter((top) => top >= 12 && top + height <= vh).sort((a, b) => b - a);
   const candidates: DOMRect[] = [];
   for (const top of positions) {
     if (top < 12) continue;

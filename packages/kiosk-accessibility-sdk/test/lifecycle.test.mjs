@@ -373,6 +373,38 @@ test("a visible Smart Guide closes after 10 seconds, clears emphasis, and does n
   }
 });
 
+test("same-step guidance copy updates do not reset a visible Smart Guide deadline", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true, slowGuidance: true });
+    const guide = (text) => h.sdk.setGuideState({
+      stepId: "fixture.copies",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "부수 선택", text, actionId: "continue" },
+    });
+    guide("발급할 장수를 고르세요.");
+    h.timerCallbacks.get([...h.timerCallbacks.keys()].at(-1))?.();
+    assert.equal(h.children.length, 1);
+    const dismissTimer = [...h.scheduledDelays.entries()]
+      .filter(([, delay]) => delay === 15_000).at(-1)?.[0];
+    assert.equal(h.scheduledDelays.get(dismissTimer), 15_000);
+    const timerCountWhileVisible = h.timerCallbacks.size;
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true, slowGuidance: true });
+    assert.equal(h.timerCallbacks.size, timerCountWhileVisible);
+    assert.equal(h.clearedTimers.has(dismissTimer), false);
+    guide("현재 2장을 선택했습니다.");
+    assert.equal(h.clearedTimers.has(dismissTimer), false);
+    assert.equal(h.children.length, 1);
+    h.timerCallbacks.get(dismissTimer)?.();
+    assert.equal(h.children.length, 0);
+    assert.equal(h.target.classList.contains("a11y-guide-emphasis"), false);
+  } finally {
+    h.restore();
+  }
+});
+
 test("easy-language guidance is paged and collapsible without an automatic timeout", () => {
   const h = createSessionHarness();
   try {
