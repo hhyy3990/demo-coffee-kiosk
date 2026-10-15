@@ -5,7 +5,7 @@
 ## 현재 버전
 
 - 패키지: `@naebangsik/kiosk-accessibility-sdk`
-- SDK API: `0.5.14`
+- SDK API: `0.5.15`
 - 중앙 QR 프로필: v1·v2·v3·v4 읽기 지원, v3/v4에서 명시적 `viewportMode` 적용
 - 런타임 의존성: `@zxing/browser` (QR 스캐너 선택 모듈에서만 사용)
 - 패키지 형식: ES module JavaScript + TypeScript 선언 파일 + 별도 CSS
@@ -49,19 +49,19 @@ npm --prefix packages/kiosk-accessibility-sdk run test:browser:viewport
 빌드 결과는 `packages/kiosk-accessibility-sdk/dist/`에 생성됩니다. `sdk:pack`은 사전 빌드 후 다음 파일을 생성합니다. `sdk:verify-consumer`는 tarball을 별도 임시 프로젝트에 설치하고 공개 타입 선언 검사와 독립 Vite 프로덕션 번들을 확인합니다.
 
 ```text
-packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.14.tgz
+packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.15.tgz
 ```
 
 버전을 바꿀 때는 `package.json`의 버전과 공개 상수 `ACCESSIBILITY_SDK_VERSION`을 함께 변경하세요. v1·v2·v3의 기존 동작을 유지하고 신규 선호 4개는 기본값으로 고정합니다. v3/v4는 최상위 `schemaVersion`, `updatedAt`, `preferences`와 명시적 `viewportMode`를 요구하며 `null` 또는 `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`만 허용합니다. v4에서는 `language`(ko/zh/vi/en/th/uz/ja) 및 `stepByStepGuidance`, `conciseGuidance`, `slowGuidance`를 필수 검증하고 SDK 프로필로 노출합니다. 이 값은 호스트가 읽을 수 있도록 보존할 뿐 자동 번역이나 새로운 안내 UI를 실행하지 않습니다. 잘못된 신규 값, 미지원 스키마, 레거시 `simplifiedLayout`은 거부합니다. `guideDelaySeconds`는 기존처럼 표시 전 대기 시간입니다.
 
 ## 다른 Replit 프로젝트에 가져오기
 
-1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.14.tgz`를 다운로드합니다.
+1. 이 프로젝트의 파일 패널에서 `packages/kiosk-accessibility-sdk/releases/naebangsik-kiosk-accessibility-sdk-0.5.15.tgz`를 다운로드합니다.
 2. 대상 Replit 프로젝트의 파일 패널로 tarball을 업로드합니다.
 3. 대상 프로젝트 Shell에서 업로드한 경로를 지정해 설치합니다.
 
 ```sh
-npm install ./naebangsik-kiosk-accessibility-sdk-0.5.14.tgz
+npm install ./naebangsik-kiosk-accessibility-sdk-0.5.15.tgz
 ```
 
 프로젝트 코드에서 런타임, 타입, 스타일을 가져옵니다.

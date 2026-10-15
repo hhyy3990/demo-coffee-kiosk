@@ -73,6 +73,34 @@ try {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
     return result.result.value;
   };
+  const pointerClick = async (selector) => {
+    const point = await evaluate(`(async () => {
+      const initialTarget = document.querySelector(${JSON.stringify(selector)});
+      if (!initialTarget) return null;
+      const owner = initialTarget.closest('[data-a11y-slot="scroll-content"]');
+      if (owner && owner.scrollHeight > owner.clientHeight) {
+        const targetRect = initialTarget.getBoundingClientRect();
+        const ownerRect = owner.getBoundingClientRect();
+        owner.scrollTop += targetRect.top + targetRect.height / 2 -
+          (ownerRect.top + owner.clientHeight / 2);
+      } else {
+        initialTarget.scrollIntoView({ block: "center", behavior: "auto" });
+      }
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const target = document.querySelector(${JSON.stringify(selector)});
+      if (!target) return null;
+      const rect = target.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return { x, y, hit: hit === target || target.contains(hit),
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight };
+    })()`);
+    if (!point?.hit || !point.visible) throw new Error(`Real pointer hit-test failed for ${selector}: ${JSON.stringify(point)}`);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1 });
+  };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const cases = [];
   const fontCorrectionCases = [];
@@ -398,13 +426,13 @@ try {
   if (!guideFixtureLoaded) throw new Error("Independent shared-guidance fixture did not load.");
   let easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!easy.visible || easy.page !== "1/3") throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
-  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
-  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
+   await pointerClick("[data-a11y-guide-next]");
+   await pointerClick("[data-a11y-guide-next]");
   if ((await evaluate("window.__sdkPackageSmoke.readGuidance()")).page !== "3/3") {
     throw new Error("Next-page clicks did not reach explanation 3/3.");
   }
-  await evaluate("document.querySelector('[data-a11y-guide-previous]').click()");
-  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+   await pointerClick("[data-a11y-guide-previous]");
+   await pointerClick("[data-a11y-guide-collapse]");
   easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (easy.page !== "2/3" || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
 
@@ -436,17 +464,27 @@ try {
           collapsed: panel?.classList.contains("a11y-guide-collapsed"),
           panel: rect(panel), action: rect(document.querySelector("#host-continue")),
           keypad: rect(document.querySelector(".keypad")), hitTargets,
+          suppressionRecorded: window.__sdkPackageSmoke.read().guidePlacementDiagnostics.length > 0,
           horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
         };
       })()`);
       const overlaps = (a, b) => a && b &&
         Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) > 1 &&
         Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)) > 1;
-      const safe = state.visible && !state.horizontalOverflow &&
-        !overlaps(state.panel, state.action) && !overlaps(state.panel, state.keypad) &&
-        state.hitTargets.every(Boolean);
+      const safe = !state.horizontalOverflow && state.hitTargets.every(Boolean) &&
+        (state.visible
+          ? !overlaps(state.panel, state.action) && !overlaps(state.panel, state.keypad)
+          : state.suppressionRecorded);
       guidanceLayouts.push({ viewport: `${width}x${height}`, bottomPercent: percent, ...state, safe });
-      if (!safe) throw new Error(`Guidance panel blocks controls or is unreachable: ${JSON.stringify(guidanceLayouts.at(-1))}`);
+      if (!safe) throw new Error(`Guidance is neither safely placed nor safely suppressed: ${JSON.stringify(guidanceLayouts.at(-1))}`);
+      const beforePointerClicks = await evaluate("window.__sdkPackageSmoke.read()");
+      await pointerClick(".keypad button");
+      await pointerClick("#host-continue");
+      const afterPointerClicks = await evaluate("window.__sdkPackageSmoke.read()");
+      if (afterPointerClicks.keypadClicks !== beforePointerClicks.keypadClicks + 1 ||
+        afterPointerClicks.actionCount !== beforePointerClicks.actionCount + 1) {
+        throw new Error(`Primary controls did not receive real pointer clicks: ${JSON.stringify({ beforePointerClicks, afterPointerClicks })}`);
+      }
     }
     await evaluate("window.__sdkPackageSmoke.setViewport(null)");
   }
@@ -463,7 +501,7 @@ try {
   }
 
   await send("Emulation.setDeviceMetricsOverride", {
-    width: 390, height: 844, deviceScaleFactor: 1, mobile: true, screenWidth: 390, screenHeight: 844,
+    width: 1080, height: 1920, deviceScaleFactor: 1, mobile: false, screenWidth: 1080, screenHeight: 1920,
   });
   await send("Page.navigate", { url: baseUrl });
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -471,8 +509,8 @@ try {
     if (guideFixtureLoaded) break;
     await wait(50);
   }
-  await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
-  await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
+  await pointerClick("[data-a11y-guide-next]");
+  await pointerClick("[data-a11y-guide-collapse]");
   const delayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
   let defaultGuide;
   for (let attempt = 0; attempt < 115; attempt += 1) {

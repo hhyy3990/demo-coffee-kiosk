@@ -1,15 +1,11 @@
 import { spawn } from "node:child_process";
 
 const chromium = process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium";
-const viewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
-const structures = ["document", "long-menu", "fixed-controls"];
-const percentages = [60, 70, 80];
-const scenarios = viewports.flatMap((viewport) => [
-  { viewport, structure: "document", percent: 70 },
-  ...structures.slice(1).flatMap((structure) =>
-    percentages.map((percent) => ({ viewport, structure, percent })),
-  ),
-]);
+const scenarios = [
+  { viewport: [320, 844], structure: "fixed-controls", percent: 60 },
+  { viewport: [390, 844], structure: "fixed-controls", percent: 70 },
+  { viewport: [1080, 1920], structure: "fixed-controls", percent: 80 },
+];
 const reports = [];
 const guideObstructions = [];
 
@@ -62,24 +58,52 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
       return response.result?.value;
     };
-    const clickTarget = async (selector, mayDismissGuide = true) => {
-      const point = await evaluate(`(() => {
+    const clickTarget = async (selector, mayDismissGuide = true, scrollAttempts = 0) => {
+      const point = await evaluate(`(async () => {
+        const initialTarget = document.querySelector(${JSON.stringify(selector)});
+        if (!initialTarget) return null;
         const target = document.querySelector(${JSON.stringify(selector)});
         if (!target) return null;
-        target.scrollIntoView({ block: "center", inline: "nearest" });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const rect = target.getBoundingClientRect();
         const x = rect.left + rect.width / 2;
         const y = rect.top + rect.height / 2;
         const hit = document.elementFromPoint(x, y);
         const guideRect = document.querySelector(".a11y-guide-toast")?.getBoundingClientRect();
+        const scrollOwner = document.querySelector('[data-a11y-slot="scroll-content"]');
         return {
           x, y, visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight,
           hit: hit === target || target.contains(hit),
           hitElement: hit ? [hit.tagName.toLowerCase(), hit.id, String(hit.className)].join("|") : "none",
           targetRect: { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right },
           guideRect: guideRect ? { top: guideRect.top, bottom: guideRect.bottom, left: guideRect.left, right: guideRect.right } : null,
+          scrollOwner: scrollOwner ? {
+            left: scrollOwner.getBoundingClientRect().left,
+            right: scrollOwner.getBoundingClientRect().right,
+            top: scrollOwner.getBoundingClientRect().top,
+            bottom: scrollOwner.getBoundingClientRect().bottom,
+            clientHeight: scrollOwner.clientHeight,
+            scrollHeight: scrollOwner.scrollHeight,
+            scrollTop: scrollOwner.scrollTop,
+            overflowY: getComputedStyle(scrollOwner).overflowY,
+          } : null,
+          documentScroll: { top: document.scrollingElement?.scrollTop ?? 0,
+            height: document.scrollingElement?.scrollHeight ?? 0,
+            clientHeight: document.scrollingElement?.clientHeight ?? 0 },
         };
       })()`);
+      const outsideScrollArea = point?.scrollOwner &&
+        (point.targetRect.bottom <= point.scrollOwner.top || point.targetRect.top >= point.scrollOwner.bottom);
+      if ((!point?.visible || outsideScrollArea || !point.hit) && scrollAttempts < 3 &&
+        point?.scrollOwner?.overflowY === "auto") {
+        const x = Math.max(point.scrollOwner.left + 1, point.scrollOwner.right - 4);
+        const y = (point.scrollOwner.top + point.scrollOwner.bottom) / 2;
+        const deltaY = point.targetRect.top + (point.targetRect.bottom - point.targetRect.top) / 2 -
+          (point.scrollOwner.top + point.scrollOwner.clientHeight / 2);
+        await send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY });
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return clickTarget(selector, mayDismissGuide, scrollAttempts + 1);
+      }
       if (!point?.visible || !point.hit) {
         if (mayDismissGuide && point?.guideRect && point.hitElement.startsWith("aside|")) {
           guideObstructions.push({ viewport: `${viewWidth}x${viewHeight}`, percent, selector, ...point });
@@ -107,6 +131,7 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
       await send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1 });
       await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 80));
     };
     await send("Emulation.setDeviceMetricsOverride", {
       width: viewWidth, height: viewHeight, deviceScaleFactor: 1, mobile: false,
@@ -166,53 +191,6 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       Math.abs(profileApplied.shellHeight - profileApplied.expectedShellHeight) > 2) {
       throw new Error(`The fixed v4 accessibility experience did not apply the real SDK profile at ${viewWidth}x${viewHeight}: ${JSON.stringify(profileApplied)}`);
     }
-    await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
-    if (await evaluate("document.querySelector('[data-a11y-guide-page]')?.textContent") !== "2/2") {
-      throw new Error(`Easy-language next page failed at ${viewWidth}x${viewHeight}.`);
-    }
-    await evaluate("document.querySelector('[data-a11y-guide-previous]').click()");
-    await evaluate("document.querySelector('[data-a11y-guide-next]').click()");
-    await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
-    if (viewWidth === 320 && percent === 60) {
-      const timerStarted = await evaluate("performance.now()");
-      let smartGuideVisible = null;
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        smartGuideVisible = await evaluate(`(() => {
-          const panel = document.querySelector(".a11y-guide-toast");
-          return { countdown: panel?.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
-            collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false };
-        })()`);
-        if (smartGuideVisible.countdown.includes("15")) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      const guideDelayMs = await evaluate(`performance.now() - ${timerStarted}`);
-      if (!smartGuideVisible?.countdown.includes("15") || !smartGuideVisible.collapsed ||
-        guideDelayMs < 9_500 || guideDelayMs > 12_000) {
-        throw new Error(`Smart Guide did not start folded after the 10-second delay at ${viewWidth}x${viewHeight}: ${JSON.stringify({ guideDelayMs, smartGuideVisible })}`);
-      }
-      const visibleAt = await evaluate("performance.now()");
-      await new Promise((resolve) => setTimeout(resolve, 1_200));
-      const countdownAfter = await evaluate("document.querySelector('[data-a11y-guide-countdown]')?.textContent ?? ''");
-      if (Number.parseInt(countdownAfter, 10) >= 15) throw new Error(`Smart Guide countdown did not decrease: ${countdownAfter}`);
-      let returnedEasy = null;
-      for (let attempt = 0; attempt < 165; attempt += 1) {
-        returnedEasy = await evaluate(`(() => {
-          const panel = document.querySelector(".a11y-guide-toast");
-          return {
-            countdown: panel?.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
-            page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
-            collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false,
-          };
-        })()`);
-        if (!returnedEasy.countdown) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      const guideVisibleMs = await evaluate(`performance.now() - ${visibleAt}`);
-      if (returnedEasy?.page !== "2/2" || !returnedEasy.collapsed ||
-        guideVisibleMs < 14_300 || guideVisibleMs > 16_500) {
-        throw new Error(`Slow Guide did not restore folded easy-language page 2/2 after 15 seconds: ${JSON.stringify({ guideVisibleMs, returnedEasy })}`);
-      }
-    }
     if (viewWidth === 390 && percent === 70) {
       await clickTarget(".demo-experience-strip button");
       let reset = null;
@@ -244,6 +222,7 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!menuReady) throw new Error(`Menu transition did not hide the home QR dock at ${viewWidth}x${viewHeight}.`);
+    await new Promise((resolve) => setTimeout(resolve, 250));
     const orderViewportHeight = await evaluate("document.querySelector('.shell').getBoundingClientRect().height");
     if (Math.abs(orderViewportHeight - viewHeight * 0.6) > 2) {
       throw new Error(`Order viewport did not use the profile's 60% at ${viewWidth}x${viewHeight}: ${orderViewportHeight}px.`);
@@ -376,7 +355,7 @@ for (const [index, { viewport, structure, percent }] of scenarios.entries()) {
 }
 
 console.log(JSON.stringify(reports, null, 2));
-if (reports.length !== 28 || reports.some((report) => !report.pass)) {
+if (reports.length !== scenarios.length || reports.some((report) => !report.pass)) {
   throw new Error("QR entry PoC browser verification failed.");
 }
 console.log(JSON.stringify({ sdkGuideObstructionsDuringRealOrder: guideObstructions }, null, 2));

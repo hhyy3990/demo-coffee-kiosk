@@ -91,6 +91,36 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function getGuideProtectedActions(regions?: KioskLayoutRegions): HTMLElement[] {
+  const markedActions = typeof document.querySelectorAll === "function"
+    ? Array.from(document.querySelectorAll<HTMLElement>('[data-a11y-primary="true"]'))
+    : [];
+  return [...new Set([
+    ...(regions?.primaryActions ?? []).map(({ element }) => element),
+    ...markedActions,
+  ])];
+}
+
+function primaryActionsRemainHitTestable(
+  overlay: HTMLElement,
+  regions?: KioskLayoutRegions,
+): boolean {
+  const document = overlay.ownerDocument;
+  const view = document?.defaultView;
+  const hitTest = document?.elementFromPoint?.bind(document);
+  if (!view || !hitTest) return true;
+  return getGuideProtectedActions(regions).every((element) => {
+    if (!element.isConnected || ("disabled" in element && Boolean((element as HTMLButtonElement).disabled))) return true;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || getComputedStyle(element).visibility === "hidden") return true;
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    if (x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight) return true;
+    const hit = hitTest(x, y);
+    return hit === element || element.contains(hit);
+  });
+}
+
 function positionGuide(
   overlay: HTMLElement,
   target: HTMLElement | null,
@@ -98,6 +128,13 @@ function positionGuide(
   regions?: KioskLayoutRegions,
 ): boolean {
   if (!target || !target.isConnected) return false;
+  // Placement must be atomic: a transition can temporarily cover a protected
+  // host action even when the final position has passed hit testing.
+  if (typeof overlay.style.setProperty === "function") {
+    overlay.style.setProperty("transition", "none", "important");
+  } else {
+    overlay.style.transition = "none";
+  }
   if (root?.classList.contains("a11y-bottom-viewport-enabled") ||
       root?.classList.contains("a11y-bottom-viewport-poc-shell")) {
     const vw = document.documentElement.clientWidth || innerWidth;
@@ -130,16 +167,21 @@ function positionGuide(
     const maximum = safeBottom - height;
     const positions = [action.top - height - 12, action.bottom + 12];
     const obstacles = [
-      ...(regions?.primaryActions ?? []).map(({ element }) => element),
+      ...getGuideProtectedActions(regions),
       ...(regions?.viewportOverlays ?? []),
       ...(regions?.guidanceAvoidAreas ?? []),
       ...controls,
     ].filter((el) => el !== overlay && el.isConnected &&
       getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
       el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+    const obstacleEdges = obstacles.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      return [rect.top - height - 8, rect.bottom + 8]
+        .map((candidate) => clamp(candidate, minimum, maximum));
+    });
     const fits = positions.map((candidate) => clamp(candidate, minimum, maximum));
     fits.push(minimum, maximum, minimum + (maximum - minimum) / 2);
-    const candidates = [...new Set(fits.filter(Number.isFinite))];
+    const candidates = [...new Set([...fits, ...obstacleEdges].filter(Number.isFinite))];
     const overlapsAt = (candidate: number, element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
       return 12 < rect.right && vw - 12 > rect.left &&
@@ -147,20 +189,14 @@ function positionGuide(
     };
     const top = candidates.find((candidate) =>
       !obstacles.some((element) => overlapsAt(candidate, element)),
-    ) ?? candidates
-      .map((candidate) => ({
-        candidate,
-        overlap: obstacles.reduce((sum, element) => {
-          const rect = element.getBoundingClientRect();
-          if (!overlapsAt(candidate, element)) return sum;
-          return sum + Math.max(0, Math.min(candidate + height, rect.bottom) - Math.max(candidate, rect.top)) *
-            Math.max(0, Math.min(vw - 12, rect.right) - Math.max(12, rect.left));
-        }, 0),
-      }))
-      .sort((a, b) => a.overlap - b.overlap)[0]?.candidate;
+    );
     if (top === undefined || maximum < minimum) return false;
     overlay.style.top = `${top}px`;
     overlay.style.visibility = "visible";
+    if (!primaryActionsRemainHitTestable(overlay, regions)) {
+      overlay.style.visibility = "hidden";
+      return false;
+    }
     return true;
   }
   const targetRect = target.getBoundingClientRect();
@@ -187,26 +223,34 @@ function positionGuide(
     Math.max(margin, viewportWidth - overlayRect.width - margin),
   );
   const obstacles = [
-    ...(regions?.primaryActions ?? []).map(({ element }) => element),
+    ...getGuideProtectedActions(regions),
     ...(regions?.guidanceAvoidAreas ?? []),
     ...(regions?.viewportOverlays ?? []),
     ...(regions?.bottomControls ?? []),
     ...(typeof document.querySelectorAll === "function"
       ? Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"))
       : []),
-  ].filter((element) => element !== target && element !== overlay && element.isConnected &&
+  ].filter((element) => element !== overlay && element.isConnected &&
     getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden");
+  const obstacleEdges = obstacles.flatMap((element) => {
+    const rect = element.getBoundingClientRect();
+    return [clampToViewport(rect.top - overlayRect.height - margin), clampToViewport(rect.bottom + margin)];
+  });
   const overlap = (top: number) => obstacles.reduce((sum, element) => {
     const rect = element.getBoundingClientRect();
     return sum + Math.max(0, Math.min(left + overlayRect.width, rect.right) - Math.max(left, rect.left)) *
       Math.max(0, Math.min(top + overlayRect.height, rect.bottom) - Math.max(top, rect.top));
   }, 0);
-  const uniqueCandidates = [...new Set(candidates)];
-  const top = uniqueCandidates.find((candidate) => overlap(candidate) === 0) ??
-    uniqueCandidates.sort((a, b) => overlap(a) - overlap(b))[0];
-  if (top === undefined || overlap(top) > 0) return false;
+  const uniqueCandidates = [...new Set([...candidates, ...obstacleEdges])];
+  const top = uniqueCandidates.find((candidate) => overlap(candidate) === 0);
+  if (top === undefined) return false;
   overlay.style.left = `${left}px`;
   overlay.style.top = `${top}px`;
+  overlay.style.visibility = "visible";
+  if (!primaryActionsRemainHitTestable(overlay, regions)) {
+    overlay.style.visibility = "hidden";
+    return false;
+  }
   return true;
 }
 
@@ -317,6 +361,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     message: null,
   };
   let guideOverlay: HTMLElement | null = null;
+  let guideValidationFrame = 0;
   let highlightedAction: HTMLElement | null = null;
   let easyLanguageState: EasyLanguageState | null = null;
   let easyLanguageIndex = 0;
@@ -345,7 +390,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   const emphasizedNextButtons = new Set<HTMLElement>();
   const nextItemObserver = typeof MutationObserver === "undefined"
     ? null
-    : new MutationObserver(() => {
+    : new MutationObserver((mutations) => {
+      const hostLayoutChanged = mutations.some(({ target, type }) =>
+        !guideOverlay || !guideOverlay.contains(target) || type === "childList",
+      );
+      if (!hostLayoutChanged) return;
       refreshNextItemButtons();
       if (guideOverlay) updateGuidePosition();
     });
@@ -595,6 +644,43 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     return adapter.getActions().find((action) => action.id === actionId) ?? null;
   }
 
+  function scheduleGuideHitTest(
+    target: HTMLElement,
+    action: ReturnType<typeof findGuideAction> | undefined,
+  ): void {
+    if (guideValidationFrame) window.cancelAnimationFrame(guideValidationFrame);
+    const overlay = guideOverlay;
+    if (!overlay) return;
+    if (typeof overlay.ownerDocument?.elementFromPoint !== "function") return;
+    guideValidationFrame = window.requestAnimationFrame(() => {
+      guideValidationFrame = 0;
+      if (guideOverlay !== overlay || primaryActionsRemainHitTestable(overlay, adapter.getLayoutRegions())) return;
+      const rect = target.getBoundingClientRect();
+      options.onDiagnostics?.([{
+        screenId: adapter.getSnapshot().screenId,
+        semanticId: action?.id || target.id || "guide-placement",
+        issueType: "guide-suppressed",
+        severity: "warning",
+        elementTag: target.tagName.toLowerCase(),
+        elementRect: {
+          left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+          width: rect.width, height: rect.height,
+        },
+        viewport: { width: innerWidth, height: innerHeight },
+        profile: {
+          textSize: currentProfile.textSize,
+          buttonSize: currentProfile.buttonSize,
+          contrast: currentProfile.contrast,
+          viewportMode: currentProfile.viewportMode?.heightPercent ?? null,
+        },
+        measurements: { postLayoutHitTestFailed: true },
+        recommendation: "Smart Guide was hidden because it covered a registered host action after layout.",
+      }]);
+      overlay.style.visibility = "hidden";
+      removeGuide();
+    });
+  }
+
   function updateGuidePosition(): void {
     if (!guideOverlay) return;
     const action = smartGuideVisible
@@ -611,10 +697,46 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           collapse.textContent = "∧ 펼치기";
           collapse.setAttribute("aria-expanded", "false");
         }
-        if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) return;
+        if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
+          scheduleGuideHitTest(target, action);
+          return;
+        }
       }
+      const guideRect = guideOverlay.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const screenId = adapter.getSnapshot().screenId;
+      options.onDiagnostics?.([{
+        screenId,
+        semanticId: action?.id || target.id || "guide-placement",
+        issueType: "guide-suppressed",
+        severity: "warning",
+        elementTag: target.tagName.toLowerCase(),
+        elementRect: {
+          left: targetRect.left,
+          top: targetRect.top,
+          right: targetRect.right,
+          bottom: targetRect.bottom,
+          width: targetRect.width,
+          height: targetRect.height,
+        },
+        viewport: { width: innerWidth, height: innerHeight },
+        profile: {
+          textSize: currentProfile.textSize,
+          buttonSize: currentProfile.buttonSize,
+          contrast: currentProfile.contrast,
+          viewportMode: currentProfile.viewportMode?.heightPercent ?? null,
+        },
+        measurements: {
+          expandedHeight: guideRect.height,
+          targetOverlap: guideRect.left < targetRect.right && guideRect.right > targetRect.left &&
+            guideRect.top < targetRect.bottom && guideRect.bottom > targetRect.top,
+          safetyCollapsed: guidanceSafetyCollapsed,
+        },
+        recommendation: "Guide hidden: no position passed registered-action overlap and pointer hit-test checks.",
+      }]);
       removeGuide();
     }
+    if (guideOverlay) scheduleGuideHitTest(target, action);
   }
 
   function showGuide(): void {
@@ -926,11 +1048,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   root.addEventListener("click", onNavigationClick, true);
   window.addEventListener("resize", refreshNextItemButtons, { passive: true });
   if (options.viewportMode) setViewportMode(options.viewportMode);
-  nextItemObserver?.observe(root, {
+  nextItemObserver?.observe(document.body ?? root, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled", "hidden", "aria-hidden"],
+    attributeFilter: ["aria-label", "aria-controls", "aria-disabled", "disabled", "hidden", "aria-hidden", "class"],
   });
   refreshNextItemButtons();
   if (!("PointerEvent" in window)) root.addEventListener("touchstart", recordInteraction, { passive: true });

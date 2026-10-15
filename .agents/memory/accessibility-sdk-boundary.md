@@ -81,8 +81,8 @@ The shared SDK owns only the completion countdown and its state notifications. T
 
 **How to apply:** Have the host signal a committed final-completion state, then use the SDK completion API for countdown/extension/cancel/finish. In the callback, clear host state and call `endSession()` before exposing the next user's welcome screen.
 
-In SDK v0.5.14, the unified Smart Guide/easy-language panel can overlap a primary action in a short 320×844 bottom-viewport layout. Closing the timed guide returns to the easy-language panel, which can still block the action's hit target.
+Smart Guide placement must be rechecked after host screen changes and guide-content resizing, using actual hit tests against registered primary actions. If the settled panel still blocks an action, hide it and report the suppression rather than trusting its earlier rectangle.
 
-**Why:** A real browser hit test found the `item-add` button overlapped by the SDK-owned panel even after the timed guide closed; the host cannot safely reposition or dismiss this shared overlay without changing SDK behavior.
+**Why:** A real browser hit test found the SDK panel covering a host action after the task view changed, even though the earlier placement had been accepted. Layout changes and content expansion can invalidate a previously safe position.
 
-**How to apply:** Do not claim critical actions remain pointer-accessible solely from layout diagnostics. Record the target/panel rectangles and hit-test result; report this reproduction to the SDK owner, and avoid kiosk-specific CSS or changes to host order logic as a workaround.
+**How to apply:** Re-evaluate on relevant host DOM changes and guide-content changes, filter SDK-owned geometry/style mutations to prevent observer loops, and verify settled positions with `elementFromPoint` in a browser. Keep the host responsible for its actions; never work around an overlay by changing business logic or kiosk-specific CSS.

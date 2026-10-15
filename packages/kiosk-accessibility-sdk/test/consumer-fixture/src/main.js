@@ -11,11 +11,16 @@ import "./host.css";
 const root = document.querySelector("#kiosk-root");
 const continueButton = document.querySelector("#host-continue");
 const hostState = { step: "review", actionCount: 0 };
+let keypadClicks = 0;
+const guidePlacementDiagnostics = [];
 
 continueButton.addEventListener("click", () => {
   hostState.actionCount += 1;
   document.querySelector("#host-state").textContent = `업무 작업 ${hostState.actionCount}회`;
 });
+root.querySelectorAll(".keypad button").forEach((button) => button.addEventListener("click", () => {
+  keypadClicks += 1;
+}));
 
 const adapter = {
   getSnapshot: () => ({
@@ -45,7 +50,13 @@ const adapter = {
     }),
 };
 
-const sdk = createAccessibilitySdk({ root, adapter });
+const sdk = createAccessibilitySdk({
+  root,
+  adapter,
+  onDiagnostics: (issues) => guidePlacementDiagnostics.push(
+    ...issues.filter((issue) => issue.issueType === "guide-suppressed"),
+  ),
+});
 const profile = validateAccessibilityProfile({
   ...DEFAULT_ACCESSIBILITY_PROFILE,
   textSize: "extraLarge",
@@ -143,6 +154,8 @@ window.__sdkPackageSmoke = {
       profile,
       classes: [...root.classList].filter((name) => name.startsWith("a11y-")),
       actionCount: hostState.actionCount,
+      keypadClicks,
+      guidePlacementDiagnostics,
       guideVisible: Boolean(root.querySelector(".a11y-guide-toast")),
       actionHighlighted: continueButton.classList.contains("a11y-guide-emphasis"),
       diagnostics: sdk.inspectLayout(),

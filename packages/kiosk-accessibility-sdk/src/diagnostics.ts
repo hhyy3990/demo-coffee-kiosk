@@ -15,7 +15,8 @@ export type AccessibilityIssueType =
   | "last-scroll-action-obscured"
   | "small-touch-target"
   | "action-overlap"
-  | "menu-overflow-unreachable";
+  | "menu-overflow-unreachable"
+  | "guide-suppressed";
 
 export interface AccessibilityDiagnostic {
   screenId: string;

@@ -176,7 +176,8 @@ export function createCafeAccessibilityAdapter(
         menuItems: getState().stage === "menu"
           ? Array.from(root.querySelectorAll<HTMLElement>(".product-card"))
           : [],
-        primaryActions: Array.from(root.querySelectorAll<HTMLElement>('[data-a11y-primary="true"]'))
+        primaryActions: Array.from(root.querySelectorAll<HTMLButtonElement>("button"))
+          .filter((element) => !element.closest(".a11y-guide-toast"))
           .map((element) => ({ element })),
         horizontalNavigation: getState().stage === "menu"
           ? [{
