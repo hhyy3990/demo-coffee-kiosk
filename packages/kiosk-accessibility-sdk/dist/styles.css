@@ -352,6 +352,8 @@
   animation: a11y-toast-in .28s ease-out;
 }
 
+.kiosk .a11y-guide-toast [hidden] { display: none !important; }
+
 .kiosk .a11y-guide-header {
   grid-column: 1 / -1;
   display: flex;

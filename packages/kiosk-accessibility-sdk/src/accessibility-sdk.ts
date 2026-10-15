@@ -128,6 +128,7 @@ function positionGuide(
   regions?: KioskLayoutRegions,
 ): boolean {
   if (!target || !target.isConnected) return false;
+  const previousTop = Number.parseFloat(overlay.style.top);
   // Placement must be atomic: a transition can temporarily cover a protected
   // host action even when the final position has passed hit testing.
   if (typeof overlay.style.setProperty === "function") {
@@ -182,7 +183,11 @@ function positionGuide(
     });
     const fits = positions.map((candidate) => clamp(candidate, minimum, maximum));
     fits.push(minimum, maximum, minimum + (maximum - minimum) / 2);
-    const candidates = [...new Set([...fits, ...obstacleEdges].filter(Number.isFinite))];
+    const candidates = [...new Set([
+      ...(Number.isFinite(previousTop) ? [clamp(previousTop, minimum, maximum)] : []),
+      ...fits,
+      ...obstacleEdges,
+    ].filter(Number.isFinite))];
     const overlapsAt = (candidate: number, element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
       return 12 < rect.right && vw - 12 > rect.left &&
@@ -217,7 +222,14 @@ function positionGuide(
       ...(below <= maxTop ? [below] : []),
     ]
     : [];
-  const candidates = [...preferred, clampToViewport(above), clampToViewport(below), margin, maxTop];
+  const candidates = [
+    ...(Number.isFinite(previousTop) ? [clampToViewport(previousTop)] : []),
+    ...preferred,
+    clampToViewport(above),
+    clampToViewport(below),
+    margin,
+    maxTop,
+  ];
   const left = clamp(
     targetRect.left + (targetRect.width - overlayRect.width) / 2,
     margin,
@@ -372,6 +384,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let smartGuideVisible = false;
   let guidanceCollapsed = false;
   let guidanceSafetyCollapsed = false;
+  let smartGuideCollapseSnapshot: { collapsed: boolean; safetyCollapsed: boolean } | null = null;
   let guideDeadline = 0;
   let guideCountdownTimer: ReturnType<typeof setTimeout> | null = null;
   let interactionCount = 0;
@@ -482,11 +495,22 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       countdown.textContent = smartGuideVisible ? `${remaining}초` : "";
       countdown.hidden = !smartGuideVisible;
     }
-    const count = currentEasyExplanation() ? easyLanguageState?.explanations.length ?? 0 : 0;
+    const count = smartGuideVisible || !currentEasyExplanation()
+      ? 0
+      : easyLanguageState?.explanations.length ?? 0;
     if (pager) pager.hidden = smartGuideVisible || count < 2;
-    if (previous) previous.disabled = easyLanguageIndex === 0;
-    if (next) next.disabled = easyLanguageIndex >= count - 1;
-    if (page) page.textContent = count > 1 ? `${easyLanguageIndex + 1}/${count}` : "";
+    if (previous) {
+      previous.hidden = smartGuideVisible;
+      previous.disabled = easyLanguageIndex === 0;
+    }
+    if (next) {
+      next.hidden = smartGuideVisible;
+      next.disabled = easyLanguageIndex >= count - 1;
+    }
+    if (page) {
+      page.hidden = smartGuideVisible || count < 2;
+      page.textContent = count > 1 ? `${easyLanguageIndex + 1}/${count}` : "";
+    }
     if (close) close.hidden = !smartGuideVisible;
     if (collapse) {
       collapse.textContent = guidanceCollapsed || guidanceSafetyCollapsed ? "∧ 펼치기" : "∨ 접기";
@@ -618,6 +642,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   function removeGuide(): void {
     const hadGuide = guideOverlay !== null;
     smartGuideVisible = false;
+    smartGuideCollapseSnapshot = null;
     guideDeadline = 0;
     if (guideDismissTimer !== null) {
       globalThis.clearTimeout(guideDismissTimer);
@@ -652,6 +677,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     if (guideCountdownTimer !== null) globalThis.clearTimeout(guideCountdownTimer);
     guideDismissTimer = null;
     guideCountdownTimer = null;
+    if (smartGuideCollapseSnapshot) {
+      guidanceCollapsed = smartGuideCollapseSnapshot.collapsed;
+      guidanceSafetyCollapsed = smartGuideCollapseSnapshot.safetyCollapsed;
+      smartGuideCollapseSnapshot = null;
+    }
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
     if (currentEasyExplanation()) renderGuidancePanel();
@@ -693,10 +723,12 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           viewportMode: currentProfile.viewportMode?.heightPercent ?? null,
         },
         measurements: { postLayoutHitTestFailed: true },
-        recommendation: "Smart Guide was hidden because it covered a registered host action after layout.",
+        recommendation: "Guidance was temporarily hidden because it covered a registered host action after layout.",
       }]);
       overlay.style.visibility = "hidden";
-      removeGuide();
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.dataset.a11yPositionSuppressed = "true";
+      menuHint.setEnabled(true);
     });
   }
 
@@ -717,6 +749,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           collapse.setAttribute("aria-expanded", "false");
         }
         if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
+          guideOverlay.setAttribute("aria-hidden", "false");
+          delete guideOverlay.dataset.a11yPositionSuppressed;
+          menuHint.setEnabled(false);
           scheduleGuideHitTest(target, action);
           return;
         }
@@ -751,10 +786,17 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
             guideRect.top < targetRect.bottom && guideRect.bottom > targetRect.top,
           safetyCollapsed: guidanceSafetyCollapsed,
         },
-        recommendation: "Guide hidden: no position passed registered-action overlap and pointer hit-test checks.",
+        recommendation: "Guidance retained but temporarily hidden because no safe position passed registered-action overlap and pointer hit-test checks.",
       }]);
-      removeGuide();
+      guideOverlay.style.visibility = "hidden";
+      guideOverlay.setAttribute("aria-hidden", "true");
+      guideOverlay.dataset.a11yPositionSuppressed = "true";
+      menuHint.setEnabled(true);
+      return;
     }
+    guideOverlay.setAttribute("aria-hidden", "false");
+    delete guideOverlay.dataset.a11yPositionSuppressed;
+    menuHint.setEnabled(false);
     if (guideOverlay) scheduleGuideHitTest(target, action);
   }
 
@@ -782,6 +824,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const target = action?.element ?? null;
     if (!action || !target || !root.contains(target)) return;
     if (smartGuideVisible) finishSmartGuide();
+    smartGuideCollapseSnapshot = {
+      collapsed: guidanceCollapsed,
+      safetyCollapsed: guidanceSafetyCollapsed,
+    };
     menuHint.setEnabled(false);
     smartGuideVisible = true;
     const displayMs = currentProfile.slowGuidance ? 15_000 : GUIDE_AUTO_DISMISS_MS;
@@ -880,7 +926,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       ).map((item) => ({ title: item.title.slice(0, 300), text: item.text.slice(0, 3000) }))
       : [];
     if (easyLanguageState?.stepId !== stepId) easyLanguageIndex = 0;
-    easyLanguageState = stepId ? { stepId, explanations } : null;
+    easyLanguageState = stepId && explanations.length > 0 ? { stepId, explanations } : null;
     easyLanguageIndex = Math.min(easyLanguageIndex, Math.max(0, explanations.length - 1));
     if (!smartGuideVisible) renderGuidancePanel();
   }

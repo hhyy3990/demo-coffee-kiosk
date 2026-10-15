@@ -310,10 +310,7 @@ export default function App() {
 
   const easyExplanations = useMemo(() => {
     if (!preferences.easyLanguage) return [];
-    if (stage === "start") return [
-      { title: "매장 이용", text: "매장에서 드시려면 매장 이용을 선택해 주세요." },
-      { title: "포장하기", text: "음료를 가져가시려면 포장하기를 선택해 주세요." },
-    ];
+    if (stage === "start") return [];
     if (stage === "menu") return [
       { title: "메뉴 분류", text: "커피와 음료, 디저트 중에서 보고 싶은 분류를 고를 수 있어요." },
       { title: "음료 선택", text: "원하는 음료를 누르면 다음 화면에서 옵션을 고를 수 있어요." },

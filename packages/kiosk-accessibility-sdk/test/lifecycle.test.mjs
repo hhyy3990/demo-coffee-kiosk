@@ -422,6 +422,8 @@ test("Smart Guide shares the easy-language panel, counts down for 15 seconds, an
     });
     const panel = h.children[0];
     panel.querySelector("[data-a11y-guide-next]").dispatch("click", { stopPropagation() {} });
+    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
+    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
     h.sdk.setGuideState({
       stepId: "test.confirm",
       enabled: true,
@@ -435,19 +437,73 @@ test("Smart Guide shares the easy-language panel, counts down for 15 seconds, an
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
     assert.equal(panel.querySelector("[data-a11y-guide-countdown]").textContent, "15초");
+    assert.equal(panel.querySelector("[data-a11y-guide-pager]").hidden, true);
+    assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "");
+    assert.equal(panel.querySelector("[data-a11y-guide-previous]").hidden, true);
+    assert.equal(panel.querySelector("[data-a11y-guide-next]").hidden, true);
     const dismissTimer = [...h.scheduledDelays.entries()]
       .filter(([, delay]) => delay === 15_000).at(-1)?.[0];
     assert.ok(dismissTimer);
     panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
+    assert.equal(panel.classList.contains("a11y-guide-collapsed"), false);
     h.timerCallbacks.get(dismissTimer)?.();
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
     assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
+    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
+    assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
+    assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
     h.sdk.endSession();
     assert.equal(h.children.length, 0);
     assert.equal(h.sdk.profile.easyLanguage, false);
+  } finally {
+    h.restore();
+  }
+});
+
+test("blank easy-language steps clear stale copy while Smart Guide remains independent", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, easyLanguage: true, smartGuide: true });
+    h.sdk.setEasyLanguageState({
+      stepId: "fixture.first",
+      explanations: [{ title: "이전 단계", text: "이전 설명입니다." }],
+    });
+    assert.equal(h.children[0].querySelector("[data-a11y-guide-title]").textContent, "이전 단계");
+
+    h.sdk.setEasyLanguageState({
+      stepId: "fixture.empty",
+      explanations: [{ title: "   ", text: " \n " }],
+    });
+    assert.equal(h.children.length, 0);
+
+    h.sdk.setGuideState({
+      stepId: "fixture.empty",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "현재 단계", text: "계속 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    const idle = [...h.timerCallbacks.keys()].at(-1);
+    h.timerCallbacks.get(idle)?.();
+    assert.equal(h.children.length, 1);
+    assert.equal(h.children[0].querySelector("[data-a11y-guide-title]").textContent, "현재 단계");
+    assert.equal(h.children[0].querySelector("[data-a11y-guide-pager]").hidden, true);
+
+    h.sdk.setEasyLanguageState({
+      stepId: "fixture.next",
+      explanations: [{ title: "다음 단계", text: "새 설명입니다." }],
+    });
+    h.sdk.setGuideState({
+      stepId: "fixture.next",
+      enabled: true,
+      paused: true,
+      delaySeconds: 10,
+      message: null,
+    });
+    assert.equal(h.children[0].querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
+    assert.equal(h.children[0].querySelector("[data-a11y-guide-pager]").hidden, true);
   } finally {
     h.restore();
   }

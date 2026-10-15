@@ -460,7 +460,9 @@ try {
           return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom } : null;
         };
         return {
-          visible: Boolean(panel), page: panel?.querySelector("[data-a11y-guide-page]")?.textContent,
+          visible: Boolean(panel && getComputedStyle(panel).visibility !== "hidden" &&
+            panel.getAttribute("aria-hidden") !== "true"),
+          retained: Boolean(panel), page: panel?.querySelector("[data-a11y-guide-page]")?.textContent,
           collapsed: panel?.classList.contains("a11y-guide-collapsed"),
           panel: rect(panel), action: rect(document.querySelector("#host-continue")),
           keypad: rect(document.querySelector(".keypad")), hitTargets,
@@ -520,8 +522,16 @@ try {
   }
   const defaultDelayMs = await evaluate(`performance.now() - ${delayStarted}`);
   if (defaultGuide?.title !== "스마트 길잡이" || defaultDelayMs < 9_500 || defaultDelayMs > 11_500 ||
-    !defaultGuide.collapsed || !defaultGuide.countdown.includes("10")) {
+    !defaultGuide.collapsed || defaultGuide.page !== "" || !defaultGuide.pagerHidden ||
+    !defaultGuide.previousHidden || !defaultGuide.nextHidden || !defaultGuide.countdown.includes("10")) {
     throw new Error(`Real 10-second delay/guide start failed (${defaultDelayMs}ms): ${JSON.stringify(defaultGuide)}`);
+  }
+  await pointerClick("[data-a11y-guide-collapse]");
+  const expandedSmartGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (expandedSmartGuide.collapsed || expandedSmartGuide.title !== "스마트 길잡이" ||
+    expandedSmartGuide.page !== "" || !expandedSmartGuide.pagerHidden ||
+    !expandedSmartGuide.text.includes("계속 버튼을 눌러 진행하세요.")) {
+    throw new Error(`Smart Guide content was mixed with easy-language paging: ${JSON.stringify(expandedSmartGuide)}`);
   }
   const defaultVisibleAt = await evaluate("performance.now()");
   await wait(1_200);
@@ -549,7 +559,8 @@ try {
   }
   const slowDelayMs = await evaluate(`performance.now() - ${slowDelayStarted}`);
   if (slowGuide?.title !== "스마트 길잡이" || slowDelayMs < 9_500 || slowDelayMs > 11_500 ||
-    !slowGuide.collapsed || !slowGuide.countdown.includes("15")) {
+    !slowGuide.collapsed || slowGuide.page !== "" || !slowGuide.pagerHidden ||
+    !slowGuide.previousHidden || !slowGuide.nextHidden || !slowGuide.countdown.includes("15")) {
     throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
   }
   const slowVisibleAt = await evaluate("performance.now()");

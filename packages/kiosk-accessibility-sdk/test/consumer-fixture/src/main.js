@@ -184,6 +184,8 @@ window.__sdkPackageSmoke = {
       page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
       collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false,
       pagerHidden: panel?.querySelector("[data-a11y-guide-pager]")?.hidden ?? true,
+      previousHidden: panel?.querySelector("[data-a11y-guide-previous]")?.hidden ?? true,
+      nextHidden: panel?.querySelector("[data-a11y-guide-next]")?.hidden ?? true,
       countdown: panel?.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
       panelRect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
       actionRect: (() => {
