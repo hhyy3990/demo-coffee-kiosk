@@ -1,4 +1,3 @@
-import { getQrEntryDockButtons } from "./qr-entry-dock.js";
 export const DEFAULT_PRIMARY_ACTION_MESSAGE = "아래에도 버튼이 있어요";
 export const DEFAULT_CONTENT_SCROLL_MESSAGE = "아래에도 내용이 있어요";
 function shown(el) {
@@ -62,7 +61,7 @@ function currentHint(root, adapter) {
         const owner = findDeepestVerticalOwner(activeOverlay);
         if (!owner || !ownerCanScrollBelow(owner))
             return null;
-        return { kind: "vertical", message: DEFAULT_CONTENT_SCROLL_MESSAGE };
+        return { kind: "vertical", message: DEFAULT_CONTENT_SCROLL_MESSAGE, owner };
     }
     const owner = typeof root.querySelectorAll === "function"
         ? findVerticalOwner(root, regions.scrollArea)
@@ -80,65 +79,47 @@ function currentHint(root, adapter) {
                 : (document.documentElement.clientHeight || innerHeight);
         if (rect.bottom > lowerEdge + 1 &&
             ownerCanScrollBelow(owner)) {
-            return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE };
+            return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root };
         }
     }
     if (ownerCanScrollBelow(owner)) {
         return {
             kind: "vertical",
             message: DEFAULT_CONTENT_SCROLL_MESSAGE,
+            owner: owner ?? root,
         };
     }
     return null;
 }
-function placeHint(hint, root, regions) {
-    const vw = document.documentElement.clientWidth || innerWidth;
+function placeHint(hint, owner) {
+    const visualViewport = window.visualViewport;
+    const viewportWidth = visualViewport?.width || document.documentElement.clientWidth || innerWidth;
+    const viewportTop = visualViewport?.offsetTop ?? 0;
+    const viewportLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportBottom = viewportTop + (visualViewport?.height || innerHeight);
+    const vw = viewportWidth;
     const width = Math.max(0, Math.min(360, vw - 24));
     hint.style.position = "fixed";
     hint.style.zIndex = "2147483000";
     hint.style.width = "max-content";
     hint.style.maxWidth = `${width}px`;
-    hint.style.left = "12px";
+    hint.style.left = `${viewportLeft + 12}px`;
     hint.style.top = "auto";
-    const qrDock = getQrEntryDockButtons(root)
-        .find((button) => button.isConnected)
-        ?.closest(".a11y-qr-entry-dock");
-    const bottomObstacles = [
-        ...(regions.bottomControls ?? []),
-        ...(regions.guidanceAvoidAreas ?? []),
-        ...(qrDock ? [qrDock] : []),
-    ];
-    const obstacleRects = bottomObstacles.flatMap((obstacle) => {
-        if (!obstacle.isConnected)
-            return [];
-        const style = getComputedStyle(obstacle);
-        if (style.display === "none" || style.visibility === "hidden" ||
-            !["fixed", "sticky"].includes(style.position))
-            return [];
-        const rect = obstacle.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 ? [rect] : [];
-    });
-    // Start near the viewport edge rather than at the exact last pixel. Fixed
-    // controls can sit just above a body/page inset while still forming the
-    // bottom stack the hint must avoid.
-    let blockedTop = Math.max(0, innerHeight - 160);
-    let extended = true;
-    while (extended) {
-        extended = false;
-        for (const rect of obstacleRects) {
-            if (rect.top < blockedTop && rect.bottom >= blockedTop - 1) {
-                blockedTop = rect.top;
-                extended = true;
-            }
-        }
+    let ownerBottom = viewportBottom;
+    if (!(owner instanceof Document)) {
+        const rect = owner.getBoundingClientRect();
+        const scaleY = owner.offsetHeight > 0 ? rect.height / owner.offsetHeight : 1;
+        ownerBottom = rect.top + (owner.clientTop + owner.clientHeight) * scaleY;
     }
-    const bottomInset = Math.max(12, innerHeight - blockedTop + 12);
-    hint.style.bottom = `max(calc(env(safe-area-inset-bottom) + 12px), ${bottomInset}px)`;
+    const anchorBottom = Math.min(viewportBottom, ownerBottom);
+    if (anchorBottom <= viewportTop)
+        return false;
+    hint.style.bottom = `${Math.max(12, viewportBottom - anchorBottom + 12)}px`;
     hint.style.pointerEvents = "none";
     hint.style.visibility = "visible";
     const height = hint.getBoundingClientRect().height;
     const rect = hint.getBoundingClientRect();
-    hint.style.left = `${Math.max(12, (vw - rect.width) / 2)}px`;
+    hint.style.left = `${Math.max(viewportLeft + 12, viewportLeft + (vw - rect.width) / 2)}px`;
     return height > 0;
 }
 export function createScrollGuidance(root, adapter) {
@@ -157,7 +138,7 @@ export function createScrollGuidance(root, adapter) {
         node.setAttribute("aria-live", "polite");
         node.setAttribute("aria-atomic", "true");
         node.innerHTML = '<span aria-hidden="true">↓</span><span class="a11y-additional-menu-copy"></span>';
-        root.append(node);
+        document.body.append(node);
         return node;
     };
     const syncTheme = (element) => {
@@ -192,17 +173,14 @@ export function createScrollGuidance(root, adapter) {
         const element = ensureNode();
         if (!element)
             return;
-        const target = root.classList.contains("a11y-qr-entry-dock-bottom")
-            ? document.body
-            : root;
-        if (element.parentElement !== target)
-            target.append(element);
+        if (element.parentElement !== document.body)
+            document.body.append(element);
         syncTheme(element);
         element.removeAttribute("aria-hidden");
         const copy = element.querySelector(".a11y-additional-menu-copy");
         if (copy && copy.textContent !== hint.message)
             copy.textContent = hint.message;
-        if (placeHint(element, root, adapter.getLayoutRegions())) {
+        if (placeHint(element, hint.owner)) {
             element.dataset.hintKind = hint.kind;
             if (root.dataset)
                 delete root.dataset.a11yScrollGuidance;
@@ -239,6 +217,8 @@ export function createScrollGuidance(root, adapter) {
     root.addEventListener("scroll", onScroll, true);
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", schedule, { passive: true });
+    window.visualViewport?.addEventListener("scroll", schedule, { passive: true });
+    window.visualViewport?.addEventListener("resize", schedule, { passive: true });
     refresh();
     return {
         refresh,
@@ -261,6 +241,8 @@ export function createScrollGuidance(root, adapter) {
             root.removeEventListener("scroll", onScroll, true);
             window.removeEventListener("scroll", onScroll);
             window.removeEventListener("resize", schedule);
+            window.visualViewport?.removeEventListener("scroll", schedule);
+            window.visualViewport?.removeEventListener("resize", schedule);
             if (frame)
                 cancelAnimationFrame(frame);
             node?.remove();

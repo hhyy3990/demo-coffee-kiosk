@@ -67,6 +67,12 @@ try {
     const hint = document.querySelector(".a11y-additional-menu-hint");
     const hintStyle = hint && getComputedStyle(hint);
     const rect = hint?.getBoundingClientRect();
+    const ownerRect = owner instanceof Element ? owner.getBoundingClientRect() : null;
+    const ownerScaleY = owner instanceof HTMLElement && owner.offsetHeight > 0 && ownerRect
+      ? ownerRect.height / owner.offsetHeight : 1;
+    const workBottom = ownerRect && owner instanceof HTMLElement
+      ? ownerRect.top + (owner.clientTop + owner.clientHeight) * ownerScaleY
+      : innerHeight;
     return {
       registered: registered ? {
         tag: registered.tagName, className: registered.className,
@@ -86,6 +92,8 @@ try {
         hintStyle?.display !== "none" && hint.getAttribute("aria-hidden") !== "true" &&
         rect?.width && rect.height),
       hintRect: rect ? { top: rect.top, bottom: rect.bottom, height: rect.height } : null,
+      workBottom,
+      hintBottomGap: rect ? workBottom - rect.bottom : null,
       hintText: hint?.textContent?.trim() ?? "",
       hintStyle: hintStyle ? {
         display: hintStyle.display, visibility: hintStyle.visibility,
@@ -142,6 +150,15 @@ try {
   };
   const scrollWelcomeHintCycle = async () => {
     const initial = await readHomeScroll();
+    const initialRange = initial.actualOwner
+      ? initial.actualOwner.scrollHeight - initial.actualOwner.clientHeight
+      : 0;
+    if (initialRange <= 1) {
+      if (initial.hintVisible) {
+        throw new Error(`Welcome hint appeared without a scrollable owner: ${JSON.stringify(initial)}`);
+      }
+      return { scrollNotNeeded: true, initialOwner: null, hintHiddenWithoutOverflow: true };
+    }
     const wheel = async (deltaY) => {
       const point = await evaluate(`(() => {
         const owner = document.querySelector('[data-a11y-slot="scroll-content"]');
@@ -165,9 +182,12 @@ try {
     const stablePosition = [middle, bottom, returned].every((sample) =>
       Math.abs((sample.hintRect?.top ?? NaN) - (initial.hintRect?.top ?? NaN)) <= 1,
     );
+    const stableAnchor = [initial, middle, bottom, returned].every((sample) =>
+      Math.abs((sample.hintBottomGap ?? NaN) - 12) <= 1,
+    );
     if (!initial.hintVisible || !middle.hintVisible || !bottom.actualOwner ||
         bottom.actualOwner.scrollTop < bottom.actualOwner.scrollHeight - bottom.actualOwner.clientHeight - 1 ||
-        bottom.hintVisible || !returned.hintVisible || !stablePosition ||
+        bottom.hintVisible || !returned.hintVisible || !stablePosition || !stableAnchor ||
         !initial.hintHitTargets?.visuallyOnTop || !initial.hintHitTargets?.clickPassesThrough) {
       throw new Error(`Welcome scroll hint did not stay visible, hide only at the end, and return on scroll-up: ${
         JSON.stringify({ initial, middle, bottom, returned, stablePosition })
@@ -183,6 +203,7 @@ try {
       hiddenAtBottom: !bottom.hintVisible,
       returnedAfterScrollUp: returned.hintVisible,
       fixedHintPosition: stablePosition,
+      anchorGap12px: stableAnchor,
       visibleAboveDock: initial.hintHitTargets.visuallyOnTop,
       clickPassesThrough: initial.hintHitTargets.clickPassesThrough,
     };
@@ -299,6 +320,23 @@ try {
           scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
           overflowY: getComputedStyle(el).overflowY } : null;
       })(),
+      scrollHint: (() => {
+        const hint = document.querySelector(".a11y-additional-menu-hint");
+        const hintRect = hint?.getBoundingClientRect();
+        const owner = document.querySelector('[data-a11y-slot="scroll-content"]');
+        if (!owner) return null;
+        const ownerRect = owner.getBoundingClientRect();
+        const scaleY = owner.offsetHeight > 0 ? ownerRect.height / owner.offsetHeight : 1;
+        const workBottom = ownerRect.top + (owner.clientTop + owner.clientHeight) * scaleY;
+        return {
+          visible: Boolean(hint && hint.getAttribute("aria-hidden") !== "true" &&
+            getComputedStyle(hint).visibility !== "hidden"),
+          hintTop: hintRect?.top ?? null,
+          hintBottom: hintRect?.bottom ?? null,
+          workBottom,
+          bottomGap: hintRect ? workBottom - hintRect.bottom : null,
+        };
+      })(),
     };
   })()`);
   const assertVisible = async (label, expectedTitle) => {
@@ -306,6 +344,7 @@ try {
     console.log(JSON.stringify({ label, ...state }));
     if (!state.exists || !state.visible || !state.hitTest || state.ariaHidden === "true" ||
       state.suppressed || state.primaryOverlaps.length ||
+      (state.scrollHint?.visible && Math.abs(state.scrollHint.bottomGap - 12) > 1) ||
       state.guideControls.some((control) => control.width < 44 ||
         Math.abs(control.height - 44) > 0.1 || !control.hitTest || !control.textVisible) ||
       state.guideControls.some((control, index, controls) => controls.slice(index + 1).some((other) =>
@@ -336,7 +375,8 @@ try {
       const state = await read();
       if (!state.exists || !state.visible || !state.hitTest || state.ariaHidden !== "false" ||
         state.suppressed || state.primaryOverlaps.length || state.title !== before.title ||
-        state.page !== before.page) {
+        state.page !== before.page ||
+        (state.scrollHint?.visible && Math.abs(state.scrollHint.bottomGap - 12) > 1)) {
         throw new Error(`${label} scroll ${index + 1} hid or obstructed guidance: ${JSON.stringify(state)}`);
       }
     }
@@ -349,6 +389,14 @@ try {
       return { x: rect.right - 12, y: Math.min(rect.bottom - 30, rect.top + 150) };
     })()`);
     const before = await evaluate("document.querySelector('[data-a11y-slot=\"scroll-content\"]').scrollTop");
+    const range = await evaluate(`(() => {
+      const owner = document.querySelector('[data-a11y-slot="scroll-content"]');
+      return owner.scrollHeight - owner.clientHeight;
+    })()`);
+    if (range <= 1) {
+      await send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      return { notNeeded: true, scrollRange: range };
+    }
     await send("Input.dispatchTouchEvent", {
       type: "touchStart", touchPoints: [{ x: point.x, y: point.y }],
     });
@@ -425,7 +473,8 @@ try {
     : 0;
   if (startRange > 1 && (!startAfterProfile.hintVisible ||
       !startAfterProfile.hintHitTargets?.visuallyOnTop ||
-      !startAfterProfile.hintHitTargets?.clickPassesThrough)) {
+      !startAfterProfile.hintHitTargets?.clickPassesThrough ||
+      Math.abs(startAfterProfile.hintBottomGap - 12) > 1)) {
     throw new Error(`Scrollable welcome screen has no SDK hint: ${JSON.stringify(startAfterProfile)}`);
   }
   if (firstScreen.exists) throw new Error(`Easy Language unexpectedly appeared on the welcome screen: ${JSON.stringify(firstScreen)}`);
@@ -434,7 +483,8 @@ try {
   const welcomeAfterGuide = await readHomeScroll();
   if (startRange > 1 && (!welcomeAfterGuide.hintVisible ||
       !welcomeAfterGuide.hintHitTargets?.visuallyOnTop ||
-      !welcomeAfterGuide.hintHitTargets?.clickPassesThrough)) {
+      !welcomeAfterGuide.hintHitTargets?.clickPassesThrough ||
+      Math.abs(welcomeAfterGuide.hintBottomGap - 12) > 1)) {
     throw new Error(`Smart Guide hid the welcome scroll hint: ${JSON.stringify(welcomeAfterGuide)}`);
   }
   console.log(JSON.stringify({ label: "welcome-after-smart-delay", guideVisible: smartWelcome.visible,
@@ -446,16 +496,17 @@ try {
     const shell = document.querySelector('[data-a11y-slot="scroll-content"]');
     const rail = document.querySelector("#category-nav-list");
     const controls = document.querySelector(".category-nav-controls");
+    const verticalRange = shell.scrollHeight - shell.clientHeight;
     const topBefore = controls.getBoundingClientRect().top;
     shell.scrollTop += 140;
     const topAfter = controls.getBoundingClientRect().top;
     const scrollWidth = rail.scrollWidth, clientWidth = rail.clientWidth;
     rail.scrollLeft = scrollWidth;
     const atRight = rail.scrollLeft > 0;
-    return { topBefore, topAfter, scrollDelta: topAfter - topBefore,
+    return { topBefore, topAfter, scrollDelta: topAfter - topBefore, verticalRange,
       scrollWidth, clientWidth, atRight };
   })()`);
-  if (menuNavBefore.scrollDelta > -20) {
+  if (viewportWidth < 600 && menuNavBefore.verticalRange > 1 && menuNavBefore.scrollDelta > -20) {
     throw new Error(`Category tabs stayed sticky instead of scrolling with content: ${JSON.stringify(menuNavBefore)}`);
   }
   if (menuNavBefore.scrollWidth > menuNavBefore.clientWidth && !menuNavBefore.atRight) {

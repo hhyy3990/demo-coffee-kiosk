@@ -382,7 +382,8 @@
         await new Promise((resolve) => setTimeout(resolve, 80));
         const pill = [...document.querySelectorAll(".a11y-additional-menu-hint")].at(-1);
         const pillRect = pill?.getBoundingClientRect();
-        const footerRect = footer.getBoundingClientRect();
+        const scrollRect = scrollArea.getBoundingClientRect();
+        const workBottom = scrollRect.top + scrollArea.clientTop + scrollArea.clientHeight;
         guideStates.push({
           label,
           scrollTop: scrollArea.scrollTop,
@@ -391,8 +392,8 @@
             getComputedStyle(pill).visibility !== "hidden"),
           message: pill?.querySelector(".a11y-additional-menu-copy")?.textContent ?? null,
           pillRect: pillRect ? { top: pillRect.top, bottom: pillRect.bottom } : null,
-          footerTop: footerRect.top,
-          avoidsFooter: !pillRect || pillRect.bottom <= footerRect.top,
+          workBottom,
+          bottomGap: pillRect ? workBottom - pillRect.bottom : null,
         });
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -446,9 +447,16 @@
           trigger.focus();
         });
         dialog.focus();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const modalHasScrollableContent = dialog.scrollHeight > dialog.clientHeight + 1;
+        const hintAtTopNode = [...document.querySelectorAll(".a11y-additional-menu-hint")].at(-1);
+        const hintVisibleAtTop = Boolean(hintAtTopNode &&
+          hintAtTopNode.getAttribute("aria-hidden") !== "true" &&
+          getComputedStyle(hintAtTopNode).visibility !== "hidden");
         dialog.scrollTop = Number.MAX_SAFE_INTEGER;
         dialog.dispatchEvent(new Event("scroll", { bubbles: true }));
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const modalAtBottom = dialog.scrollTop >= dialog.scrollHeight - dialog.clientHeight - 1;
         const closeRect = closeButton.getBoundingClientRect();
         const closeHit = document.elementFromPoint(closeRect.left + closeRect.width / 2, closeRect.top + closeRect.height / 2);
         closeButtonHitTest = closeHit === closeButton;
@@ -462,13 +470,16 @@
         const hintVisibleWithModal = Boolean(modalHint &&
           modalHint.getAttribute("aria-hidden") !== "true" &&
           getComputedStyle(modalHint).visibility !== "hidden");
-        const modalHasScrollableContent = dialog.scrollHeight > dialog.clientHeight + 1;
+        const hintVisibleAtBottom = hintVisibleWithModal;
         closeButton.click();
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const afterClose = ownerSnapshot();
         results.push({
           kind,
           modalHasScrollableContent,
+          modalAtBottom,
+          hintVisibleAtTop,
+          hintVisibleAtBottom,
           before,
           immediatelyAfterInsert,
           samples,
@@ -489,12 +500,14 @@
       return {
         results,
         guideStates,
-        pass: guideStates.slice(0, 4).every((item) => item.visible && item.avoidsFooter) &&
+        pass: guideStates.slice(0, 4).every((item) => item.visible && Math.abs((item.bottomGap ?? Infinity) - 12) <= 1) &&
           !guideStates[4].visible && guideStates[5].visible &&
           results.every((item) =>
             item.stableDuringOpen && item.stableAfterClose &&
             item.focusMovedToDialog && item.focusReturnedAfterClose &&
-            item.closeButtonHitTest && !item.hintVisibleWithModal
+            item.closeButtonHitTest && item.modalAtBottom &&
+            item.hintVisibleAtTop === (item.kind === "qr" && item.modalHasScrollableContent) &&
+            !item.hintVisibleAtBottom
           ),
       };
     };

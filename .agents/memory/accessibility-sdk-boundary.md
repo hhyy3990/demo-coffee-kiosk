@@ -111,8 +111,8 @@ In normal viewport mode, keep the guide panel's previous viewport position while
 
 **How to apply:** Exclude moving scroll-content obstacles after the guide has a valid placement, allow pointer events to pass through the panel surface while retaining its own buttons, and verify `elementFromPoint` for host actions at start/middle/end. Hide the hint only when the active owner cannot scroll farther or no scroll owner exists.
 
-When a bottom-viewport kiosk root forms a low stacking context, a fixed scroll hint inside it can be hidden behind the sibling QR dock regardless of the hint's own z-index. Portal only that SDK hint to the document layer while the bottom QR dock is active, reserve the dock/control stack, and keep the hint pointer-transparent.
+Keep the scroll hint in the document layer and anchor it to the active scroll owner's visible client-bottom with one constant 12px inset. Do not move it to avoid buttons, keypads, cards, or QR docks; pointer transparency preserves interaction. Use the topmost registered modal's own scroll owner while a modal is open, and suppress background-page guidance.
 
-**Why:** In the real 360×667 DemoCoffee preview, computed visibility was true while paint hit-testing showed the QR button on top of the hint; the kiosk root was a z-index 1 stacking context.
+**Why:** Obstacle-candidate placement moved the hint hundreds of pixels as controls changed; root transforms/stacking contexts also made fixed positioning depend on its DOM parent.
 
-**How to apply:** Verify the painted layer with `elementFromPoint` after applying the accessibility profile, not only computed styles. Confirm the hint is above the dock, remains fixed while its registered scroll owner moves, and passes clicks through.
+**How to apply:** Measure the actual scrollport client-bottom and hint bottom at top, middle, and end in each viewport mode. Confirm the 12px inset is stable while scrolling, the hint hides only at that owner's true end, modal hints follow modal scroll state, and `elementFromPoint` passes taps through. Convert transformed owner geometry to viewport coordinates and respond to `visualViewport` changes.
