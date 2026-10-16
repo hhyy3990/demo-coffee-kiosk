@@ -435,7 +435,7 @@ try {
     let state;
     for (let attempt = 0; attempt < 165; attempt += 1) {
       state = await read();
-      if (state.title === expectedTitle) break;
+      if (state.title === expectedTitle && state.visible && state.hitTest) break;
       await wait(100);
     }
     const elapsed = performance.now() - started;
@@ -541,6 +541,35 @@ try {
 
   await click("#item-add");
   await wait(500);
+  if (viewportWidth <= 600) {
+    const beforeMenuLayer = await evaluate(`(() => {
+      const nav = document.querySelector(".category-nav-controls");
+      const cart = document.querySelector(".cart-bar");
+      const owner = document.querySelector(".a11y-bottom-viewport-scroll-area") ||
+        document.querySelector('[data-a11y-slot="scroll-content"]');
+      return { navTop: nav.getBoundingClientRect().top, navPosition: getComputedStyle(nav).position,
+        navZ: getComputedStyle(nav).zIndex, cartTop: cart.getBoundingClientRect().top,
+        cartPosition: getComputedStyle(cart).position, cartZ: getComputedStyle(cart).zIndex,
+        scrollTop: owner.scrollTop };
+    })()`);
+    const layeredMenu = await evaluate(`(() => {
+      const nav = document.querySelector(".category-nav-controls");
+      const cart = document.querySelector(".cart-bar");
+      const owner = document.querySelector(".a11y-bottom-viewport-scroll-area") ||
+        document.querySelector('[data-a11y-slot="scroll-content"]');
+      owner.scrollTop += nav.getBoundingClientRect().top - cart.getBoundingClientRect().top;
+      const button = document.querySelector("#menu-order-confirm");
+      const rect = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { navTop: nav.getBoundingClientRect().top, cartTop: cart.getBoundingClientRect().top,
+        orderButtonHit: hit === button || button.contains(hit) };
+    })()`);
+    if (beforeMenuLayer.navPosition === "sticky" || beforeMenuLayer.navZ !== "1" ||
+      beforeMenuLayer.cartPosition !== "sticky" || Number(beforeMenuLayer.cartZ) <= Number(beforeMenuLayer.navZ) ||
+      !layeredMenu.orderButtonHit) {
+      throw new Error(`Category rail/order bar stacking regressed: ${JSON.stringify({ beforeMenuLayer, layeredMenu })}`);
+    }
+  }
   const menuScrollPoint = await evaluate(`(() => {
     const rect = document.querySelector('[data-a11y-slot="scroll-content"]').getBoundingClientRect();
     return { x: rect.right - 8, y: rect.top + 48 };
@@ -561,8 +590,31 @@ try {
   await scrollTenTimes("cart-smart");
   const cartReturn = await waitForEasy("cart-smart-return", "수량", "2/2");
   await click("#cart-pay");
-  const payment = await assertVisible("payment-entered", "결제 수단");
+  const payment = await assertVisible("payment-entered", "카드와 간편결제");
   if (payment.page !== "1/2") throw new Error(`Payment Easy Language did not start at 1/2: ${JSON.stringify(payment)}`);
+  const paymentFirstCopy = "카드는 신용카드나 체크카드로 돈을 내는 방법이에요. 간편결제는 휴대전화에 등록한 결제 수단으로 돈을 내는 방법이에요.";
+  if (payment.text !== paymentFirstCopy) {
+    throw new Error(`Payment page 1 does not describe card and easy pay: ${payment.text}`);
+  }
+  const paymentMethods = await evaluate(`Array.from(document.querySelectorAll(".payment-option h3"), (item) => item.textContent.trim())`);
+  if (JSON.stringify(paymentMethods) !== JSON.stringify(["카드", "간편 결제", "모바일 쿠폰", "상품권"])) {
+    throw new Error(`Payment options changed unexpectedly: ${JSON.stringify(paymentMethods)}`);
+  }
+  for (let index = 1; index <= paymentMethods.length; index += 1) {
+    await evaluate(`document.querySelector(".payment-option:nth-child(${index})").scrollIntoView({ block: "center" })`);
+    await wait(100);
+    const selector = `.payment-option:nth-child(${index})`;
+    await click(selector);
+    const selected = await evaluate(`document.querySelector(${JSON.stringify(selector)}).getAttribute("aria-pressed")`);
+    if (selected !== "true") throw new Error(`Payment option ${paymentMethods[index - 1]} was not selectable.`);
+  }
+  await click("[data-a11y-guide-next]");
+  const paymentPageTwo = await assertVisible("payment-page-two", "모바일 쿠폰과 상품권");
+  if (paymentPageTwo.page !== "2/2" ||
+    paymentPageTwo.text !== "모바일 쿠폰은 휴대전화로 받은 쿠폰을 사용하는 거예요. 상품권은 미리 받은 이용권이나 금액권으로 돈을 내는 방법이에요." ||
+    paymentPageTwo.text.includes("영수증")) {
+    throw new Error(`Payment page 2 does not match the available methods: ${JSON.stringify(paymentPageTwo)}`);
+  }
   await click("#payment-pay");
   let completeReady = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
