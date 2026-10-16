@@ -165,30 +165,32 @@ window.__sdkPackageSmoke = {
       scannerContainersCleaned: host.childNodes.length === 0,
     };
   },
-  async runStageGuidanceProbe(heightPercent = null, enableSmart = false) {
+  async runStageGuidanceProbe(heightPercent = null, guideMode = "easy") {
+    const enableEasy = guideMode !== "smart";
+    const enableSmart = guideMode !== "easy";
     root.classList.add("stage-fixture");
     const stage = root.querySelector(".content");
     const next = root.querySelector("#host-continue");
     profile = validateAccessibilityProfile({
       ...profile,
       viewportMode: heightPercent === null ? null : { mode: "bottom", heightPercent },
-      easyLanguage: true,
-      smartGuide: true,
+      easyLanguage: enableEasy,
+      smartGuide: enableSmart,
       slowGuidance: true,
       guideDelaySeconds: 10,
     });
     sdk.applyProfile(profile);
-    sdk.setEasyLanguageState({
-      stepId: guideStep,
-      explanations: [{ title: "확인 단계", text: "입력한 내용을 확인한 뒤 계속 진행합니다." }],
-    });
+    if (enableEasy) sdk.setEasyLanguageState({
+        stepId: guideStep,
+        explanations: [{ title: "확인 단계", text: "입력한 내용을 확인한 뒤 계속 진행합니다." }],
+      });
     const guideMessage = {
       title: "다음 단계",
       text: "내용을 확인한 뒤 계속 버튼을 눌러 주세요.",
       actionId: "host.review.continue",
     };
     sdk.setGuideState({
-      stepId: guideStep, enabled: true, paused: true,
+      stepId: guideStep, enabled: enableSmart, paused: true,
       delaySeconds: 10, message: guideMessage,
     });
     const frame = () => new Promise((resolve) =>
@@ -229,7 +231,7 @@ window.__sdkPackageSmoke = {
       });
       return {
         state, requestedTop, scrollTop: stage.scrollTop,
-        stage: rect(stage),
+        stage: rect(stage), scrollHeight: stage.scrollHeight, clientHeight: stage.clientHeight,
         guide: guide ? { rect: rect(guide), smart: guide.classList.contains("a11y-guide-smart"),
           visible: getComputedStyle(guide).visibility === "visible" } : null,
         hint: hint ? { rect: rect(hint), visible: getComputedStyle(hint).visibility === "visible" } : null,
@@ -244,7 +246,7 @@ window.__sdkPackageSmoke = {
     if (enableSmart) {
       sdk.setGuideState({
         stepId: guideStep, enabled: true, paused: false,
-        delaySeconds: 10, message: guideMessage,
+        delaySeconds: 0, message: guideMessage,
       });
       for (let attempt = 0; attempt < 115; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -258,7 +260,9 @@ window.__sdkPackageSmoke = {
     }
     return { viewport: { width: innerWidth, height: innerHeight },
       stageScrollHeight: stage.scrollHeight, stageClientHeight: stage.clientHeight,
+      maxScroll: Math.max(0, stage.scrollHeight - stage.clientHeight),
       noSafeSpace: root.dataset.a11yScrollGuidance === "no-safe-space",
+      guideMode,
       smartVisible, easy, smart };
   },
   read() {

@@ -1,6 +1,6 @@
 {
   "name": "@naebangsik/kiosk-accessibility-sdk",
-  "version": "0.5.21",
+  "version": "0.5.22",
   "description": "Framework-independent accessibility and QR profile SDK for web kiosks",
   "type": "module",
   "main": "./dist/index.js",

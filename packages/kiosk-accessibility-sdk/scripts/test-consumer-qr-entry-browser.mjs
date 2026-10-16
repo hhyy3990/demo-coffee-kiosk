@@ -154,9 +154,9 @@ try {
       } else if (started.dockBottomMode || started.dockContentHeight) {
         throw new Error(`QR dock did not return to standard mode for null viewportMode: ${JSON.stringify(started)}`);
         }
-        if (started.guidanceEnabled && (!started.hintVisible || started.noSafeSpace || !started.hintAvoidsDockAndControls ||
-          started.hintPointerEvents !== "none")) {
-          throw new Error(`Consumer guidance did not fit around dock/controls: ${JSON.stringify({ width, height, structure, percent, started })}`);
+        if (started.guidanceEnabled && (!started.hintVisible ||
+          started.hintPointerEvents !== "none" || !started.hintPassesDockClick)) {
+          throw new Error(`Consumer guidance was hidden or blocked a dock click: ${JSON.stringify({ width, height, structure, percent, started })}`);
         }
         await evaluate("window.qrConsumerTest.clickQr()");
         if (width === 320 && structure === "inner" && percent === 60) {
@@ -227,7 +227,7 @@ try {
           }));
           if (
             hintDrift.some(({ x, y }) => x > 1 || y > 1) ||
-            !atMidScroll.hintAvoidsDockAndControls || !nearScrollEnd.hintAvoidsDockAndControls) {
+            !atMidScroll.hintPassesDockClick || !nearScrollEnd.hintPassesDockClick) {
             throw new Error(`Scroll hint moved or conflicted while scrolling: ${
               JSON.stringify({ started: started.hintRect, atMidScroll: atMidScroll.hintRect,
                 nearScrollEnd: nearScrollEnd.hintRect, hintDrift })
@@ -309,7 +309,8 @@ try {
         })()`);
         await wait(120);
         const atStart = await evaluate("window.qrConsumerTest.get()");
-        if (atStart.guidanceEnabled && (!atStart.hintVisible || atStart.noSafeSpace)) {
+        if (atStart.guidanceEnabled && (!atStart.hintVisible ||
+            atStart.hintPointerEvents !== "none" || !atStart.hintPassesDockClick)) {
           throw new Error(`Consumer hint did not return at scroll start: ${JSON.stringify({ width, height, structure, percent, atStart })}`);
         }
         let overlays = null;
@@ -318,13 +319,13 @@ try {
             modal: await evaluate("window.qrConsumerTest.guidanceOverlayPriority('modal')"),
             guide: await evaluate("window.qrConsumerTest.guidanceOverlayPriority('guide')"),
           };
-          if (!overlays.modal.hidden || !overlays.modal.returns ||
-            !overlays.guide.hidden || !overlays.guide.returns) {
+          if (overlays.modal.hidden || !overlays.modal.modalOwnsScroll || !overlays.modal.returns ||
+            overlays.guide.hidden || !overlays.guide.returns) {
             throw new Error(`Consumer modal/guide priority failed: ${JSON.stringify(overlays)}`);
           }
           overlays.dockless = await evaluate("window.qrConsumerTest.verifyDockless()");
-          if (!overlays.dockless.visible || overlays.dockless.noSafeSpace ||
-            !overlays.dockless.qrDockAbsent || !overlays.dockless.controlsStillReachable) {
+          if (!overlays.dockless.visible || !overlays.dockless.qrDockAbsent ||
+            !overlays.dockless.controlsStillReachable || !overlays.dockless.hintPassesDockClick) {
             throw new Error(`Consumer without QR dock failed: ${JSON.stringify(overlays.dockless)}`);
           }
         }
@@ -844,7 +845,7 @@ try {
   };
   for (const [width, height] of [[320, 844], [360, 667], [390, 844], [1080, 1920]]) {
     for (const percent of [null, 60, 70, 80]) {
-      const enableSmart = width === 390 && height === 844 && percent === 60;
+      for (const guideMode of ["easy", "smart", "both"]) {
       await send("Emulation.setDeviceMetricsOverride", {
         width, height, deviceScaleFactor: 1, mobile: width < 600,
         screenWidth: width, screenHeight: height,
@@ -858,20 +859,26 @@ try {
       }
       if (!ready) throw new Error("The .stage guidance fixture did not load.");
       const probe = await evaluate(
-        `window.__sdkPackageSmoke.runStageGuidanceProbe(${JSON.stringify(percent)}, ${enableSmart})`,
+        `window.__sdkPackageSmoke.runStageGuidanceProbe(${JSON.stringify(percent)}, ${JSON.stringify(guideMode)})`,
       );
       const easyGuideDrift = topDrift(probe.easy, "guide");
-      const easyHintSamples = probe.easy.filter((sample) => sample.hint?.visible);
-      const easyHintDrift = topDrift(probe.easy, "hint");
       const smartGuideDrift = topDrift(probe.smart, "guide");
-      const badActionHits = [...probe.easy, ...probe.smart]
-        .flatMap((sample) => sample.hitTests.filter((item) => item.visible &&
-          (!item.hit || item.guideOverlap || item.hintOverlap)));
+      const samples = [...probe.easy, ...probe.smart];
+      const hintSamples = samples.filter((sample) => sample.hint?.visible);
+      const hintDrift = topDrift(samples, "hint");
+      const scrollSamples = samples.filter((sample) => sample.scrollTop < probe.maxScroll - 1);
+      const endSamples = samples.filter((sample) => sample.scrollTop >= probe.maxScroll - 1);
+      const badActionHits = samples.flatMap((sample) =>
+        sample.hitTests.filter((item) => item.visible && !item.hit));
+      const visualOverlaps = samples.flatMap((sample) =>
+        sample.hitTests.filter((item) => item.visible && (item.guideOverlap || item.hintOverlap)));
       const result = {
-        width, height, percent, easyGuideDrift, easyHintDrift, smartGuideDrift,
-        visibleHintSamples: easyHintSamples.length, noSafeSpace: probe.noSafeSpace,
+        width, height, percent, guideMode, easyGuideDrift, smartGuideDrift, hintDrift,
+        visibleHintSamples: hintSamples.length,
+        activeScrollHintSamples: scrollSamples.filter((sample) => sample.hint?.visible).length,
+        endHintHidden: endSamples.length > 0 && endSamples.every((sample) => !sample.hint?.visible),
         smartVisible: probe.smartVisible,
-        badActionHits,
+        badActionHits, visualOverlaps: visualOverlaps.length,
         easy: probe.easy.map((sample) => ({
           scrollTop: sample.scrollTop, stageTop: sample.stage.top,
           guideTop: sample.guide?.rect.top, hintTop: sample.hint?.rect.top,
@@ -882,15 +889,18 @@ try {
           hintVisible: sample.hint?.visible,
         })),
       };
-      const exactKioskCase = width === 390 && height === 844 && percent === 60;
+      const guides = guideMode === "easy" ? probe.easy
+        : guideMode === "smart" ? probe.smart : [...probe.easy, ...probe.smart];
       if (probe.stageScrollHeight <= probe.stageClientHeight ||
-          (easyHintSamples.length < 1 && !probe.noSafeSpace) ||
-          badActionHits.length ||
-          (exactKioskCase && (easyGuideDrift > 1 || easyHintDrift > 1 ||
-            easyHintSamples.length < 3 || !probe.smartVisible || smartGuideDrift > 1))) {
+          easyGuideDrift > 1 || smartGuideDrift > 1 || hintDrift > 1 || badActionHits.length ||
+          scrollSamples.some((sample) => !sample.hint?.visible) ||
+          !endSamples.length || endSamples.some((sample) => sample.hint?.visible) ||
+          guides.some((sample) => !sample.guide?.visible) ||
+          (guideMode !== "easy" && !probe.smartVisible)) {
         throw new Error(`.stage guidance geometry was unstable: ${JSON.stringify(result)}`);
       }
       stageGuidanceCases.push(result);
+      }
     }
   }
   console.log(JSON.stringify({

@@ -99,14 +99,14 @@ When a protected action is inside a scrollport, placement and hit testing must u
 
 **How to apply:** Test the real host flow at short/narrow viewports with wheel and touch scroll, verify body and page controls remain visible when safe, and wait through the configured guide lifetime before confirming page/fold restoration.
 
-While Smart Guide is visible, pointer/keyboard activity on the same task step may be counted but must neither dismiss the guide nor start a replacement idle timer. Only the fixed display deadline, explicit close, actual step transition, or session end may finish it. Easy Language may coexist with the scroll hint when the hint can avoid the panel; suppress it for Smart Guide or modal overlays. In bottom-viewport mode, keep the hint in a stable band outside the scrollport; moving guidanceAvoidAreas inside the scrollport must not swap the hint between viewport positions.
+While Smart Guide is visible, pointer/keyboard activity on the same task step may be counted but must neither dismiss the guide nor start a replacement idle timer. Only the fixed display deadline, explicit close, actual step transition, or session end may finish it. The scroll hint must coexist with Easy Language and Smart Guide whenever the active scroll owner has content below.
 
-**Why:** The shared root listener treated every pointer/keyboard event as a dismissal, and the scroll cue was disabled for every guidance panel. In a 390×844/60% fixture, the hint also jumped 379.89px as a moving keypad obstacle changed which placement candidate was safe, while both guide panels stayed fixed.
+**Why:** The shared root listener treated every pointer/keyboard event as a dismissal, and the scroll cue was disabled for every guidance panel. A moving keypad obstacle also made the hint jump about 380px as its placement candidates changed.
 
-**How to apply:** Keep `stepId` stable across same-screen value edits, let `notifyScreenChange()` identify committed screen/scroll-owner transitions, and place the hint outside the scrollport or hide it if no safe stationary space exists. Exclude moving scroll-content obstacles from viewport-band reselection. Browser-test start/middle/near-end positions, action hit tests, and actual guide timing after input.
+**How to apply:** Keep `stepId` stable across same-screen value edits, let `notifyScreenChange()` identify committed screen/scroll-owner transitions, and keep the hint in one fixed viewport position while its owner can scroll. Make the hint noninteractive so underlying controls receive clicks. In a modal, use the topmost modal's scroll owner and never announce scrolling on the obscured page.
 
-The v0.5.21 viewport matrix also showed two deliberate limits: in a 320×844/80% bottom viewport there is no stationary hint lane, so suppress the hint rather than cover controls; in standard (non-bottom-viewport) 320×844 mode, guide/hint placement can still change to avoid visible actions.
+In normal viewport mode, keep the guide panel's previous viewport position while the same scroll owner moves; moving descendants must not force a new candidate. Fixed/sticky controls and real host-step or viewport changes may still require repositioning.
 
-**Why:** The safe fixed band is only guaranteed for the target 390×844/60% kiosk mode; claiming universal fixed placement would hide responsive fallback behavior and the no-safe-space case.
+**Why:** The 320×844 and 390×844 standard-mode fixture showed 500px+ guide movement when visible keypad actions changed the placement candidates.
 
-**How to apply:** Report the tested viewport/profile separately, preserve action hit tests in fallback layouts, and treat only a state with remaining scrollable content and safe space as eligible for a visible scroll hint.
+**How to apply:** Exclude moving scroll-content obstacles after the guide has a valid placement, allow pointer events to pass through the panel surface while retaining its own buttons, and verify `elementFromPoint` for host actions at start/middle/end. Hide the hint only when the active owner cannot scroll farther or no scroll owner exists.

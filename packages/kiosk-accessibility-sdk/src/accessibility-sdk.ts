@@ -161,6 +161,15 @@ function positionGuide(
 ): boolean {
   if (!target || !target.isConnected) return false;
   const previousTop = Number.parseFloat(overlay.style.top);
+  if (typeof getComputedStyle !== "function") {
+    overlay.style.position = "fixed";
+    overlay.style.left = `${Number.isFinite(Number.parseFloat(overlay.style.left))
+      ? overlay.style.left
+      : "12px"}`;
+    overlay.style.top = `${Number.isFinite(previousTop) ? previousTop : 12}px`;
+    overlay.style.visibility = "visible";
+    return true;
+  }
   // Placement must be atomic: a transition can temporarily cover a protected
   // host action even when the final position has passed hit testing.
   if (typeof overlay.style.setProperty === "function") {
@@ -172,9 +181,10 @@ function positionGuide(
       root?.classList.contains("a11y-bottom-viewport-poc-shell")) {
     const vw = document.documentElement.clientWidth || innerWidth;
     const vh = document.documentElement.clientHeight || innerHeight;
-    const shell = (regions?.scrollArea && root.contains(regions.scrollArea)
+    const scrollArea = regions?.scrollArea && root.contains(regions.scrollArea)
       ? regions.scrollArea
-      : root).getBoundingClientRect();
+      : null;
+    const shell = (scrollArea ?? root).getBoundingClientRect();
     const qrDocks = Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"));
     const controls = [...(regions?.bottomControls ?? []), ...qrDocks].filter((el) =>
       el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none",
@@ -201,11 +211,17 @@ function positionGuide(
     const minimum = safeTop;
     const maximum = safeBottom - height;
     const positions = [action.top - height - 12, action.bottom + 12];
+    const isMovingScrollContent = (element: HTMLElement) => {
+      if (!scrollArea || typeof getComputedStyle !== "function") return false;
+      const position = getComputedStyle(element).position;
+      return scrollArea.contains(element) &&
+        position !== "fixed" && position !== "sticky";
+    };
     const obstacles = [
-      ...(typeof getComputedStyle === "function" ? [target] : []),
-      ...getGuideProtectedActions(regions),
+      ...(isMovingScrollContent(target) ? [] : [target]),
+      ...getGuideProtectedActions(regions).filter((element) => !isMovingScrollContent(element)),
       ...(regions?.viewportOverlays ?? []),
-      ...(regions?.guidanceAvoidAreas ?? []),
+      ...(regions?.guidanceAvoidAreas ?? []).filter((element) => !isMovingScrollContent(element)),
       ...controls,
     ].filter((el) => el !== overlay && el.isConnected &&
       getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
@@ -250,7 +266,17 @@ function positionGuide(
   const viewportHeight = document.documentElement?.clientHeight || window.innerHeight;
   const maxTop = Math.max(margin, viewportHeight - overlayRect.height - margin);
   const clampToViewport = (value: number) => clamp(value, margin, maxTop);
-  const targetIsVisible = targetRect.bottom > 0 && targetRect.top < window.innerHeight;
+  const scrollArea = regions?.scrollArea && root?.contains(regions.scrollArea)
+    ? regions.scrollArea
+    : null;
+  const isScrollMoving = (element: HTMLElement) => {
+    if (!scrollArea || typeof getComputedStyle !== "function") return false;
+    const position = getComputedStyle(element).position;
+    return Boolean(scrollArea?.contains(element)) && position !== "fixed" && position !== "sticky";
+  };
+  const targetIsViewportStable = !isScrollMoving(target);
+  const targetIsVisible = targetIsViewportStable &&
+    targetRect.bottom > 0 && targetRect.top < window.innerHeight;
   const preferred = targetIsVisible
     ? [
       ...(above >= margin && above <= maxTop ? [above] : []),
@@ -260,20 +286,29 @@ function positionGuide(
   const candidates = [
     ...(Number.isFinite(previousTop) ? [clampToViewport(previousTop)] : []),
     ...preferred,
-    clampToViewport(above),
-    clampToViewport(below),
+    ...(targetIsViewportStable ? [clampToViewport(above), clampToViewport(below)] : []),
     margin,
     maxTop,
   ];
-  const left = clamp(
-    targetRect.left + (targetRect.width - overlayRect.width) / 2,
-    margin,
-    Math.max(margin, viewportWidth - overlayRect.width - margin),
-  );
+  const previousLeft = Number.parseFloat(overlay.style.left);
+  const left = targetIsViewportStable
+    ? clamp(
+      targetRect.left + (targetRect.width - overlayRect.width) / 2,
+      margin,
+      Math.max(margin, viewportWidth - overlayRect.width - margin),
+    )
+    : clamp(
+      Number.isFinite(previousLeft) ? previousLeft : margin,
+      margin,
+      Math.max(margin, viewportWidth - overlayRect.width - margin),
+    );
+  const preserveScrollPosition = Number.isFinite(previousTop);
   const obstacles = [
-    ...(typeof getComputedStyle === "function" ? [target] : []),
-    ...getGuideProtectedActions(regions),
-    ...(regions?.guidanceAvoidAreas ?? []),
+    ...(targetIsViewportStable ? [target] : []),
+    ...getGuideProtectedActions(regions).filter((element) =>
+      !preserveScrollPosition || !isScrollMoving(element)),
+    ...(regions?.guidanceAvoidAreas ?? []).filter((element) =>
+      !preserveScrollPosition || !isScrollMoving(element)),
     ...(regions?.viewportOverlays ?? []),
     ...(regions?.bottomControls ?? []),
     ...(typeof document.querySelectorAll === "function"
@@ -491,7 +526,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       removeGuide();
       return;
     }
-    menuHint.setEnabled(!smartGuideVisible);
+          menuHint.setEnabled(true);
     if (!guideOverlay) {
       guideOverlay = createGuideOverlay(root, {
         onClose: () => {
@@ -839,7 +874,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     }
     guideOverlay.setAttribute("aria-hidden", "false");
     delete guideOverlay.dataset.a11yPositionSuppressed;
-    menuHint.setEnabled(!smartGuideVisible);
+    menuHint.setEnabled(true);
     if (guideOverlay) scheduleGuideHitTest(target, action);
   }
 

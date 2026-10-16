@@ -12,29 +12,11 @@ function shown(el: HTMLElement): boolean {
     Number(s.opacity) !== 0 && r.width > 0 && r.height > 0;
 }
 
-function inVisibleViewport(el: HTMLElement, root: HTMLElement): boolean {
-  const r = el.getBoundingClientRect();
-  let left = 0, top = 0, right = document.documentElement.clientWidth || innerWidth;
-  let bottom = document.documentElement.clientHeight || innerHeight;
-  const fixedToViewport = getComputedStyle(el).position === "fixed" &&
-    (root === document.body || root === document.documentElement);
-  for (let p = el.parentElement; p; p = p.parentElement) {
-    if (fixedToViewport && p === root) break;
-    const s = getComputedStyle(p), pr = p.getBoundingClientRect();
-    if (["auto", "scroll", "hidden", "clip"].includes(s.overflowX)) {
-      left = Math.max(left, pr.left + p.clientLeft);
-      right = Math.min(right, pr.left + p.clientLeft + p.clientWidth);
-    }
-    if (["auto", "scroll", "hidden", "clip"].includes(s.overflowY)) {
-      top = Math.max(top, pr.top + p.clientTop);
-      bottom = Math.min(bottom, pr.top + p.clientTop + p.clientHeight);
-    }
-    if (p === root) break;
-  }
-  return r.right > left && r.left < right && r.bottom > top && r.top < bottom;
-}
-
-function findVerticalOwner(root: HTMLElement, area?: HTMLElement | null): HTMLElement | Document | null {
+function findVerticalOwner(
+  root: HTMLElement,
+  area?: HTMLElement | null,
+  allowDocumentFallback = true,
+): HTMLElement | Document | null {
   const canScroll = (element: HTMLElement) =>
     element.scrollHeight > element.clientHeight + 1 &&
     ["auto", "scroll", "overlay"].includes(getComputedStyle(element).overflowY);
@@ -46,6 +28,7 @@ function findVerticalOwner(root: HTMLElement, area?: HTMLElement | null): HTMLEl
     if (isDocumentElement(element)) continue;
     if (canScroll(element)) return element;
   }
+  if (!allowDocumentFallback) return null;
   const permitted = (value: string) => value !== "hidden" && value !== "clip";
   if (permitted(getComputedStyle(document.documentElement).overflowY) &&
       (!document.body || permitted(getComputedStyle(document.body).overflowY)) &&
@@ -62,76 +45,21 @@ function ownerCanScrollBelow(owner: HTMLElement | Document | null): boolean {
     : owner.scrollTop < owner.scrollHeight - owner.clientHeight - 1;
 }
 
-function viewportAnchored(element: HTMLElement): boolean {
-  const position = getComputedStyle(element).position;
-  return position === "fixed" || position === "sticky";
-}
-
-function visibleObstacle(element: HTMLElement, root: HTMLElement): boolean {
-  if (!shown(element)) return false;
-  if (getComputedStyle(element).position === "fixed") {
-    const rect = element.getBoundingClientRect();
-    const width = document.documentElement.clientWidth || innerWidth;
-    const height = document.documentElement.clientHeight || innerHeight;
-    return rect.right > 0 && rect.left < width && rect.bottom > 0 && rect.top < height;
-  }
-  return inVisibleViewport(element, root);
-}
-
-function overlap(a: DOMRect, b: DOMRect): boolean {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-function chooseHintPlacement(
-  candidates: readonly DOMRect[],
-  obstacles: readonly HTMLElement[],
-  mandatory: readonly HTMLElement[],
-): DOMRect | null {
-  const safe = candidates.filter((candidate) =>
-    !mandatory.some((element) => overlap(candidate, element.getBoundingClientRect())),
-  );
-  return safe.find((candidate) =>
-    !obstacles.some((element) => overlap(candidate, element.getBoundingClientRect())),
-  ) ?? safe[0] ?? null;
-}
-
-function getGuidanceObstacles(
-  root: HTMLElement,
-  regions: KioskLayoutRegions,
-  hint: HTMLElement,
-): HTMLElement[] {
-  const anchoredActions = (regions.primaryActions ?? [])
-    .map(({ element }) => element)
-    .filter(viewportAnchored);
-  const anchoredControls = (regions.bottomControls ?? []).filter(viewportAnchored);
-  const qrDocks = typeof document !== "undefined"
-    ? Array.from(document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]"))
-    : [];
-  return [
-    ...(regions.viewportOverlays ?? []),
-    ...(regions.guidanceAvoidAreas ?? []),
-    ...qrDocks,
-    ...anchoredActions,
-    ...anchoredControls,
-    ...(typeof root.querySelectorAll === "function"
-      ? Array.from(root.querySelectorAll<HTMLElement>(".a11y-guide-toast"))
-      : []),
-  ].filter((element) => element !== hint && visibleObstacle(element, root));
-}
-
 function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | null {
   if (typeof document === "undefined" || typeof window === "undefined") return null;
   const regions = adapter.getLayoutRegions();
-  const smartGuideVisible = typeof root.querySelectorAll === "function" &&
-    [...root.querySelectorAll(".a11y-guide-toast.a11y-guide-smart")].some((element) =>
-        element instanceof HTMLElement && shown(element)
-    );
-  if ((regions.viewportOverlays ?? []).some(shown) || smartGuideVisible) return null;
-  const owner = typeof root.querySelectorAll === "function"
-    ? findVerticalOwner(root, regions.scrollArea)
+  const activeOverlay = (regions.viewportOverlays ?? []).filter(shown)
+    .map((element, order) => ({ element, order, zIndex: Number.parseInt(getComputedStyle(element).zIndex, 10) || 0 }))
+    .sort((a, b) => a.zIndex - b.zIndex || a.order - b.order)
+    .at(-1)?.element;
+  const owner = activeOverlay
+    ? findVerticalOwner(activeOverlay, null, false)
+    : typeof root.querySelectorAll === "function"
+      ? findVerticalOwner(root, regions.scrollArea)
     : null;
+  if (activeOverlay && !owner) return null;
   const actions = regions.primaryActions ?? [];
-  for (const candidate of actions) {
+  for (const candidate of activeOverlay ? [] : actions) {
     const el = candidate.element;
     if (!root.contains(el) || !shown(el)) continue;
     const rect = el.getBoundingClientRect();
@@ -157,116 +85,24 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
 
 function placeHint(
   hint: HTMLElement,
-  root: HTMLElement,
-  regions: KioskLayoutRegions,
+  _root: HTMLElement,
+  _regions: KioskLayoutRegions,
 ): boolean {
-  if (root.classList.contains("a11y-bottom-viewport-enabled") ||
-      root.classList.contains("a11y-bottom-viewport-poc-shell")) {
-    const vw = document.documentElement.clientWidth || innerWidth;
-    const vh = document.documentElement.clientHeight || innerHeight;
-    const activeArea = regions.scrollArea && root.contains(regions.scrollArea)
-      ? regions.scrollArea
-      : root;
-    const rootRect = activeArea.getBoundingClientRect();
-    const width = Math.min(360, vw - 24);
-    hint.style.width = "max-content";
-    hint.style.maxWidth = `${width}px`;
-    hint.style.left = `${Math.max(12, (vw - width) / 2)}px`;
-    hint.style.top = "0px";
-    hint.style.bottom = "auto";
-    hint.style.visibility = "hidden";
-    const rect = hint.getBoundingClientRect();
-    const left = Math.max(12, (vw - rect.width) / 2);
-    hint.style.left = `${left}px`;
-    const safeTop = 8;
-    const safeBottom = Math.min(vh, rootRect.top) - 8;
-    if (safeBottom - safeTop < rect.height || rect.height <= 0) {
-      if (root.dataset) root.dataset.a11yScrollGuidance = "no-safe-space";
-      hint.style.visibility = "hidden";
-      return false;
-    }
-    const scrollArea = regions.scrollArea && root.contains(regions.scrollArea)
-      ? regions.scrollArea
-      : activeArea;
-    // Keep the hint in the fixed band above the scrollport. Obstacles inside
-    // the scrolling content move on every scroll and must not force the hint
-    // to alternate between the top and bottom of the viewport.
-    const obstacles = getGuidanceObstacles(root, regions, hint).filter((element) => {
-      const position = getComputedStyle(element).position;
-      return !scrollArea.contains(element) || position === "fixed" || position === "sticky";
-    });
-    const mandatory = obstacles;
-    const candidates = [
-      ...obstacles.map((element) => element.getBoundingClientRect().bottom + 8),
-      safeTop,
-      safeBottom - rect.height,
-    ].map((candidateTop) => new DOMRect(left, candidateTop, rect.width, rect.height))
-      .filter((candidate) => candidate.top >= safeTop &&
-        candidate.bottom <= safeBottom);
-    const placement = chooseHintPlacement(candidates, obstacles, mandatory);
-    if (!placement) {
-      if (root.dataset) root.dataset.a11yScrollGuidance = "no-safe-space";
-      hint.style.visibility = "hidden";
-      return false;
-    }
-    hint.style.top = `${placement.top}px`;
-    hint.style.visibility = "visible";
-    return true;
-  }
   const vw = document.documentElement.clientWidth || innerWidth;
-  const vh = document.documentElement.clientHeight || innerHeight;
   const width = Math.max(0, Math.min(360, vw - 24));
-  hint.style.width = `${width}px`;
-  hint.style.left = `${Math.max(12, (vw - width) / 2)}px`;
-  hint.style.top = "0px";
-  hint.style.visibility = "hidden";
+  hint.style.position = "fixed";
+  hint.style.zIndex = "2147483000";
+  hint.style.width = "max-content";
+  hint.style.maxWidth = `${width}px`;
+  hint.style.left = "12px";
+  hint.style.top = "auto";
+  hint.style.bottom = "max(12px, env(safe-area-inset-bottom))";
+  hint.style.pointerEvents = "none";
+  hint.style.visibility = "visible";
   const height = hint.getBoundingClientRect().height;
-  const scrollArea = regions.scrollArea && root.contains(regions.scrollArea)
-    ? regions.scrollArea
-    : null;
-  const allObstacles = getGuidanceObstacles(root, regions, hint);
-  const isViewportStable = (element: HTMLElement) => {
-    const position = getComputedStyle(element).position;
-    return position === "fixed" || position === "sticky" ||
-      !scrollArea?.contains(element);
-  };
-  const obstacles = allObstacles.filter(isViewportStable);
-  const movingObstacles = allObstacles.filter((element) => !isViewportStable(element));
-  const bottomControls = (regions.bottomControls ?? []).filter((element) =>
-    viewportAnchored(element) && visibleObstacle(element, root),
-  );
-  const bottomDockAndControls = [
-    ...bottomControls,
-    ...obstacles.filter((element) => element.hasAttribute("data-a11y-qr-entry-dock")),
-  ];
-  const safeBottom = bottomDockAndControls.reduce((top, el) => {
-    const r = el.getBoundingClientRect();
-    return r.top < vh && r.bottom > 0 ? Math.min(top, r.top) : top;
-  }, vh - 12) - 8;
-  const lowestTop = safeBottom - height;
-  const positions = [...new Set([
-    lowestTop,
-    12 + Math.max(0, (lowestTop - 12) / 2),
-    12,
-  ])].filter((top) => top >= 12 && top + height <= vh).sort((a, b) => b - a);
-  const candidates: DOMRect[] = [];
-  for (const top of positions) {
-    if (top < 12) continue;
-    candidates.push(new DOMRect(parseFloat(hint.style.left), top, width, height));
-  }
-  const mandatory = obstacles;
-  const placement = chooseHintPlacement(candidates, obstacles, mandatory);
-  if (placement && !movingObstacles.some((element) =>
-    overlap(placement, element.getBoundingClientRect()),
-  )) {
-    hint.style.left = `${placement.left}px`;
-    hint.style.top = `${placement.top}px`;
-    hint.style.visibility = "visible";
-    return true;
-  }
-  if (root.dataset) root.dataset.a11yScrollGuidance = "no-safe-space";
-  hint.style.visibility = "hidden";
-  return false;
+  const rect = hint.getBoundingClientRect();
+  hint.style.left = `${Math.max(12, (vw - rect.width) / 2)}px`;
+  return height > 0;
 }
 
 export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAdapter) {

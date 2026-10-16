@@ -220,6 +220,13 @@ window.qrConsumerTest = {
       hintPointerEvents: document.querySelector(".a11y-additional-menu-hint")
         ? getComputedStyle(document.querySelector(".a11y-additional-menu-hint")).pointerEvents : null,
       noSafeSpace: root.dataset.a11yScrollGuidance === "no-safe-space",
+      hintPassesDockClick: (() => {
+        const button = dockNode?.querySelector("button");
+        if (!button) return true;
+        const r = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return button === hit || button.contains(hit);
+      })(),
       hintAvoidsDockAndControls: (() => {
         const hint = document.querySelector(".a11y-additional-menu-hint");
         if (!hint) return false;
@@ -234,7 +241,11 @@ window.qrConsumerTest = {
   async guidanceOverlayPriority(kind) {
     const overlay = document.createElement("aside");
     overlay.className = kind === "guide" ? "a11y-guide-toast a11y-guide-smart" : "fixture-modal";
-    overlay.textContent = kind;
+    overlay.textContent = kind === "modal" ? "모달 스크롤 콘텐츠 ".repeat(80) : kind;
+    if (kind === "modal") {
+      overlay.style.overflow = "auto";
+      overlay.style.fontSize = "24px";
+    }
     root.append(overlay);
     if (kind === "guide") {
       await new Promise((resolve) => setTimeout(resolve, 350));
@@ -247,10 +258,16 @@ window.qrConsumerTest = {
         getComputedStyle(hint).visibility !== "hidden");
     };
     const hidden = !hintVisible();
+    if (kind === "modal") {
+      overlay.scrollTop = Math.min(120, overlay.scrollHeight - overlay.clientHeight);
+      await frame();
+    }
+    const modalOwnsScroll = kind === "modal" &&
+      overlay.scrollHeight > overlay.clientHeight && overlay.scrollTop > 0 && hintVisible();
     overlay.remove();
     if (kind === "guide") sdk.applyProfile(sdk.profile);
     await frame();
-    return { hidden, returns: hintVisible() };
+    return { hidden, returns: hintVisible(), modalOwnsScroll };
   },
   async verifyDockless() {
     dock.setActive(false);
@@ -261,6 +278,7 @@ window.qrConsumerTest = {
       noSafeSpace: result.noSafeSpace,
       qrDockAbsent: !document.querySelector("[data-a11y-qr-entry-dock]"),
       controlsStillReachable: result.fixedControlsVisible,
+      hintPassesDockClick: result.hintPassesDockClick,
     };
   },
   async verifyQrProfileReplacement() {

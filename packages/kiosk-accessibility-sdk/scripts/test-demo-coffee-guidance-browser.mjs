@@ -114,10 +114,26 @@ try {
       rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight;
     const textElement = panel.querySelector("[data-a11y-guide-text]");
     const pageElement = panel.querySelector("[data-a11y-guide-page]");
+    const guideControl = [...panel.querySelectorAll("button")].find((button) =>
+      !button.hidden && getComputedStyle(button).visibility !== "hidden",
+    );
+    const guideControlRect = guideControl?.getBoundingClientRect();
+    const guideControlHit = Boolean(guideControl && guideControlRect &&
+      document.elementFromPoint(
+        guideControlRect.left + guideControlRect.width / 2,
+        guideControlRect.top + guideControlRect.height / 2,
+      )?.closest("button") === guideControl);
+    const visiblePrimaryActions = primary.filter((button) => visibleRect(button));
+    const primaryActionsHit = visiblePrimaryActions.every((button) => {
+      const r = visibleRect(button);
+      if (!r) return true;
+      const hit = document.elementFromPoint(r.left + (r.right - r.left) / 2, r.top + (r.bottom - r.top) / 2);
+      return hit === button || button.contains(hit);
+    });
     return {
       exists: panel.isConnected,
       visible: panelVisible,
-      hitTest: panelVisible && panel.contains(hit),
+      hitTest: panelVisible && guideControlHit && primaryActionsHit,
       rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
         width: rect.width, height: rect.height },
       ariaHidden: panel.getAttribute("aria-hidden"),
