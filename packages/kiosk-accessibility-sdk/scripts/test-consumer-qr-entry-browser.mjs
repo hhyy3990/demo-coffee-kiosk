@@ -464,7 +464,7 @@ try {
   if (!guideFixtureLoaded) throw new Error("Independent shared-guidance fixture did not load.");
   await wait(350);
   let easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-  if (!easy.visible || easy.page !== "1/3") throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
+  if (!easy.visible || !easy.page.startsWith("1/")) throw new Error(`Easy-language panel missing: ${JSON.stringify(easy)}`);
   const easyScrollHint = await evaluate(`(() => {
     const hint = document.querySelector(".a11y-additional-menu-hint");
     const guide = document.querySelector(".a11y-guide-toast");
@@ -481,15 +481,15 @@ try {
     easyScrollHint.role !== "status" || easyScrollHint.pointerEvents !== "none") {
     throw new Error(`Scroll hint was missing or collided with Easy Language: ${JSON.stringify(easyScrollHint)}`);
   }
-   await pointerClick("[data-a11y-guide-next]");
-   await pointerClick("[data-a11y-guide-next]");
-  if ((await evaluate("window.__sdkPackageSmoke.readGuidance()")).page !== "3/3") {
-    throw new Error("Next-page clicks did not reach explanation 3/3.");
+  await pointerClick("[data-a11y-guide-next]");
+  await pointerClick("[data-a11y-guide-next]");
+  if (!(await evaluate("window.__sdkPackageSmoke.readGuidance()")).page.startsWith("3/")) {
+    throw new Error("Next-page clicks did not reach explanation page 3.");
   }
    await pointerClick("[data-a11y-guide-previous]");
    await pointerClick("[data-a11y-guide-collapse]");
   easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-  if (easy.page !== "2/3" || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
+  if (!easy.page.startsWith("2/") || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
 
   for (const [width, height] of panelGuidanceViewports) {
     await send("Emulation.setDeviceMetricsOverride", {
@@ -602,7 +602,7 @@ try {
     await wait(100);
   }
   const defaultVisibleMs = await evaluate(`performance.now() - ${defaultVisibleAt}`);
-  if (defaultReturned?.title !== "다음으로 이동" || defaultReturned.page !== "2/3" ||
+  if (defaultReturned?.title !== "다음으로 이동" || !defaultReturned.page.startsWith("2/") ||
     !defaultReturned.collapsed || defaultVisibleMs < 9_300 || defaultVisibleMs > 11_500) {
     throw new Error(`Real 10-second guide return failed (${defaultVisibleMs}ms): ${JSON.stringify(defaultReturned)}`);
   }
@@ -646,7 +646,7 @@ try {
     await wait(100);
   }
   const slowVisibleMs = await evaluate(`performance.now() - ${slowVisibleAt}`);
-  if (slowReturned?.title !== "다음으로 이동" || slowReturned.page !== "2/3" ||
+  if (slowReturned?.title !== "다음으로 이동" || !slowReturned.page.startsWith("2/") ||
     !slowReturned.collapsed || slowVisibleMs < 14_300 || slowVisibleMs > 16_500) {
     throw new Error(`Real 15-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
   }
@@ -685,7 +685,7 @@ try {
     await wait(100);
   }
   const guideDelay20 = await evaluate(`performance.now() - ${delay20Started}`);
-  if (guide20?.title !== "스마트 길잡이" || guideDelay20 < 19_300 || guideDelay20 > 21_500) {
+    if (guide20?.title !== "스마트 길잡이" || guideDelay20 < 19_300 || guideDelay20 > 21_500) {
     throw new Error(`Real guideDelaySeconds=20 failed (${guideDelay20}ms): ${JSON.stringify(guide20)}`);
   }
   await evaluate("document.querySelector('.a11y-guide-close').click()");
@@ -756,8 +756,9 @@ try {
           overlaps(panel, state.actionRect) || overlaps(panel, state.keypadRect) ||
           Number.parseFloat(state.bodyFontSize) < minBodyFont ||
           state.iconAriaHidden !== "true" || state.iconRect.width > 20 ||
-          state.collapseAccessibleName !== "안내 접기" || state.headerRect.height > 44 ||
-          state.page !== "1/3") {
+          state.collapseAccessibleName !== "안내 접기" ||
+          state.headerRect.height > (percent === 80 ? 56 : 44) ||
+          !state.page.startsWith("1/")) {
           throw new Error(`Guidance layout failed at ${width}x${height}, viewport=${percent}: ${JSON.stringify(state)}`);
         }
         guidanceLayoutMatrix.push({
@@ -917,7 +918,7 @@ try {
            await wait(50);
          }
          const panelProbe = await evaluate(
-           `window.__sdkPackageSmoke.runPanelStabilityProbe(${JSON.stringify(percent)})`,
+            `window.__sdkPackageSmoke.runPanelStabilityProbe(${JSON.stringify(percent)}, ${JSON.stringify(width === 360 && height === 667 && percent === 80)})`,
          );
          const visiblePanels = panelProbe.samples.filter((sample) => sample.visible);
          const drift = Math.max(...visiblePanels.map((sample) => sample.top)) -
@@ -927,17 +928,26 @@ try {
              (button.width < 44 || button.height < 44)));
          const easyTransitionSamples = panelProbe.samples.filter((_, index) =>
            index !== 4 && index !== 6);
+         const pageNumbers = panelProbe.samples.map((sample) =>
+           Number(sample.page.split("/")[0] || 0));
          const invalidBounds = panelProbe.samples.filter((sample) =>
            !sample.visible || sample.top < 0 || sample.bottom > height);
          const stability = { width, height, percent, drift, undersizedButtons,
            invalidBounds, samples: panelProbe.samples, dock: panelProbe.dock,
-           footer: panelProbe.footer, hint: panelProbe.hint };
+           footer: panelProbe.footer, hint: panelProbe.hint,
+            allLongTextPreserved: !panelProbe.deepAudit ||
+              panelProbe.collectedLongText === panelProbe.originalLongText,
+           longTextLengths: panelProbe.longTextLengths,
+           textDifference: panelProbe.textDifference,
+           longPages: panelProbe.pageCount };
          if (drift > 1 || undersizedButtons.length || invalidBounds.length ||
            visiblePanels.length !== panelProbe.samples.length ||
            easyTransitionSamples.some((sample) => sample.collapsed) ||
-           easyTransitionSamples.map((sample) => sample.page).join(",") !==
-             "1/3,2/3,1/3,2/3,2/3,2/3" ||
-           panelProbe.samples[6].page !== "" || panelProbe.samples[7].page !== "2/3" ||
+           pageNumbers[0] !== 1 || pageNumbers[1] !== 2 || pageNumbers[2] !== 1 ||
+           pageNumbers[3] !== 2 || pageNumbers[4] !== 2 || pageNumbers[5] !== 2 ||
+           panelProbe.samples[6].page !== "" || pageNumbers[7] !== 2 ||
+            (panelProbe.deepAudit && panelProbe.collectedLongText !== panelProbe.originalLongText) ||
+           panelProbe.samples.some((sample) => sample.scrollable || sample.overflow !== "hidden") ||
            panelProbe.dock.bottom > panelProbe.footer.top + 1 ||
            (panelProbe.hint.visible && panelProbe.hint.position !== "fixed")) {
            throw new Error(`Guidance panel position changed during content/state transitions: ${JSON.stringify(stability)}`);

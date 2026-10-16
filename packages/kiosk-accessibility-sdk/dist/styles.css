@@ -339,7 +339,7 @@
   bottom: auto;
   width: min(500px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
-  overflow: auto;
+  overflow: hidden;
   box-sizing: border-box;
   padding: 6px 8px;
   border-radius: 14px;
@@ -411,11 +411,33 @@
 .kiosk .a11y-guide-copy {
   grid-column: 1 / -1;
   min-width: 0;
+  min-height: 0;
   padding: 0;
   line-height: 1.5;
   overflow-wrap: anywhere;
+  overflow: hidden;
 }
 .kiosk .a11y-guide-copy span { display: block; }
+.kiosk .a11y-guide-toast.a11y-guide-tight {
+  padding-top: 0;
+  padding-bottom: 0;
+  gap: 0;
+}
+.kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-copy {
+  line-height: 1.25;
+}
+.kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-header {
+  gap: 2px;
+}
+.kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-pager {
+  flex: none;
+  width: auto;
+  gap: 0;
+  margin-left: auto;
+}
+.kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-page {
+  font-size: .7em;
+}
 .kiosk .a11y-guide-pager {
   grid-column: 1 / -1;
   display: flex;

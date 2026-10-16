@@ -266,7 +266,7 @@ window.__sdkPackageSmoke = {
       guideMode,
       smartVisible, easy, smart };
   },
-  async runPanelStabilityProbe(heightPercent = null) {
+  async runPanelStabilityProbe(heightPercent = null, deepAudit = false) {
     root.classList.add("stage-fixture");
     const stage = root.querySelector(".content");
     const dock = document.createElement("aside");
@@ -319,10 +319,13 @@ window.__sdkPackageSmoke = {
         top: rect?.top ?? null,
         bottom: rect?.bottom ?? null,
         height: rect?.height ?? null,
-        visible: Boolean(panel && getComputedStyle(panel).visibility === "visible"),
-        collapsed: Boolean(panel?.classList.contains("a11y-guide-collapsed")),
         page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
+        title: panel?.querySelector("[data-a11y-guide-title]")?.textContent ?? "",
         text: text?.textContent ?? "",
+        visible: Boolean(panel && getComputedStyle(panel).visibility === "visible"),
+        overflow: panel ? getComputedStyle(panel).overflow : "",
+        scrollable: Boolean(panel && ["auto", "scroll"].includes(getComputedStyle(panel).overflowY)),
+        collapsed: Boolean(panel?.classList.contains("a11y-guide-collapsed")),
         bodyScrollable: Boolean(panel && panel.scrollHeight > panel.clientHeight),
         buttons: buttonRects,
       };
@@ -331,6 +334,23 @@ window.__sdkPackageSmoke = {
     const samples = [await sample("페이지 1")];
     root.querySelector("[data-a11y-guide-next]")?.click();
     samples.push(await sample("다음→페이지 2"));
+    const originalLongText = explanations[1].text;
+    const collectedLongText = [samples[1].text];
+    const pageCount = Number(samples[1].page.split("/")[1] || 1);
+    if (pageCount > 200) throw new Error(`Long-copy pagination generated ${pageCount} pages.`);
+    let cursor = samples[1];
+    let longPageIndex = 2;
+    while (cursor.title === explanations[1].title) {
+      root.querySelector("[data-a11y-guide-next]")?.click();
+      cursor = await sample(`긴 안내 페이지 ${longPageIndex + 1}`);
+      if (cursor.title === explanations[1].title) collectedLongText.push(cursor.text);
+      longPageIndex += 1;
+      if (!deepAudit) break;
+    }
+    while (Number(cursor.page.split("/")[0] || 0) > 2) {
+      root.querySelector("[data-a11y-guide-previous]")?.click();
+      cursor = await sample("긴 안내 복귀");
+    }
     root.querySelector("[data-a11y-guide-previous]")?.click();
     samples.push(await sample("이전→페이지 1"));
     root.querySelector("[data-a11y-guide-next]")?.click();
@@ -358,10 +378,25 @@ window.__sdkPackageSmoke = {
     const hintRect = hint?.getBoundingClientRect();
     const dockRect = dock.getBoundingClientRect();
     const footerRect = root.querySelector(".bottom-controls").getBoundingClientRect();
+    const collectedText = collectedLongText.join("");
+    let firstTextDifference = 0;
+    while (firstTextDifference < Math.min(originalLongText.length, collectedText.length) &&
+      originalLongText[firstTextDifference] === collectedText[firstTextDifference]) firstTextDifference += 1;
     const report = {
       viewport: { width: innerWidth, height: innerHeight },
       heightPercent: heightPercent ?? null,
       samples,
+      pageCount, originalLongText, collectedLongText: collectedText, deepAudit,
+      firstTextDifference,
+      textDifference: {
+        index: firstTextDifference,
+        expectedCodePoint: originalLongText.codePointAt(firstTextDifference),
+        actualCodePoint: collectedText.codePointAt(firstTextDifference),
+        expected: originalLongText.slice(Math.max(0, firstTextDifference - 20), firstTextDifference + 40),
+        actual: collectedText.slice(Math.max(0, firstTextDifference - 20), firstTextDifference + 40),
+      },
+      longTextLengths: { original: originalLongText.length,
+        collected: collectedText.length },
       hint: { visible: Boolean(hint && getComputedStyle(hint).visibility === "visible"),
         top: hintRect?.top ?? null, bottom: hintRect?.bottom ?? null,
         position: hint ? getComputedStyle(hint).position : "" },

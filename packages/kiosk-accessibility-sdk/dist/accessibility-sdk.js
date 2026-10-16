@@ -110,9 +110,8 @@ function positionGuide(overlay, target, root, regions) {
         const qrDocks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
         const controls = [...(regions?.bottomControls ?? []), ...qrDocks].filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
         const safeBottom = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.top)) - 8;
-        // Anchor the panel to the top of the non-scrolling band. Its measured
-        // height is capped below, so copy changes scroll inside the panel rather
-        // than shifting the panel to a different candidate.
+        // Anchor the panel to the top of the non-scrolling band. Long copy is
+        // paginated so changing pages cannot shift this stable anchor.
         const safeTop = 8;
         const availableHeight = safeBottom - safeTop;
         if (availableHeight < 72)
@@ -125,7 +124,7 @@ function positionGuide(overlay, target, root, regions) {
         // Leave a small subpixel tolerance so a panel at the exact safe-area
         // height does not fail placement from fractional font metrics.
         overlay.style.maxHeight = `${Math.max(0, availableHeight - 2)}px`;
-        overlay.style.overflowY = "auto";
+        overlay.style.overflow = "hidden";
         overlay.style.visibility = "hidden";
         const height = overlay.getBoundingClientRect().height;
         const action = target.getBoundingClientRect();
@@ -195,7 +194,7 @@ function positionGuide(overlay, target, root, regions) {
     ].filter((element) => element.isConnected && getComputedStyle(element).display !== "none");
     const safeBottom = fixedRegions.reduce((edge, element) => Math.min(edge, element.getBoundingClientRect().top), viewportHeight) - 8;
     overlay.style.maxHeight = `${Math.max(0, Math.min(viewportHeight - margin * 2, safeBottom - margin))}px`;
-    overlay.style.overflowY = "auto";
+    overlay.style.overflow = "hidden";
     overlayRect = overlay.getBoundingClientRect();
     const maxTop = Math.max(margin, viewportHeight - overlayRect.height - margin);
     const clampToViewport = (value) => clamp(value, margin, maxTop);
@@ -360,7 +359,10 @@ export function createAccessibilitySdk(options) {
     let nextItemRefreshFrame = 0;
     let highlightedAction = null;
     let easyLanguageState = null;
+    let easyLanguageSource = [];
     let easyLanguageIndex = 0;
+    let fittingEasyPages = false;
+    const warnedEasyText = new Set();
     let smartGuideVisible = false;
     let guidanceCollapsed = false;
     let guidanceSafetyCollapsed = false;
@@ -421,6 +423,112 @@ export function createAccessibilitySdk(options) {
             return guideState.message;
         const explanation = currentEasyExplanation();
         return explanation ? { ...explanation, actionId: null } : null;
+    }
+    function fitEasyLanguagePages() {
+        if (!guideOverlay || !easyLanguageSource.length || typeof getComputedStyle !== "function") {
+            return easyLanguageSource;
+        }
+        const copy = guideOverlay.querySelector(".a11y-guide-copy");
+        const header = guideOverlay.querySelector(".a11y-guide-header");
+        const pager = guideOverlay.querySelector(".a11y-guide-pager");
+        if (!copy || !header || !pager || copy.clientWidth < 40)
+            return easyLanguageSource;
+        const maxPanelHeight = Number.parseFloat(guideOverlay.style.maxHeight) ||
+            Math.max(120, innerHeight - 24);
+        const tight = maxPanelHeight < 136;
+        guideOverlay.classList.toggle("a11y-guide-tight", tight);
+        if (tight && pager.parentElement !== header)
+            header.append(pager);
+        else if (!tight && pager.parentElement !== guideOverlay)
+            copy.after(pager);
+        const panelStyle = getComputedStyle(guideOverlay);
+        const verticalPadding = (Number.parseFloat(panelStyle.paddingTop) || 0) +
+            (Number.parseFloat(panelStyle.paddingBottom) || 0);
+        const measuredGap = Number.parseFloat(panelStyle.rowGap);
+        const gap = Number.isFinite(measuredGap) ? measuredGap : 4;
+        const pagerHeight = tight ? 0 : 44;
+        const textHeight = Math.max(tight ? 36 : 24, maxPanelHeight - header.getBoundingClientRect().height -
+            pagerHeight - verticalPadding - gap * 2);
+        const liveText = copy.querySelector("[data-a11y-guide-text]");
+        if (!liveText)
+            return easyLanguageSource;
+        const textStyle = getComputedStyle(liveText);
+        const probe = document.createElement("span");
+        probe.className = "a11y-guide-copy";
+        Object.assign(probe.style, {
+            position: "fixed", left: "-10000px", top: "0", visibility: "hidden",
+            display: "block", width: `${copy.clientWidth}px`, maxHeight: "none",
+            overflow: "visible", lineHeight: textStyle.lineHeight, fontSize: textStyle.fontSize,
+            fontFamily: textStyle.fontFamily, fontWeight: textStyle.fontWeight,
+            letterSpacing: textStyle.letterSpacing, overflowWrap: textStyle.overflowWrap,
+            wordBreak: textStyle.wordBreak,
+        });
+        document.body.append(probe);
+        const measure = (value) => {
+            probe.textContent = value;
+            return probe.getBoundingClientRect().height;
+        };
+        const splitOversize = (sentence) => {
+            const tokens = sentence.match(/\s+|[^\s]+/gu) ?? [sentence];
+            const chunks = [];
+            let chunk = "";
+            for (const token of tokens) {
+                if (measure(token) > textHeight) {
+                    if (chunk)
+                        chunks.push(chunk);
+                    chunk = "";
+                    for (const char of Array.from(token)) {
+                        if (chunk && measure(chunk + char) > textHeight) {
+                            chunks.push(chunk);
+                            chunk = char;
+                        }
+                        else
+                            chunk += char;
+                    }
+                }
+                else if (measure(chunk + token) <= textHeight || !chunk) {
+                    chunk += token;
+                }
+                else {
+                    chunks.push(chunk);
+                    chunk = token;
+                }
+            }
+            if (chunk)
+                chunks.push(chunk);
+            return chunks;
+        };
+        const fitted = [];
+        for (const explanation of easyLanguageSource) {
+            const originalHeight = measure(explanation.text);
+            const sentences = explanation.text.match(/[^.!?。！？]+[.!?。！？]*/gu) ?? [explanation.text];
+            const pieces = [];
+            let piece = "";
+            for (const sentence of sentences) {
+                if (measure(piece + sentence) <= textHeight)
+                    piece += sentence;
+                else {
+                    if (piece)
+                        pieces.push(piece);
+                    piece = "";
+                    if (measure(sentence) <= textHeight)
+                        piece = sentence;
+                    else
+                        pieces.push(...splitOversize(sentence));
+                }
+            }
+            if (piece)
+                pieces.push(piece);
+            const warningKey = `${easyLanguageState?.stepId ?? ""}:${easyLanguageSource.indexOf(explanation)}:${explanation.text.length}`;
+            if ((explanation.text.length > 240 || originalHeight > textHeight) &&
+                !warnedEasyText.has(warningKey) && typeof console !== "undefined") {
+                warnedEasyText.add(warningKey);
+                console.warn(`[kiosk-accessibility-sdk] 긴 쉬운 말 설명(렌더 높이 ${Math.ceil(originalHeight)}px, 사용 가능 ${Math.floor(textHeight)}px)을 감지했습니다.${pieces.length > 1 ? ` 내용은 ${pieces.length}페이지로 나눴습니다.` : ""} 호스트에서 문장별 설명으로 전달하는 것을 권장합니다.`);
+            }
+            fitted.push(...pieces.map((text) => ({ title: explanation.title, text })));
+        }
+        probe.remove();
+        return fitted.length ? fitted : easyLanguageSource;
     }
     function renderGuidancePanel() {
         const message = currentGuidanceMessage();
@@ -505,6 +613,20 @@ export function createAccessibilitySdk(options) {
         guideOverlay.classList.toggle("a11y-guide-collapsed", guidanceCollapsed || guidanceSafetyCollapsed);
         guideOverlay.classList.toggle("a11y-guide-smart", smartGuideVisible);
         updateGuidePosition();
+        if (!smartGuideVisible && easyLanguageState && !fittingEasyPages) {
+            fittingEasyPages = true;
+            const pages = fitEasyLanguagePages();
+            const changed = pages.length !== easyLanguageState.explanations.length ||
+                pages.some((page, index) => page.text !== easyLanguageState?.explanations[index]?.text);
+            if (changed) {
+                easyLanguageState = { ...easyLanguageState, explanations: pages };
+                easyLanguageIndex = Math.min(easyLanguageIndex, pages.length - 1);
+                fittingEasyPages = false;
+                renderGuidancePanel();
+                return;
+            }
+            fittingEasyPages = false;
+        }
     }
     function refreshNextItemButtons() {
         if (sessionEnded || destroyed)
@@ -927,13 +1049,14 @@ export function createAccessibilitySdk(options) {
         const stepId = typeof state.stepId === "string" ? state.stepId : "";
         const explanations = Array.isArray(state.explanations)
             ? state.explanations.slice(0, 100).filter((item) => item && typeof item.title === "string" && typeof item.text === "string" &&
-                item.title.trim().length > 0 && item.text.trim().length > 0).map((item) => ({ title: item.title.slice(0, 300), text: item.text.slice(0, 3000) }))
+                item.title.trim().length > 0 && item.text.trim().length > 0).map((item) => ({ title: item.title, text: item.text }))
             : [];
         if (easyLanguageState?.stepId !== stepId) {
             easyLanguageIndex = 0;
             guidanceCollapsed = false;
             guidanceSafetyCollapsed = false;
         }
+        easyLanguageSource = explanations;
         easyLanguageState = stepId && explanations.length > 0 ? { stepId, explanations } : null;
         easyLanguageIndex = Math.min(easyLanguageIndex, Math.max(0, explanations.length - 1));
         if (!smartGuideVisible)
@@ -959,6 +1082,7 @@ export function createAccessibilitySdk(options) {
             easyLanguageState?.stepId === nextStepId;
         if (easyLanguageState && !keepMatchingEasyPanel) {
             easyLanguageState = null;
+            easyLanguageSource = [];
             easyLanguageIndex = 0;
         }
         if (!keepMatchingEasyPanel || smartGuideVisible) {
@@ -1037,6 +1161,7 @@ export function createAccessibilitySdk(options) {
         const changed = screenChange.notify(screenId);
         if (changed) {
             easyLanguageState = null;
+            easyLanguageSource = [];
             easyLanguageIndex = 0;
             if (completionActive && completionScreenId !== screenId) {
                 completion.cancel();
@@ -1085,6 +1210,7 @@ export function createAccessibilitySdk(options) {
             message: null,
         };
         easyLanguageState = null;
+        easyLanguageSource = [];
         easyLanguageIndex = 0;
         guidanceCollapsed = false;
         guidanceSafetyCollapsed = false;

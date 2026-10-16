@@ -1,6 +1,6 @@
 import type { BottomViewportConfig } from "./bottom-viewport.ts";
 export declare const ACCESSIBILITY_PROFILE_SCHEMA_VERSION: 4;
-export declare const ACCESSIBILITY_SDK_VERSION: "0.5.25";
+export declare const ACCESSIBILITY_SDK_VERSION: "0.5.26";
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
 export type ContrastMode = "standard" | "high";
