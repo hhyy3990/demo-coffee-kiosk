@@ -92,6 +92,12 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
         }
         return [...candidates].filter((element) => explicit.has(element) || ![...candidates].some((candidate) => candidate !== element && element.contains(candidate)));
     }
+    function hostActionElements() {
+        return adapter.getActions()
+            .map(({ element }) => element)
+            .filter((element) => root.contains(element) &&
+            !element.closest(".a11y-guide-toast, .a11y-guidance-slot"));
+    }
     function correctOptedInSupportingCopy() {
         supportingResults = [];
         const registered = adapter.getFontCorrectionTargets?.() ?? [];
@@ -183,10 +189,8 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
         const profile = getProfile();
         const textScale = TEXT_SCALE[profile.textSize];
         const controlScale = CONTROL_SCALE[profile.buttonSize];
-        for (const { element } of adapter.getActions()) {
-            if (root.contains(element))
-                captureBaseline(element);
-        }
+        for (const element of hostActionElements())
+            captureBaseline(element);
         for (const element of targets) {
             captureBaseline(element);
             const style = window.getComputedStyle(element);
@@ -200,9 +204,7 @@ export function createLayoutEnhancer(root, adapter, getProfile) {
             }
         }
         if (controlScale > 1) {
-            for (const { element } of adapter.getActions()) {
-                if (!root.contains(element))
-                    continue;
+            for (const element of hostActionElements()) {
                 const size = baseSizes.get(element);
                 if (!size)
                     continue;

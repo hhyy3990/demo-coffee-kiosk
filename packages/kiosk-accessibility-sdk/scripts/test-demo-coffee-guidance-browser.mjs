@@ -64,7 +64,7 @@ try {
     const owner = canScroll(registered) ? registered :
       canScroll(documentScroller) ? documentScroller :
       [...(root?.querySelectorAll("*") ?? [])].find(canScroll) ?? null;
-    const hint = root?.querySelector(".a11y-additional-menu-hint");
+    const hint = document.querySelector(".a11y-additional-menu-hint");
     const hintStyle = hint && getComputedStyle(hint);
     const rect = hint?.getBoundingClientRect();
     return {
@@ -87,6 +87,26 @@ try {
         rect?.width && rect.height),
       hintRect: rect ? { top: rect.top, bottom: rect.bottom, height: rect.height } : null,
       hintText: hint?.textContent?.trim() ?? "",
+      hintStyle: hintStyle ? {
+        display: hintStyle.display, visibility: hintStyle.visibility,
+        opacity: hintStyle.opacity, zIndex: hintStyle.zIndex,
+        position: hintStyle.position, pointerEvents: hintStyle.pointerEvents,
+      } : null,
+      hintHitTargets: (() => {
+        if (!hint || !rect?.width || !rect.height) return false;
+        const original = hint.style.pointerEvents;
+        hint.style.pointerEvents = "auto";
+        const visualHit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        hint.style.pointerEvents = original;
+        const clickHit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          visuallyOnTop: visualHit === hint || Boolean(visualHit && hint.contains(visualHit)),
+          clickPassesThrough: hintStyle.pointerEvents === "none" && clickHit !== hint &&
+            Boolean(clickHit && !hint.contains(clickHit)),
+          underlyingTag: clickHit?.tagName ?? null,
+          underlyingClass: String(clickHit?.className ?? ""),
+        };
+      })(),
     };
   })()`);
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -119,6 +139,53 @@ try {
       type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1,
     });
     await wait(120);
+  };
+  const scrollWelcomeHintCycle = async () => {
+    const initial = await readHomeScroll();
+    const wheel = async (deltaY) => {
+      const point = await evaluate(`(() => {
+        const owner = document.querySelector('[data-a11y-slot="scroll-content"]');
+        const rect = owner?.getBoundingClientRect();
+        return rect ? { x: rect.right - 18, y: rect.top + Math.min(120, rect.height / 2) } : null;
+      })()`);
+      if (!point) throw new Error("Welcome scroll owner was not found for hint visibility check.");
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseWheel", x: point.x, y: point.y, deltaX: 0, deltaY,
+      });
+      await wait(80);
+    };
+    await wheel(160);
+    const middle = await readHomeScroll();
+    for (let index = 0; index < 12; index += 1) await wheel(400);
+    await wait(160);
+    const bottom = await readHomeScroll();
+    await wheel(-160);
+    const returned = await readHomeScroll();
+    const owner = returned.actualOwner;
+    const stablePosition = [middle, bottom, returned].every((sample) =>
+      Math.abs((sample.hintRect?.top ?? NaN) - (initial.hintRect?.top ?? NaN)) <= 1,
+    );
+    if (!initial.hintVisible || !middle.hintVisible || !bottom.actualOwner ||
+        bottom.actualOwner.scrollTop < bottom.actualOwner.scrollHeight - bottom.actualOwner.clientHeight - 1 ||
+        bottom.hintVisible || !returned.hintVisible || !stablePosition ||
+        !initial.hintHitTargets?.visuallyOnTop || !initial.hintHitTargets?.clickPassesThrough) {
+      throw new Error(`Welcome scroll hint did not stay visible, hide only at the end, and return on scroll-up: ${
+        JSON.stringify({ initial, middle, bottom, returned, stablePosition })
+      }`);
+    }
+    await evaluate(`document.querySelector('[data-a11y-slot="scroll-content"]').scrollTop = 0`);
+    await wait(120);
+    return {
+      initialOwner: initial.actualOwner,
+      middleScrollTop: middle.actualOwner?.scrollTop,
+      bottomScrollTop: bottom.actualOwner?.scrollTop,
+      returnedScrollTop: owner?.scrollTop,
+      hiddenAtBottom: !bottom.hintVisible,
+      returnedAfterScrollUp: returned.hintVisible,
+      fixedHintPosition: stablePosition,
+      visibleAboveDock: initial.hintHitTargets.visuallyOnTop,
+      clickPassesThrough: initial.hintHitTargets.clickPassesThrough,
+    };
   };
   const read = () => evaluate(`(() => {
     const panel = document.querySelector(".a11y-guide-toast");
@@ -178,6 +245,8 @@ try {
       suppressed: panel.dataset.a11yPositionSuppressed === "true",
       title: panel.querySelector("[data-a11y-guide-title]")?.textContent ?? "",
       text: textElement?.textContent ?? "",
+      bodyFontSize: textElement ? getComputedStyle(textElement).fontSize : "",
+      bodyLineHeight: textElement ? getComputedStyle(textElement).lineHeight : "",
       textVisible: Boolean(textElement && textElement.getClientRects().length &&
         getComputedStyle(textElement).display !== "none" && getComputedStyle(textElement).visibility !== "hidden"),
       page: pageElement?.textContent ?? "",
@@ -211,10 +280,17 @@ try {
         const r = button.getBoundingClientRect();
         const style = getComputedStyle(button);
         const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const range = document.createRange();
+        range.selectNodeContents(button);
+        const textRect = range.getBoundingClientRect();
         return { selector, left: r.left, top: r.top, right: r.right, bottom: r.bottom,
           width: r.width, height: r.height, fontSize: style.fontSize, lineHeight: style.lineHeight,
           padding: style.padding, borderWidth: style.borderWidth,
-          hitTest: hit === button || button.contains(hit) };
+          hitTest: hit === button || button.contains(hit),
+          text: button.textContent?.trim() ?? "",
+          textVisible: textRect.height > 0 && textRect.left >= r.left - 1 &&
+            textRect.right <= r.right + 1 && textRect.top >= r.top - 1 &&
+            textRect.bottom <= r.bottom + 1 };
       }).filter(Boolean),
       collapseAccessibleName: panel.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
       scrollOwner: (() => {
@@ -230,7 +306,8 @@ try {
     console.log(JSON.stringify({ label, ...state }));
     if (!state.exists || !state.visible || !state.hitTest || state.ariaHidden === "true" ||
       state.suppressed || state.primaryOverlaps.length ||
-      state.guideControls.some((control) => control.width < 44 || control.height < 44 || !control.hitTest) ||
+      state.guideControls.some((control) => control.width < 44 ||
+        Math.abs(control.height - 44) > 0.1 || !control.hitTest || !control.textVisible) ||
       state.guideControls.some((control, index, controls) => controls.slice(index + 1).some((other) =>
         control.left < other.right && control.right > other.left &&
         control.top < other.bottom && control.bottom > other.top)) ||
@@ -346,18 +423,24 @@ try {
   const startRange = startAfterProfile.actualOwner
     ? startAfterProfile.actualOwner.scrollHeight - startAfterProfile.actualOwner.clientHeight
     : 0;
-  if (startRange > 1 && !startAfterProfile.hintVisible) {
+  if (startRange > 1 && (!startAfterProfile.hintVisible ||
+      !startAfterProfile.hintHitTargets?.visuallyOnTop ||
+      !startAfterProfile.hintHitTargets?.clickPassesThrough)) {
     throw new Error(`Scrollable welcome screen has no SDK hint: ${JSON.stringify(startAfterProfile)}`);
   }
   if (firstScreen.exists) throw new Error(`Easy Language unexpectedly appeared on the welcome screen: ${JSON.stringify(firstScreen)}`);
   await wait(10_250);
   const smartWelcome = await read();
   const welcomeAfterGuide = await readHomeScroll();
-  if (startRange > 1 && !welcomeAfterGuide.hintVisible) {
+  if (startRange > 1 && (!welcomeAfterGuide.hintVisible ||
+      !welcomeAfterGuide.hintHitTargets?.visuallyOnTop ||
+      !welcomeAfterGuide.hintHitTargets?.clickPassesThrough)) {
     throw new Error(`Smart Guide hid the welcome scroll hint: ${JSON.stringify(welcomeAfterGuide)}`);
   }
   console.log(JSON.stringify({ label: "welcome-after-smart-delay", guideVisible: smartWelcome.visible,
     countdown: smartWelcome.countdown, scroll: welcomeAfterGuide }));
+  const welcomeHintCycle = await scrollWelcomeHintCycle();
+  console.log(JSON.stringify({ label: "welcome-scroll-hint-cycle", ...welcomeHintCycle }));
   await click("#start-store");
   const menuNavBefore = await evaluate(`(() => {
     const shell = document.querySelector('[data-a11y-slot="scroll-content"]');
@@ -454,6 +537,7 @@ try {
     welcomeScrollOwner: startAfterProfile.actualOwner,
     welcomeHintVisibleBeforeAndAfterSmartGuide: startRange <= 1 ||
       (startAfterProfile.hintVisible && welcomeAfterGuide.hintVisible),
+    welcomeHintCycle,
     optionsPanelImmediatelyVisible: optionEasy.visible,
     cartPanelImmediatelyVisible: cartReturn.visible,
     paymentPanelImmediatelyVisible: payment.visible,

@@ -716,6 +716,9 @@ try {
   }
   const guidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
   const viewportModes = [null, 60, 70, 80];
+  const textFitsButton = (button, text) => button && text && text.height > 0 &&
+    text.left >= button.left - 1 && text.right <= button.right + 1 &&
+    text.top >= button.top - 1 && text.bottom <= button.bottom + 1;
   const profiles = [
     { textSize: "standard", buttonSize: "standard", contrast: "standard", easyLanguage: true, smartGuide: false },
     { textSize: "extraLarge", buttonSize: "large", contrast: "high", easyLanguage: true, smartGuide: false },
@@ -738,7 +741,11 @@ try {
           state.previousRect,
           state.nextRect,
         ];
-        const buttonsFit = controls.every((rect) => rect && rect.width >= 44 && rect.height >= 44);
+        const buttonsFit = controls.every((rect) => rect && rect.width >= 44 &&
+          Math.abs(rect.height - 44) < 0.1) &&
+          textFitsButton(state.collapseRect, state.collapseTextRect) &&
+          textFitsButton(state.previousRect, state.previousTextRect) &&
+          textFitsButton(state.nextRect, state.nextTextRect);
         const minBodyFont = variant.textSize === "extraLarge" ? 20 :
           variant.textSize === "large" ? 17.5 : 16;
         const panel = state.panelRect;
@@ -787,8 +794,10 @@ try {
     smart = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     if (smart?.title !== "스마트 길잡이" || !smart.visible || !smart.pagerHidden ||
       !smart.previousHidden || !smart.nextHidden || !smart.countdown ||
-      smart.closeRect.width < 44 || smart.closeRect.height < 44 ||
-      smart.collapseRect.width < 44 || smart.collapseRect.height < 44 ||
+           smart.closeRect.width < 44 || Math.abs(smart.closeRect.height - 44) >= 0.1 ||
+           smart.collapseRect.width < 44 || Math.abs(smart.collapseRect.height - 44) >= 0.1 ||
+           !textFitsButton(smart.closeRect, smart.closeTextRect) ||
+           !textFitsButton(smart.collapseRect, smart.collapseTextRect) ||
       smart.iconRect.width !== 0 || smart.closeLabel !== "안내 닫기" ||
       smart.collapseAccessibleName !== "안내 접기" || smart.headerRect.height > 44) {
       throw new Error(`Smart Guide-only layout failed at ${width}x${height}: ${JSON.stringify(smart)}`);

@@ -321,7 +321,7 @@
         }
       }
       if (params.get("diagnostic") === "hint-removal-blocked") {
-        const hint = root.querySelector(".a11y-additional-menu-hint");
+        const hint = document.querySelector(".a11y-additional-menu-hint");
         if (hint) hint.remove = () => { probe.hintRemovalBlocked = true; };
       }
       const snapshot = (label, elapsed = 0) => {
@@ -350,7 +350,8 @@
           scrollWriteCount: probe.scrollWrites.length,
           scrollMethodCount: probe.scrollMethods.length,
           hintRemovalBlocked: Boolean(probe.hintRemovalBlocked),
-          hints: [...root.querySelectorAll(".a11y-additional-menu-hint, .a11y-guide-toast, .a11y-guidance-slot")]
+           hints: [document.querySelector(".a11y-additional-menu-hint"),
+             ...root.querySelectorAll(".a11y-guide-toast, .a11y-guidance-slot")].filter(Boolean)
             .map((element) => ({
               className: element.className, text: element.textContent,
               rect: element.getBoundingClientRect().toJSON(),

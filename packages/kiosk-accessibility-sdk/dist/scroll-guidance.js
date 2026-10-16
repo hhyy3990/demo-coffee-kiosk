@@ -1,3 +1,4 @@
+import { getQrEntryDockButtons } from "./qr-entry-dock.js";
 export const DEFAULT_PRIMARY_ACTION_MESSAGE = "아래에도 버튼이 있어요";
 export const DEFAULT_CONTENT_SCROLL_MESSAGE = "아래에도 내용이 있어요";
 function shown(el) {
@@ -36,6 +37,19 @@ function ownerCanScrollBelow(owner) {
                 (owner.scrollingElement ?? owner.documentElement).clientHeight - 1
         : owner.scrollTop < owner.scrollHeight - owner.clientHeight - 1;
 }
+function findDeepestVerticalOwner(root) {
+    const scrollable = [root, ...Array.from(root.querySelectorAll("*"))]
+        .filter((element) => element.scrollHeight > element.clientHeight + 1 &&
+        ["auto", "scroll", "overlay"].includes(getComputedStyle(element).overflowY));
+    const depth = (element) => {
+        let value = 0;
+        for (let current = element; current && current !== root; current = current.parentElement) {
+            value += 1;
+        }
+        return value;
+    };
+    return scrollable.sort((a, b) => depth(b) - depth(a))[0] ?? null;
+}
 function currentHint(root, adapter) {
     if (typeof document === "undefined" || typeof window === "undefined")
         return null;
@@ -44,13 +58,15 @@ function currentHint(root, adapter) {
         .map((element, order) => ({ element, order, zIndex: Number.parseInt(getComputedStyle(element).zIndex, 10) || 0 }))
         .sort((a, b) => a.zIndex - b.zIndex || a.order - b.order)
         .at(-1)?.element;
-    const owner = activeOverlay
-        ? findVerticalOwner(activeOverlay, null, false)
-        : typeof root.querySelectorAll === "function"
-            ? findVerticalOwner(root, regions.scrollArea)
-            : null;
-    if (activeOverlay && !owner)
-        return null;
+    if (activeOverlay) {
+        const owner = findDeepestVerticalOwner(activeOverlay);
+        if (!owner || !ownerCanScrollBelow(owner))
+            return null;
+        return { kind: "vertical", message: DEFAULT_CONTENT_SCROLL_MESSAGE };
+    }
+    const owner = typeof root.querySelectorAll === "function"
+        ? findVerticalOwner(root, regions.scrollArea)
+        : null;
     const actions = regions.primaryActions ?? [];
     for (const candidate of activeOverlay ? [] : actions) {
         const el = candidate.element;
@@ -75,7 +91,7 @@ function currentHint(root, adapter) {
     }
     return null;
 }
-function placeHint(hint, _root, _regions) {
+function placeHint(hint, root, regions) {
     const vw = document.documentElement.clientWidth || innerWidth;
     const width = Math.max(0, Math.min(360, vw - 24));
     hint.style.position = "fixed";
@@ -84,7 +100,40 @@ function placeHint(hint, _root, _regions) {
     hint.style.maxWidth = `${width}px`;
     hint.style.left = "12px";
     hint.style.top = "auto";
-    hint.style.bottom = "max(12px, env(safe-area-inset-bottom))";
+    const qrDock = getQrEntryDockButtons(root)
+        .find((button) => button.isConnected)
+        ?.closest(".a11y-qr-entry-dock");
+    const bottomObstacles = [
+        ...(regions.bottomControls ?? []),
+        ...(regions.guidanceAvoidAreas ?? []),
+        ...(qrDock ? [qrDock] : []),
+    ];
+    const obstacleRects = bottomObstacles.flatMap((obstacle) => {
+        if (!obstacle.isConnected)
+            return [];
+        const style = getComputedStyle(obstacle);
+        if (style.display === "none" || style.visibility === "hidden" ||
+            !["fixed", "sticky"].includes(style.position))
+            return [];
+        const rect = obstacle.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 ? [rect] : [];
+    });
+    // Start near the viewport edge rather than at the exact last pixel. Fixed
+    // controls can sit just above a body/page inset while still forming the
+    // bottom stack the hint must avoid.
+    let blockedTop = Math.max(0, innerHeight - 160);
+    let extended = true;
+    while (extended) {
+        extended = false;
+        for (const rect of obstacleRects) {
+            if (rect.top < blockedTop && rect.bottom >= blockedTop - 1) {
+                blockedTop = rect.top;
+                extended = true;
+            }
+        }
+    }
+    const bottomInset = Math.max(12, innerHeight - blockedTop + 12);
+    hint.style.bottom = `max(calc(env(safe-area-inset-bottom) + 12px), ${bottomInset}px)`;
     hint.style.pointerEvents = "none";
     hint.style.visibility = "visible";
     const height = hint.getBoundingClientRect().height;
@@ -111,6 +160,15 @@ export function createScrollGuidance(root, adapter) {
         root.append(node);
         return node;
     };
+    const syncTheme = (element) => {
+        const style = getComputedStyle(root);
+        const baseSize = Number.parseFloat(style.fontSize) || 16;
+        const enlarged = root.classList.contains("a11y-text-large") ||
+            root.classList.contains("a11y-text-extra");
+        element.style.fontFamily = style.fontFamily;
+        element.style.fontSize = `${baseSize * (enlarged ? 1.12 : 1)}px`;
+        element.classList.toggle("a11y-additional-menu-hint-high-contrast", root.classList.contains("a11y-high-contrast"));
+    };
     const refresh = () => {
         if (destroyed)
             return;
@@ -134,6 +192,12 @@ export function createScrollGuidance(root, adapter) {
         const element = ensureNode();
         if (!element)
             return;
+        const target = root.classList.contains("a11y-qr-entry-dock-bottom")
+            ? document.body
+            : root;
+        if (element.parentElement !== target)
+            target.append(element);
+        syncTheme(element);
         element.removeAttribute("aria-hidden");
         const copy = element.querySelector(".a11y-additional-menu-copy");
         if (copy && copy.textContent !== hint.message)

@@ -54,6 +54,7 @@ const adapter = {
     getLayoutRegions: () => ({
       bottomControls: [document.querySelector(".bottom-controls")],
       scrollArea: document.querySelector(".content"),
+      viewportOverlays: [...root.querySelectorAll(".fixture-modal")],
       primaryActions: [
         continueButton,
         root.querySelector("#test-pin"),
@@ -199,7 +200,7 @@ window.__sdkPackageSmoke = {
       stage.scrollTop = requestedTop;
       await frame();
       const guide = root.querySelector(".a11y-guide-toast");
-      const hint = root.querySelector(".a11y-additional-menu-hint");
+      const hint = document.querySelector(".a11y-additional-menu-hint");
       const rect = (element) => element?.getBoundingClientRect().toJSON() ?? null;
       const stageRect = stage.getBoundingClientRect();
       const actions = [...root.querySelectorAll(".keypad button, .fixture-choices input, .fixture-quantity button, #host-continue")];
@@ -306,6 +307,15 @@ window.__sdkPackageSmoke = {
       return box ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom,
         width: box.width, height: box.height } : null;
     };
+    const measureText = (selector) => {
+      const element = panel?.querySelector(selector);
+      if (!element) return null;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const box = range.getBoundingClientRect();
+      return { left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+        width: box.width, height: box.height, text: element.textContent?.trim() ?? "" };
+    };
     return {
       visible: Boolean(panel && panelStyle?.display !== "none" && panelStyle?.visibility === "visible" &&
         Number(panelStyle.opacity) > 0 && rect.width > 0 && rect.height > 0 &&
@@ -331,13 +341,17 @@ window.__sdkPackageSmoke = {
       iconAriaHidden: panel?.querySelector(".a11y-guide-icon")?.getAttribute("aria-hidden") ?? "",
       countdownRect: measure("[data-a11y-guide-countdown]"),
       collapseRect: measure("[data-a11y-guide-collapse]"),
+      collapseTextRect: measureText("[data-a11y-guide-collapse]"),
       collapseLabel: panel?.querySelector("[data-a11y-guide-collapse]")?.textContent ?? "",
       collapseAccessibleName: panel?.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
       closeRect: measure(".a11y-guide-close"),
+      closeTextRect: measureText(".a11y-guide-close"),
       closeLabel: panel?.querySelector(".a11y-guide-close")?.getAttribute("aria-label") ?? "",
       textRect: measure("[data-a11y-guide-text]"),
       previousRect: measure("[data-a11y-guide-previous]"),
+      previousTextRect: measureText("[data-a11y-guide-previous]"),
       nextRect: measure("[data-a11y-guide-next]"),
+      nextTextRect: measureText("[data-a11y-guide-next]"),
       pageRect: measure("[data-a11y-guide-page]"),
       titleFontSize: panel ? getComputedStyle(panel.querySelector("[data-a11y-guide-title]")).fontSize : "",
       bodyFontSize: panel ? getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).fontSize : "",

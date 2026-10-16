@@ -83,11 +83,11 @@
       };
       return { scroll, footer, dock, sdk: createAccessibilitySdk({ root, adapter }), adapter };
     }
-    async function hintVisible() { await wait(); return Boolean(root.querySelector(".a11y-additional-menu-hint") && getComputedStyle(root.querySelector(".a11y-additional-menu-hint")).visibility !== "hidden"); }
+    async function hintVisible() { await wait(); const hint = document.querySelector(".a11y-additional-menu-hint"); return Boolean(hint && getComputedStyle(hint).visibility !== "hidden"); }
     async function checkScrollable(kind, count) {
       const instance = mount(kind, count, "호스트 문구는 공통 문구로 대체되어야 합니다.");
       const startsVisible = await hintVisible();
-      const standardCopy = root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있어요";
+      const standardCopy = document.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있어요";
       instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
       await wait();
       const testItem = root.querySelector(".menu-item");
@@ -95,7 +95,7 @@
       const contentObserver = new MutationObserver((records) => { contentStyleMutations += records.length; });
       contentObserver.observe(testItem, { attributes: true, attributeFilter: ["style"] });
       const noSafeSpaceAtStart = root.dataset.a11yScrollGuidance === "no-safe-space";
-      const hint = root.querySelector(".a11y-additional-menu-hint");
+      const hint = document.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
       const hintPointerEventsNone = !hint || getComputedStyle(hint).pointerEvents === "none";
       const last = root.querySelector(".menu-item:last-child");
@@ -123,7 +123,7 @@
       const scrollRect = instance.scroll.getBoundingClientRect();
       const lastReached = lastRect.top >= 0 && lastRect.bottom <= innerHeight &&
         (kind === "document-scroll" || (lastRect.top >= scrollRect.top - 1 && lastRect.bottom <= scrollRect.bottom + 1));
-      const endHint = root.querySelector(".a11y-additional-menu-hint");
+      const endHint = document.querySelector(".a11y-additional-menu-hint");
       const hidesAtEnd = !endHint || (
         endHint.getAttribute("aria-hidden") === "true" &&
         getComputedStyle(endHint).visibility === "hidden"
@@ -140,9 +140,9 @@
       const returnsAfterScrollUp = await hintVisible() || root.dataset.a11yScrollGuidance === "no-safe-space";
       await wait();
       instance.sdk.endSession();
-      const clearsOnSessionEnd = !root.querySelector(".a11y-additional-menu-hint");
+      const clearsOnSessionEnd = !document.querySelector(".a11y-additional-menu-hint");
       instance.sdk.destroy();
-      const clearsOnDestroy = !root.querySelector(".a11y-additional-menu-hint");
+      const clearsOnDestroy = !document.querySelector(".a11y-additional-menu-hint");
       const dockRect = instance.dock.getBoundingClientRect().toJSON();
       const controlsRect = instance.footer.getBoundingClientRect().toJSON();
       instance.dock.remove();
@@ -171,7 +171,7 @@
       result.fixtureE = { hiddenBefore, appearsAfterProfile, persistsAfterResize: await hintVisible(), safeSpaceDiagnostic: root.dataset.a11yScrollGuidance === "no-safe-space", hiddenItemsAfterProfile: enlargedState.hiddenCount };
       enlarged.sdk.endSession();
       document.querySelector("[data-a11y-qr-entry-dock]")?.remove();
-      result.sessionReset = !root.querySelector(".a11y-additional-menu-hint");
+      result.sessionReset = !document.querySelector(".a11y-additional-menu-hint");
       root.replaceChildren();
       root.className = "kiosk";
       root.replaceChildren();
@@ -193,7 +193,7 @@
           primaryActions: [{ element: pay, message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." }],
         }),
       } });
-      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: root.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있어요" };
+      result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: document.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있어요" };
       scroll.scrollTop = scroll.scrollHeight;
       scroll.dispatchEvent(new Event("scroll", { bubbles: true }));
       result.primaryButton.reachableButtonHitTest = document.elementFromPoint(pay.getBoundingClientRect().left + 10, pay.getBoundingClientRect().top + 10) === pay;

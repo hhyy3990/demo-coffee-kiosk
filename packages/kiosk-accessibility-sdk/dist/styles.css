@@ -386,9 +386,11 @@
 .kiosk .a11y-guide-close {
   box-sizing: border-box;
   flex: none;
+  height: 44px !important;
   min-width: 44px;
-  min-height: 44px;
-  padding: 0 4px;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  padding: 0 4px !important;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -396,13 +398,14 @@
   font: inherit;
   font-size: .84em;
   font-weight: 700;
-  line-height: 1.15;
+  line-height: 1 !important;
   white-space: normal;
   pointer-events: auto;
+  vertical-align: middle;
 }
 .kiosk .a11y-guide-collapse {
   width: 44px;
-  padding: 0;
+  padding: 0 !important;
   font-size: 1.2em;
 }
 .kiosk .a11y-guide-copy {
@@ -419,6 +422,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+.kiosk .a11y-guide-pager button {
+  display: inline-grid;
+  place-items: center;
+  text-align: center;
 }
 .kiosk .a11y-guide-pager [data-a11y-guide-page] {
   min-width: 3em;
@@ -447,7 +455,7 @@
 .kiosk.a11y-high-contrast .a11y-guide-pager button,
 .kiosk.a11y-high-contrast .a11y-guide-close { outline: 2px solid currentColor; outline-offset: -2px; }
 
-.kiosk .a11y-additional-menu-hint {
+.a11y-additional-menu-hint {
   position: fixed;
   z-index: 8;
   pointer-events: none;
@@ -478,12 +486,7 @@
   line-height: 1;
 }
 
-.kiosk.a11y-text-large .a11y-additional-menu-hint,
-.kiosk.a11y-text-extra .a11y-additional-menu-hint {
-  font-size: 1.12em;
-}
-
-.kiosk.a11y-high-contrast .a11y-additional-menu-hint {
+.a11y-additional-menu-hint-high-contrast {
   border-color: #211710;
   background: #fffefa;
   color: #211710;

@@ -110,3 +110,9 @@ In normal viewport mode, keep the guide panel's previous viewport position while
 **Why:** The 320×844 and 390×844 standard-mode fixture showed 500px+ guide movement when visible keypad actions changed the placement candidates.
 
 **How to apply:** Exclude moving scroll-content obstacles after the guide has a valid placement, allow pointer events to pass through the panel surface while retaining its own buttons, and verify `elementFromPoint` for host actions at start/middle/end. Hide the hint only when the active owner cannot scroll farther or no scroll owner exists.
+
+When a bottom-viewport kiosk root forms a low stacking context, a fixed scroll hint inside it can be hidden behind the sibling QR dock regardless of the hint's own z-index. Portal only that SDK hint to the document layer while the bottom QR dock is active, reserve the dock/control stack, and keep the hint pointer-transparent.
+
+**Why:** In the real 360×667 DemoCoffee preview, computed visibility was true while paint hit-testing showed the QR button on top of the hint; the kiosk root was a z-index 1 stacking context.
+
+**How to apply:** Verify the painted layer with `elementFromPoint` after applying the accessibility profile, not only computed styles. Confirm the hint is above the dock, remains fixed while its registered scroll owner moves, and passes clicks through.

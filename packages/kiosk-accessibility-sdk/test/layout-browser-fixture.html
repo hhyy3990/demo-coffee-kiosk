@@ -248,6 +248,7 @@
         getLayoutRegions: () => ({
           bottomControls: [footer],
           scrollArea,
+          viewportOverlays: [...scrollRoot.querySelectorAll(".fixture-modal")],
           primaryActions: [...scrollRoot.querySelectorAll("button")].map((element) => ({ element })),
           reflowContainers: [],
           gridContainers: [],
@@ -350,6 +351,8 @@
         Math.abs(documentRootRect.height - innerHeight * 0.7) <= 2,
     };
     window.runModalScrollTests = async () => {
+      viewportSdk.endSession();
+      viewportSdk.destroy();
       const modalSdk = createAccessibilitySdk({
         root: scrollRoot,
         adapter: {
@@ -377,7 +380,7 @@
         scrollArea.scrollTop = ratio < 0 ? Math.max(0, maxScroll() - 10) : maxScroll() * ratio;
         scrollArea.dispatchEvent(new Event("scroll", { bubbles: true }));
         await new Promise((resolve) => setTimeout(resolve, 80));
-        const pill = scrollRoot.querySelector(".a11y-additional-menu-hint");
+        const pill = [...document.querySelectorAll(".a11y-additional-menu-hint")].at(-1);
         const pillRect = pill?.getBoundingClientRect();
         const footerRect = footer.getBoundingClientRect();
         guideStates.push({
@@ -419,7 +422,7 @@
         overlay.className = "fixture-modal";
         Object.assign(overlay.style, {
           position: "fixed", inset: "0", zIndex: "10000",
-          background: "rgba(0,0,0,.45)", overflow: "auto",
+          background: "rgba(0,0,0,.45)", overflow: "hidden",
           display: "grid", placeItems: "center",
         });
         overlay.setAttribute("role", "presentation");
@@ -443,7 +446,9 @@
           trigger.focus();
         });
         dialog.focus();
-        dialog.scrollTop = dialog.scrollHeight;
+        dialog.scrollTop = Number.MAX_SAFE_INTEGER;
+        dialog.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const closeRect = closeButton.getBoundingClientRect();
         const closeHit = document.elementFromPoint(closeRect.left + closeRect.width / 2, closeRect.top + closeRect.height / 2);
         closeButtonHitTest = closeHit === closeButton;
@@ -453,15 +458,17 @@
           await new Promise((resolve) => setTimeout(resolve, delay));
           samples.push({ delay, ...ownerSnapshot() });
         }
-        const modalHint = scrollRoot.querySelector(".a11y-additional-menu-hint");
+        const modalHint = [...document.querySelectorAll(".a11y-additional-menu-hint")].at(-1);
         const hintVisibleWithModal = Boolean(modalHint &&
           modalHint.getAttribute("aria-hidden") !== "true" &&
           getComputedStyle(modalHint).visibility !== "hidden");
+        const modalHasScrollableContent = dialog.scrollHeight > dialog.clientHeight + 1;
         closeButton.click();
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const afterClose = ownerSnapshot();
         results.push({
           kind,
+          modalHasScrollableContent,
           before,
           immediatelyAfterInsert,
           samples,
