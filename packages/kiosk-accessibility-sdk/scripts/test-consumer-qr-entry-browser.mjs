@@ -847,6 +847,7 @@ try {
     throw new Error(`Reduced-motion preference was not honored: ${JSON.stringify(reducedMotion)}`);
   }
   const stageGuidanceCases = [];
+  const panelStabilityCases = [];
   const topDrift = (samples, selector) => {
     const visible = samples.filter((sample) => sample[selector]?.visible);
     return visible.length < 2 ? null : Math.max(...visible.map((sample) =>
@@ -909,6 +910,40 @@ try {
         throw new Error(`.stage guidance geometry was unstable: ${JSON.stringify(result)}`);
       }
       stageGuidanceCases.push(result);
+       if (guideMode === "both") {
+         await send("Page.navigate", { url: `${baseUrl}/` });
+         for (let attempt = 0; attempt < 100; attempt += 1) {
+           if (await evaluate("Boolean(window.__sdkPackageSmoke?.runPanelStabilityProbe)")) break;
+           await wait(50);
+         }
+         const panelProbe = await evaluate(
+           `window.__sdkPackageSmoke.runPanelStabilityProbe(${JSON.stringify(percent)})`,
+         );
+         const visiblePanels = panelProbe.samples.filter((sample) => sample.visible);
+         const drift = Math.max(...visiblePanels.map((sample) => sample.top)) -
+           Math.min(...visiblePanels.map((sample) => sample.top));
+         const undersizedButtons = panelProbe.samples.flatMap((sample) =>
+           sample.buttons.filter((button) => !button.hidden &&
+             (button.width < 44 || button.height < 44)));
+         const easyTransitionSamples = panelProbe.samples.filter((_, index) =>
+           index !== 4 && index !== 6);
+         const invalidBounds = panelProbe.samples.filter((sample) =>
+           !sample.visible || sample.top < 0 || sample.bottom > height);
+         const stability = { width, height, percent, drift, undersizedButtons,
+           invalidBounds, samples: panelProbe.samples, dock: panelProbe.dock,
+           footer: panelProbe.footer, hint: panelProbe.hint };
+         if (drift > 1 || undersizedButtons.length || invalidBounds.length ||
+           visiblePanels.length !== panelProbe.samples.length ||
+           easyTransitionSamples.some((sample) => sample.collapsed) ||
+           easyTransitionSamples.map((sample) => sample.page).join(",") !==
+             "1/3,2/3,1/3,2/3,2/3,2/3" ||
+           panelProbe.samples[6].page !== "" || panelProbe.samples[7].page !== "2/3" ||
+           panelProbe.dock.bottom > panelProbe.footer.top + 1 ||
+           (panelProbe.hint.visible && panelProbe.hint.position !== "fixed")) {
+           throw new Error(`Guidance panel position changed during content/state transitions: ${JSON.stringify(stability)}`);
+         }
+         panelStabilityCases.push(stability);
+       }
       }
     }
   }
@@ -928,6 +963,7 @@ try {
     sameStepInteractionResult,
     fontCorrectionCases,
     guidanceLayoutCases: guidanceLayoutMatrix.length,
+    panelStabilityCases,
     guidanceLayoutMatrix,
     smartOnlyLayouts,
     keyboardForward,

@@ -266,6 +266,111 @@ window.__sdkPackageSmoke = {
       guideMode,
       smartVisible, easy, smart };
   },
+  async runPanelStabilityProbe(heightPercent = null) {
+    root.classList.add("stage-fixture");
+    const stage = root.querySelector(".content");
+    const dock = document.createElement("aside");
+    dock.dataset.a11yQrEntryDock = "true";
+    dock.textContent = "QR 도크 fixture";
+    Object.assign(dock.style, {
+      position: "fixed", zIndex: "25", left: "0", right: "0", bottom: "88px",
+      height: "64px", display: "grid", placeItems: "center",
+      background: "#eee", borderTop: "1px solid #999",
+    });
+    document.body.append(dock);
+    const footerTop = root.querySelector(".bottom-controls").getBoundingClientRect().top;
+    dock.style.bottom = `${innerHeight - footerTop}px`;
+    profile = validateAccessibilityProfile({
+      ...profile, textSize: "extraLarge", buttonSize: "large", contrast: "high",
+      viewportMode: heightPercent === null ? null : { mode: "bottom", heightPercent },
+      easyLanguage: true, smartGuide: true, slowGuidance: true,
+    });
+    sdk.applyProfile(profile);
+    const explanations = [
+      { title: "짧은 안내", text: "첫 페이지입니다." },
+      { title: "긴 안내", text: "이 안내는 페이지별 길이 차이를 재현하기 위해 길게 작성했습니다. ".repeat(18) },
+      { title: "마지막 안내", text: "세 번째 페이지입니다. ".repeat(7) },
+    ];
+    sdk.setEasyLanguageState({ stepId: guideStep, explanations });
+    const frame = () => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const sample = async (state) => {
+      await frame();
+      const panel = root.querySelector(".a11y-guide-toast");
+      const rect = panel?.getBoundingClientRect();
+      const buttonRects = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]",
+        "[data-a11y-guide-collapse]"].map((selector) => {
+        const button = panel?.querySelector(selector);
+        const box = button?.getBoundingClientRect();
+        let ancestor = button;
+        let hidden = !button || button.hidden;
+        while (ancestor && !hidden) {
+          hidden = getComputedStyle(ancestor).display === "none" ||
+            getComputedStyle(ancestor).visibility === "hidden";
+          ancestor = ancestor.parentElement;
+        }
+        return { selector, hidden,
+          width: box?.width ?? 0, height: box?.height ?? 0 };
+      });
+      const text = panel?.querySelector("[data-a11y-guide-text]");
+      const textStyle = text ? getComputedStyle(text) : null;
+      const result = {
+        state,
+        top: rect?.top ?? null,
+        bottom: rect?.bottom ?? null,
+        height: rect?.height ?? null,
+        visible: Boolean(panel && getComputedStyle(panel).visibility === "visible"),
+        collapsed: Boolean(panel?.classList.contains("a11y-guide-collapsed")),
+        page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
+        text: text?.textContent ?? "",
+        bodyScrollable: Boolean(panel && panel.scrollHeight > panel.clientHeight),
+        buttons: buttonRects,
+      };
+      return result;
+    };
+    const samples = [await sample("페이지 1")];
+    root.querySelector("[data-a11y-guide-next]")?.click();
+    samples.push(await sample("다음→페이지 2"));
+    root.querySelector("[data-a11y-guide-previous]")?.click();
+    samples.push(await sample("이전→페이지 1"));
+    root.querySelector("[data-a11y-guide-next]")?.click();
+    samples.push(await sample("다음→페이지 2 재방문"));
+    root.querySelector("[data-a11y-guide-collapse]")?.click();
+    samples.push(await sample("접기"));
+    root.querySelector("[data-a11y-guide-collapse]")?.click();
+    samples.push(await sample("펼치기"));
+    sdk.setGuideState({
+      stepId: guideStep, enabled: true, paused: false, delaySeconds: 0,
+      message: { title: "스마트 길잡이", text: "현재 단계의 다음 동작을 안내합니다.", actionId: "host.review.continue" },
+    });
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (root.querySelector(".a11y-guide-toast.a11y-guide-smart")) break;
+    }
+    samples.push(await sample("스마트 길잡이 시작"));
+    sdk.setGuideState({
+      stepId: guideStep, enabled: false, paused: true, delaySeconds: 10, message: null,
+    });
+    samples.push(await sample("쉬운 말 복원"));
+    stage.scrollTop = stage.scrollHeight;
+    await frame();
+    const hint = document.querySelector(".a11y-additional-menu-hint");
+    const hintRect = hint?.getBoundingClientRect();
+    const dockRect = dock.getBoundingClientRect();
+    const footerRect = root.querySelector(".bottom-controls").getBoundingClientRect();
+    const report = {
+      viewport: { width: innerWidth, height: innerHeight },
+      heightPercent: heightPercent ?? null,
+      samples,
+      hint: { visible: Boolean(hint && getComputedStyle(hint).visibility === "visible"),
+        top: hintRect?.top ?? null, bottom: hintRect?.bottom ?? null,
+        position: hint ? getComputedStyle(hint).position : "" },
+      dock: { top: dockRect.top, bottom: dockRect.bottom },
+      footer: { top: footerRect.top, bottom: footerRect.bottom },
+    };
+    dock.remove();
+    return report;
+  },
   read() {
     return {
       profile,

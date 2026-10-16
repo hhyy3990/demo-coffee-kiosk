@@ -110,8 +110,9 @@ function positionGuide(overlay, target, root, regions) {
         const qrDocks = Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"));
         const controls = [...(regions?.bottomControls ?? []), ...qrDocks].filter((el) => el.isConnected && el.getBoundingClientRect().width > 0 && getComputedStyle(el).display !== "none");
         const safeBottom = controls.reduce((edge, el) => Math.min(edge, el.getBoundingClientRect().top), Math.min(vh, shell.top)) - 8;
-        // Keep the shared guide in the non-scrolling viewport band above the
-        // scroll owner; placing it over scrolled content can cover menu actions.
+        // Anchor the panel to the top of the non-scrolling band. Its measured
+        // height is capped below, so copy changes scroll inside the panel rather
+        // than shifting the panel to a different candidate.
         const safeTop = 8;
         const availableHeight = safeBottom - safeTop;
         if (availableHeight < 72)
@@ -129,7 +130,7 @@ function positionGuide(overlay, target, root, regions) {
         const height = overlay.getBoundingClientRect().height;
         const action = target.getBoundingClientRect();
         const minimum = safeTop;
-        const maximum = safeBottom - height;
+        const maximum = safeTop;
         const positions = [action.top - height - 12, action.bottom + 12];
         const isMovingScrollContent = (element) => {
             if (!scrollArea || typeof getComputedStyle !== "function")
@@ -156,6 +157,7 @@ function positionGuide(overlay, target, root, regions) {
         fits.push(minimum, maximum, minimum + (maximum - minimum) / 2);
         const candidates = [...new Set([
                 ...(Number.isFinite(previousTop) ? [clamp(previousTop, minimum, maximum)] : []),
+                minimum,
                 ...fits,
                 ...obstacleEdges,
             ].filter(Number.isFinite))];
@@ -178,13 +180,23 @@ function positionGuide(overlay, target, root, regions) {
         return true;
     }
     const targetRect = target.getBoundingClientRect();
-    const overlayRect = overlay.getBoundingClientRect();
+    let overlayRect = overlay.getBoundingClientRect();
     const margin = 12;
     const gap = 12;
     const above = targetRect.top - overlayRect.height - gap;
     const below = targetRect.bottom + gap;
     const viewportWidth = document.documentElement?.clientWidth || window.innerWidth;
     const viewportHeight = document.documentElement?.clientHeight || window.innerHeight;
+    const fixedRegions = [
+        ...(regions?.bottomControls ?? []),
+        ...(typeof document.querySelectorAll === "function"
+            ? Array.from(document.querySelectorAll("[data-a11y-qr-entry-dock]"))
+            : []),
+    ].filter((element) => element.isConnected && getComputedStyle(element).display !== "none");
+    const safeBottom = fixedRegions.reduce((edge, element) => Math.min(edge, element.getBoundingClientRect().top), viewportHeight) - 8;
+    overlay.style.maxHeight = `${Math.max(0, Math.min(viewportHeight - margin * 2, safeBottom - margin))}px`;
+    overlay.style.overflowY = "auto";
+    overlayRect = overlay.getBoundingClientRect();
     const maxTop = Math.max(margin, viewportHeight - overlayRect.height - margin);
     const clampToViewport = (value) => clamp(value, margin, maxTop);
     const scrollArea = regions?.scrollArea && root?.contains(regions.scrollArea)
@@ -207,6 +219,7 @@ function positionGuide(overlay, target, root, regions) {
         : [];
     const candidates = [
         ...(Number.isFinite(previousTop) ? [clampToViewport(previousTop)] : []),
+        margin,
         ...preferred,
         ...(targetIsViewportStable ? [clampToViewport(above), clampToViewport(below)] : []),
         margin,

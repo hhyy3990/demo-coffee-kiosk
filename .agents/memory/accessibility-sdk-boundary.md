@@ -93,6 +93,12 @@ Smart Guide placement must be rechecked after host screen changes and guide-cont
 
 **How to apply:** Re-evaluate on relevant host DOM changes and guide-content changes, filter SDK-owned geometry/style mutations to prevent observer loops, and verify settled positions with `elementFromPoint` in a browser. Keep the host responsible for its actions; never work around an overlay by changing business logic or kiosk-specific CSS.
 
+For a shared Easy Language/Smart Guide panel, keep its top anchor stable across copy, page, and mode changes within the same task step. Derive its maximum height from the current viewport and reserved fixed-control/QR-dock region, and let long copy scroll inside the panel; only real viewport or safe-area changes should force a new anchor.
+
+**Why:** A large difference in explanation height caused candidate placement to move the panel even though the task screen and safe area had not changed.
+
+**How to apply:** Bound the panel before choosing its initial safe position, preserve that position while content changes, and test page, fold, Smart Guide, and restoration transitions with real bounding-rectangle and hit-target measurements. Keep bottom scroll-hint positioning independent.
+
 When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
 
 **Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.
