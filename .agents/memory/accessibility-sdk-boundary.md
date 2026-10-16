@@ -97,7 +97,7 @@ For a shared Easy Language/Smart Guide panel, keep its top anchor stable across 
 
 **Why:** A large difference in explanation height caused candidate placement to move the panel even though the task screen and safe area had not changed.
 
-**How to apply:** Bound the panel before choosing its initial safe position, preserve that position while content changes, and test complete text traversal, page, fold, Smart Guide, and restoration transitions with real bounding-rectangle and hit-target measurements. Warn host authors about long explanations, but never silently truncate them.
+**How to apply:** Bound the panel before choosing its initial safe position, include its borders in the available text-height budget, preserve that position while content changes, and test complete text traversal, page, fold, Smart Guide, and restoration transitions with real bounding-rectangle and hit-target measurements. When splitting oversized copy, attach whitespace to neighboring text pages rather than emitting blank pages; verify that concatenating pages exactly reproduces the source. Warn host authors about long explanations, but never silently truncate them.
 
 When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
 

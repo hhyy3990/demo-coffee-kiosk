@@ -957,6 +957,28 @@ try {
       }
     }
   }
+  const viewportReflowCases = [];
+  for (const [width, height] of viewports.slice(0, 4)) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height, deviceScaleFactor: 1, mobile: width < 600,
+      screenWidth: width, screenHeight: height,
+    });
+    await send("Page.navigate", { url: `${baseUrl}/` });
+    let loaded = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      loaded = await evaluate("Boolean(window.__sdkPackageSmoke?.runViewportReflowProbe)");
+      if (loaded) break;
+      await wait(50);
+    }
+    if (!loaded) throw new Error(`Viewport reflow fixture did not load at ${width}x${height}.`);
+    const report = await evaluate("window.__sdkPackageSmoke.runViewportReflowProbe()");
+    if (report.transitions.length !== 12 ||
+        report.transitions.some((item) => !item.textPreserved || !item.anchorPreserved ||
+          item.textClipped || item.outside.length || item.bodyScrollable || item.collapsed)) {
+      throw new Error(`Dynamic viewport reflow failed at ${width}x${height}: ${JSON.stringify(report)}`);
+    }
+    viewportReflowCases.push(report);
+  }
   console.log(JSON.stringify({
     installedPackageCssBrowserCases: cases.length,
     sharedGuidanceLayouts: guidanceLayouts,
@@ -974,6 +996,7 @@ try {
     fontCorrectionCases,
     guidanceLayoutCases: guidanceLayoutMatrix.length,
     panelStabilityCases,
+    viewportReflowCases,
     guidanceLayoutMatrix,
     smartOnlyLayouts,
     keyboardForward,

@@ -259,6 +259,8 @@ try {
     return {
       exists: panel.isConnected,
       visible: panelVisible,
+      panelVisibility: style.visibility,
+      panelOpacity: style.opacity,
       hitTest: panelVisible && guideControlHit && primaryActionsHit,
       rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
         width: rect.width, height: rect.height },
@@ -623,6 +625,7 @@ try {
     await wait(100);
   }
   if (!completeReady) throw new Error("The actual demo order did not reach the completion screen.");
+  await wait(350);
   const complete = await assertVisible("order-complete", "주문 번호");
   await click(".receipt-actions button");
   await click("#complete-reset");

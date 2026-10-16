@@ -406,6 +406,128 @@ window.__sdkPackageSmoke = {
     dock.remove();
     return report;
   },
+  async runViewportReflowProbe() {
+    const frame = () => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const sentence = "화면에 표시된 안내를 차근차근 읽고 필요한 내용을 확인해 주세요. ";
+    let longText = "";
+    while (longText.length < 2_823) longText += sentence;
+    const anchorTitle = "읽던 위치 기준";
+    const anchorText = "읽던 위치.";
+    const explanations = [
+      { title: "긴 안내", text: longText },
+      { title: anchorTitle, text: anchorText },
+      { title: "마지막 안내", text: "마지막 안내 문장입니다." },
+    ];
+    profile = validateAccessibilityProfile({
+      ...profile, textSize: "extraLarge", buttonSize: "large", contrast: "high",
+      easyLanguage: true, smartGuide: true, slowGuidance: true, viewportMode: null,
+    });
+    sdk.setViewportMode(null);
+    sdk.applyProfile(profile);
+    sdk.setEasyLanguageState({ stepId: guideStep, explanations });
+    const panel = () => root.querySelector(".a11y-guide-toast");
+    const title = () => panel()?.querySelector("[data-a11y-guide-title]")?.textContent ?? "";
+    const text = () => panel()?.querySelector("[data-a11y-guide-text]")?.textContent ?? "";
+    const page = () => panel()?.querySelector("[data-a11y-guide-page]")?.textContent ?? "";
+    const next = () => panel()?.querySelector("[data-a11y-guide-next]");
+    const previous = () => panel()?.querySelector("[data-a11y-guide-previous]");
+    const findAnchor = () => {
+      for (let i = 0; i < 200; i += 1) {
+        if (title() === anchorTitle) return true;
+        if (next()?.disabled) return false;
+        next()?.click();
+      }
+      return false;
+    };
+    if (!findAnchor() || text() !== anchorText) throw new Error("Could not locate the reading-position marker.");
+    await frame();
+    const transitions = [];
+    const auditedModes = new Set();
+    const fromModes = [null, 80, 60, 70, null, 60, 80, 70, 60, null, 70, 80];
+    const toModes = [80, 60, 70, null, 60, 80, 70, 60, null, 70, 80, null];
+    const sample = () => {
+      const box = panel()?.getBoundingClientRect();
+      const copy = panel()?.querySelector("[data-a11y-guide-text]");
+      const range = document.createRange();
+      if (copy) range.selectNodeContents(copy);
+      const textBox = copy ? range.getBoundingClientRect() : null;
+      const controls = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]",
+        "[data-a11y-guide-collapse]"].map((selector) => {
+        const button = panel()?.querySelector(selector);
+        const rect = button?.getBoundingClientRect();
+        return { hidden: Boolean(button?.hidden), width: rect?.width ?? 0,
+          height: rect?.height ?? 0, top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
+      });
+      return { title: title(), text: text(), page: page(), top: box?.top ?? null,
+        height: box?.height ?? null, bottom: box?.bottom ?? null,
+        textTop: textBox?.top ?? null, textBottom: textBox?.bottom ?? null,
+        overflow: panel() ? getComputedStyle(panel()).overflow : "",
+        bodyScrollable: Boolean(panel() && panel().scrollHeight > panel().clientHeight),
+        collapsed: Boolean(panel()?.classList.contains("a11y-guide-collapsed")), controls };
+    };
+    for (let index = 0; index < toModes.length; index += 1) {
+      const before = sample();
+      const target = toModes[index];
+      if (!sdk.setViewportMode(target === null ? null : { mode: "bottom", heightPercent: target })) {
+        throw new Error(`Viewport mode rejected: ${target ?? "normal"}`);
+      }
+      await frame();
+      const after = sample();
+      if (after.title !== anchorTitle || after.text !== anchorText) {
+        throw new Error(`Reading marker lost on ${fromModes[index] ?? "normal"}→${target ?? "normal"}: ${JSON.stringify(after)}`);
+      }
+      const reportedPageCount = Number(page().split("/")[1] || 1);
+      if (!auditedModes.has(target)) {
+        while (!previous()?.disabled) previous()?.click();
+        const collected = [];
+        for (let i = 0; i < 200; i += 1) {
+          const pageSample = sample();
+          if (pageSample.title === "긴 안내") {
+            collected.push(pageSample.text);
+            const pageTextClipped = pageSample.textTop < pageSample.top - 1 ||
+              pageSample.textBottom > pageSample.bottom + 1;
+            const pageButtonsOutside = pageSample.controls.some((control) => !control.hidden &&
+              (control.width < 44 || control.height < 44 ||
+                control.top < pageSample.top - 1 || control.bottom > pageSample.bottom + 1));
+            if (pageTextClipped || pageButtonsOutside || pageSample.overflow !== "hidden" ||
+                pageSample.bodyScrollable) {
+              throw new Error(`Long-copy page clipped on ${target ?? "normal"}: ${JSON.stringify(pageSample)}`);
+            }
+          }
+          if (next()?.disabled) break;
+          next()?.click();
+        }
+        const allText = collected.join("");
+        if (allText !== longText) {
+          throw new Error(`Long copy changed on ${fromModes[index] ?? "normal"}→${target ?? "normal"} (${allText.length}/${longText.length}).`);
+        }
+        auditedModes.add(target);
+        while (!previous()?.disabled) previous()?.click();
+        if (!findAnchor()) throw new Error(`Reading-position explanation disappeared after ${target ?? "normal"} transition.`);
+      }
+      const settled = sample();
+      const outside = settled.controls.filter((control) => !control.hidden &&
+        (control.width < 44 || control.height < 44 ||
+          control.top < settled.top - 1 || control.bottom > settled.bottom + 1));
+      const textClipped = settled.textTop < settled.top - 1 || settled.textBottom > settled.bottom + 1;
+      const expectedTop = target === null ? 12 : 8;
+      const result = {
+        from: fromModes[index], to: target, beforeHeight: before.height, afterHeight: after.height,
+        beforePageCount: Number(before.page.split("/")[1] || 1), pageCount: reportedPageCount,
+        originalLength: longText.length, textPreserved: auditedModes.has(target),
+        anchorPreserved: settled.title === anchorTitle && settled.text === anchorText,
+        textClipped, outside, panelTop: settled.top, expectedTop, overflow: settled.overflow,
+        bodyScrollable: settled.bodyScrollable, collapsed: settled.collapsed,
+      };
+      transitions.push(result);
+      if (textClipped || outside.length || settled.overflow !== "hidden" ||
+          settled.bodyScrollable || settled.collapsed || Math.abs(settled.top - expectedTop) > 1) {
+        throw new Error(`Viewport reflow layout failed: ${JSON.stringify(result)}`);
+      }
+    }
+    return { viewport: { width: innerWidth, height: innerHeight }, transitions };
+  },
   read() {
     return {
       profile,

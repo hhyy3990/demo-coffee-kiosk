@@ -418,6 +418,22 @@ export function createAccessibilitySdk(options) {
             return null;
         return easyLanguageState.explanations[easyLanguageIndex] ?? null;
     }
+    function currentEasyLanguageOffset() {
+        if (!easyLanguageState)
+            return 0;
+        return easyLanguageState.explanations
+            .slice(0, easyLanguageIndex)
+            .reduce((offset, explanation) => offset + explanation.text.length, 0);
+    }
+    function findEasyLanguagePageAtOffset(explanations, offset) {
+        let pageStart = 0;
+        for (const [index, explanation] of explanations.entries()) {
+            if (offset < pageStart + explanation.text.length)
+                return index;
+            pageStart += explanation.text.length;
+        }
+        return Math.max(0, explanations.length - 1);
+    }
     function currentGuidanceMessage() {
         if (smartGuideVisible && guideState.message)
             return guideState.message;
@@ -425,14 +441,15 @@ export function createAccessibilitySdk(options) {
         return explanation ? { ...explanation, actionId: null } : null;
     }
     function fitEasyLanguagePages() {
+        const currentPages = [...(easyLanguageState?.explanations ?? easyLanguageSource)];
         if (!guideOverlay || !easyLanguageSource.length || typeof getComputedStyle !== "function") {
-            return easyLanguageSource;
+            return currentPages;
         }
         const copy = guideOverlay.querySelector(".a11y-guide-copy");
         const header = guideOverlay.querySelector(".a11y-guide-header");
         const pager = guideOverlay.querySelector(".a11y-guide-pager");
         if (!copy || !header || !pager || copy.clientWidth < 40)
-            return easyLanguageSource;
+            return currentPages;
         const maxPanelHeight = Number.parseFloat(guideOverlay.style.maxHeight) ||
             Math.max(120, innerHeight - 24);
         const tight = maxPanelHeight < 136;
@@ -444,14 +461,16 @@ export function createAccessibilitySdk(options) {
         const panelStyle = getComputedStyle(guideOverlay);
         const verticalPadding = (Number.parseFloat(panelStyle.paddingTop) || 0) +
             (Number.parseFloat(panelStyle.paddingBottom) || 0);
+        const verticalBorder = (Number.parseFloat(panelStyle.borderTopWidth) || 0) +
+            (Number.parseFloat(panelStyle.borderBottomWidth) || 0);
         const measuredGap = Number.parseFloat(panelStyle.rowGap);
         const gap = Number.isFinite(measuredGap) ? measuredGap : 4;
         const pagerHeight = tight ? 0 : 44;
         const textHeight = Math.max(tight ? 36 : 24, maxPanelHeight - header.getBoundingClientRect().height -
-            pagerHeight - verticalPadding - gap * 2);
+            pagerHeight - verticalPadding - verticalBorder - gap * 2);
         const liveText = copy.querySelector("[data-a11y-guide-text]");
         if (!liveText)
-            return easyLanguageSource;
+            return currentPages;
         const textStyle = getComputedStyle(liveText);
         const probe = document.createElement("span");
         probe.className = "a11y-guide-copy";
@@ -504,6 +523,27 @@ export function createAccessibilitySdk(options) {
             const sentences = explanation.text.match(/[^.!?。！？]+[.!?。！？]*/gu) ?? [explanation.text];
             const pieces = [];
             let piece = "";
+            const appendSplitPieces = (splitPieces) => {
+                let leadingWhitespace = "";
+                for (const splitPiece of splitPieces) {
+                    if (/^\s+$/u.test(splitPiece)) {
+                        if (pieces.length)
+                            pieces[pieces.length - 1] += splitPiece;
+                        else
+                            leadingWhitespace += splitPiece;
+                    }
+                    else {
+                        pieces.push(leadingWhitespace + splitPiece);
+                        leadingWhitespace = "";
+                    }
+                }
+                if (leadingWhitespace) {
+                    if (pieces.length)
+                        pieces[pieces.length - 1] += leadingWhitespace;
+                    else
+                        pieces.push(leadingWhitespace);
+                }
+            };
             for (const sentence of sentences) {
                 if (measure(piece + sentence) <= textHeight)
                     piece += sentence;
@@ -514,11 +554,15 @@ export function createAccessibilitySdk(options) {
                     if (measure(sentence) <= textHeight)
                         piece = sentence;
                     else
-                        pieces.push(...splitOversize(sentence));
+                        appendSplitPieces(splitOversize(sentence));
                 }
             }
-            if (piece)
-                pieces.push(piece);
+            if (piece) {
+                if (/^\s+$/u.test(piece) && pieces.length)
+                    pieces[pieces.length - 1] += piece;
+                else
+                    pieces.push(piece);
+            }
             const warningKey = `${easyLanguageState?.stepId ?? ""}:${easyLanguageSource.indexOf(explanation)}:${explanation.text.length}`;
             if ((explanation.text.length > 240 || originalHeight > textHeight) &&
                 !warnedEasyText.has(warningKey) && typeof console !== "undefined") {
@@ -614,13 +658,14 @@ export function createAccessibilitySdk(options) {
         guideOverlay.classList.toggle("a11y-guide-smart", smartGuideVisible);
         updateGuidePosition();
         if (!smartGuideVisible && easyLanguageState && !fittingEasyPages) {
+            const readingOffset = currentEasyLanguageOffset();
             fittingEasyPages = true;
             const pages = fitEasyLanguagePages();
             const changed = pages.length !== easyLanguageState.explanations.length ||
                 pages.some((page, index) => page.text !== easyLanguageState?.explanations[index]?.text);
             if (changed) {
                 easyLanguageState = { ...easyLanguageState, explanations: pages };
-                easyLanguageIndex = Math.min(easyLanguageIndex, pages.length - 1);
+                easyLanguageIndex = findEasyLanguagePageAtOffset(pages, readingOffset);
                 fittingEasyPages = false;
                 renderGuidancePanel();
                 return;
@@ -1152,8 +1197,11 @@ export function createAccessibilitySdk(options) {
         syncQrEntryDockViewportMode(root, config?.mode === "bottom" ? config.heightPercent : null);
         if (applied) {
             menuHint.refresh();
-            if (guideOverlay)
+            if (guideOverlay) {
                 updateGuidePosition();
+                if (easyLanguageState && !smartGuideVisible)
+                    renderGuidancePanel();
+            }
         }
         return applied;
     }
