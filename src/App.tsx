@@ -312,24 +312,24 @@ export default function App() {
     if (!preferences.easyLanguage) return [];
     if (stage === "start") return [];
     if (stage === "menu") return [
-      { title: "메뉴 분류", text: "커피와 음료, 디저트 중에서 보고 싶은 분류를 고를 수 있어요." },
-      { title: "음료 선택", text: "원하는 음료를 누르면 다음 화면에서 옵션을 고를 수 있어요." },
+      { title: "메뉴 분류", text: "비슷한 메뉴끼리 모아 둔 곳이에요." },
+      { title: "메뉴 카드", text: "메뉴 카드에는 이름과 가격, 간단한 설명이 있어요." },
     ];
     if (stage === "options") return [
-      { title: "음료 옵션", text: "따뜻한 음료나 차가운 음료, 크기와 컵을 고를 수 있어요." },
-      { title: "메뉴 담기", text: "고른 내용을 확인한 뒤 메뉴 담기를 누르면 장바구니에 들어가요." },
+      { title: "핫 · 아이스", text: "핫은 따뜻하게, 아이스는 차갑게 만든 음료예요." },
+      { title: "사이즈 · 컵", text: "사이즈는 음료의 양이에요. 개인 텀블러를 가져오면 매장 컵 대신 쓸 수 있어요." },
     ];
     if (stage === "cart") return [
-      { title: "주문 확인", text: "수량을 바꾸거나 필요 없는 메뉴를 뺄 수 있어요." },
-      { title: "결제하기", text: "주문이 맞으면 결제하기를 눌러 주세요." },
+      { title: "장바구니", text: "고른 메뉴를 결제 전에 모아 두는 곳이에요." },
+      { title: "수량", text: "수량은 주문할 개수예요." },
     ];
     if (stage === "payment") return [
-      { title: "결제 방법", text: "사용할 결제 방법을 선택해 주세요." },
-      { title: "결제 완료", text: "결제하기를 누르면 주문이 접수돼요." },
+      { title: "결제 수단", text: "결제 수단은 돈을 내는 방법이에요." },
+      { title: "영수증", text: "영수증은 주문한 메뉴와 결제 금액을 보여주는 내역이에요." },
     ];
     if (stage === "complete") return [
-      { title: "주문 완료", text: "주문이 완료됐어요. 음료가 준비될 때까지 기다려 주세요." },
-      { title: "처음 화면", text: "주문을 마쳤다면 처음 화면으로 돌아가 다음 이용자가 사용할 수 있게 해 주세요." },
+      { title: "주문 번호", text: "주문 번호는 내 주문을 구분하는 번호예요." },
+      { title: "영수증", text: "영수증은 주문 내용과 결제 금액을 확인하는 종이예요." },
     ];
     return [];
   }, [preferences.easyLanguage, stage]);

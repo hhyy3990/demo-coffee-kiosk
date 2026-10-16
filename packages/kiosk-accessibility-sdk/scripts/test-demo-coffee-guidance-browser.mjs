@@ -51,6 +51,44 @@ try {
     if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
     return response.result?.value;
   };
+  const readHomeScroll = () => evaluate(`(() => {
+    const root = document.querySelector(".kiosk");
+    const registered = root?.querySelector('[data-a11y-slot="scroll-content"]');
+    const documentScroller = document.scrollingElement;
+    const canScroll = (element) => {
+      if (!element) return false;
+      const style = getComputedStyle(element);
+      return element.scrollHeight > element.clientHeight + 1 &&
+        ["auto", "scroll", "overlay"].includes(style.overflowY);
+    };
+    const owner = canScroll(registered) ? registered :
+      canScroll(documentScroller) ? documentScroller :
+      [...(root?.querySelectorAll("*") ?? [])].find(canScroll) ?? null;
+    const hint = root?.querySelector(".a11y-additional-menu-hint");
+    const hintStyle = hint && getComputedStyle(hint);
+    const rect = hint?.getBoundingClientRect();
+    return {
+      registered: registered ? {
+        tag: registered.tagName, className: registered.className,
+        scrollHeight: registered.scrollHeight, clientHeight: registered.clientHeight,
+        scrollTop: registered.scrollTop, overflowY: getComputedStyle(registered).overflowY,
+      } : null,
+      document: documentScroller ? {
+        scrollHeight: documentScroller.scrollHeight, clientHeight: documentScroller.clientHeight,
+        scrollTop: documentScroller.scrollTop,
+      } : null,
+      actualOwner: owner ? {
+        tag: owner.tagName, className: String(owner.className ?? ""),
+        scrollHeight: owner.scrollHeight, clientHeight: owner.clientHeight,
+        scrollTop: owner.scrollTop, overflowY: getComputedStyle(owner).overflowY,
+      } : null,
+      hintVisible: Boolean(hint && hintStyle?.visibility !== "hidden" &&
+        hintStyle?.display !== "none" && hint.getAttribute("aria-hidden") !== "true" &&
+        rect?.width && rect.height),
+      hintRect: rect ? { top: rect.top, bottom: rect.bottom, height: rect.height } : null,
+      hintText: hint?.textContent?.trim() ?? "",
+    };
+  })()`);
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const click = async (selector) => {
     const point = await evaluate(`(() => {
@@ -166,6 +204,19 @@ try {
           centerHit: hit === button || button.contains(hit),
           visibleInViewport: Boolean(visible) };
       }),
+      guideControls: ["[data-a11y-guide-collapse]", "[data-a11y-guide-previous]",
+        "[data-a11y-guide-next]", ".a11y-guide-close"].map((selector) => {
+        const button = panel.querySelector(selector);
+        if (!button || button.hidden) return null;
+        const r = button.getBoundingClientRect();
+        const style = getComputedStyle(button);
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { selector, left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+          width: r.width, height: r.height, fontSize: style.fontSize, lineHeight: style.lineHeight,
+          padding: style.padding, borderWidth: style.borderWidth,
+          hitTest: hit === button || button.contains(hit) };
+      }).filter(Boolean),
+      collapseAccessibleName: panel.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
       scrollOwner: (() => {
         const el = document.querySelector('[data-a11y-slot="scroll-content"]');
         return el ? { top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom,
@@ -179,6 +230,11 @@ try {
     console.log(JSON.stringify({ label, ...state }));
     if (!state.exists || !state.visible || !state.hitTest || state.ariaHidden === "true" ||
       state.suppressed || state.primaryOverlaps.length ||
+      state.guideControls.some((control) => control.width < 44 || control.height < 44 || !control.hitTest) ||
+      state.guideControls.some((control, index, controls) => controls.slice(index + 1).some((other) =>
+        control.left < other.right && control.right > other.left &&
+        control.top < other.bottom && control.bottom > other.top)) ||
+      !state.collapseAccessibleName ||
       (expectedTitle && state.title !== expectedTitle)) {
       throw new Error(`${label}: guidance is not visibly and safely presented: ${JSON.stringify(state)}`);
     }
@@ -226,7 +282,7 @@ try {
     await wait(150);
     await send("Emulation.setTouchEmulationEnabled", { enabled: false });
     const after = await evaluate("document.querySelector('[data-a11y-slot=\"scroll-content\"]').scrollTop");
-    const state = await assertVisible("options-easy-touch-scroll", "음료 옵션");
+    const state = await assertVisible("options-easy-touch-scroll", "핫 · 아이스");
     if (after <= before) {
       throw new Error(`A real touch scroll did not move the app scroll owner: ${before} -> ${after}`);
     }
@@ -282,19 +338,72 @@ try {
     await wait(50);
   }
   if (!ready) throw new Error("Demo Coffee start screen did not load.");
+  const startBeforeProfile = await readHomeScroll();
   await click(".demo-entry-button");
   const firstScreen = await read();
+  const startAfterProfile = await readHomeScroll();
+  console.log(JSON.stringify({ label: "welcome-scroll-owner", startBeforeProfile, startAfterProfile }));
+  const startRange = startAfterProfile.actualOwner
+    ? startAfterProfile.actualOwner.scrollHeight - startAfterProfile.actualOwner.clientHeight
+    : 0;
+  if (startRange > 1 && !startAfterProfile.hintVisible) {
+    throw new Error(`Scrollable welcome screen has no SDK hint: ${JSON.stringify(startAfterProfile)}`);
+  }
   if (firstScreen.exists) throw new Error(`Easy Language unexpectedly appeared on the welcome screen: ${JSON.stringify(firstScreen)}`);
+  await wait(10_250);
+  const smartWelcome = await read();
+  const welcomeAfterGuide = await readHomeScroll();
+  if (startRange > 1 && !welcomeAfterGuide.hintVisible) {
+    throw new Error(`Smart Guide hid the welcome scroll hint: ${JSON.stringify(welcomeAfterGuide)}`);
+  }
+  console.log(JSON.stringify({ label: "welcome-after-smart-delay", guideVisible: smartWelcome.visible,
+    countdown: smartWelcome.countdown, scroll: welcomeAfterGuide }));
   await click("#start-store");
+  const menuNavBefore = await evaluate(`(() => {
+    const shell = document.querySelector('[data-a11y-slot="scroll-content"]');
+    const rail = document.querySelector("#category-nav-list");
+    const controls = document.querySelector(".category-nav-controls");
+    const topBefore = controls.getBoundingClientRect().top;
+    shell.scrollTop += 140;
+    const topAfter = controls.getBoundingClientRect().top;
+    const scrollWidth = rail.scrollWidth, clientWidth = rail.clientWidth;
+    rail.scrollLeft = scrollWidth;
+    const atRight = rail.scrollLeft > 0;
+    return { topBefore, topAfter, scrollDelta: topAfter - topBefore,
+      scrollWidth, clientWidth, atRight };
+  })()`);
+  if (menuNavBefore.scrollDelta > -20) {
+    throw new Error(`Category tabs stayed sticky instead of scrolling with content: ${JSON.stringify(menuNavBefore)}`);
+  }
+  if (menuNavBefore.scrollWidth > menuNavBefore.clientWidth && !menuNavBefore.atRight) {
+    throw new Error(`Category rail did not scroll horizontally: ${JSON.stringify(menuNavBefore)}`);
+  }
+  await click("#category-nav-list button:nth-child(2)");
+  const cakeSelected = await evaluate(`document.querySelector("#category-nav-list button:nth-child(2)")?.getAttribute("aria-pressed")`);
+  if (cakeSelected !== "true") throw new Error("Category selection failed after horizontal rail scroll.");
+  await click("#category-nav-list button:first-child");
+  await evaluate(`document.querySelector('[data-a11y-slot="scroll-content"]').scrollTop = 0;
+    document.querySelector("#category-nav-list").scrollLeft = 0;`);
   await click("#menu-product-0");
   await wait(250);
-  const optionEasy = await assertVisible("options-entered", "음료 옵션");
+  const optionEasy = await assertVisible("options-entered", "핫 · 아이스");
   if (optionEasy.page !== "1/2") throw new Error(`Options Easy Language did not start at 1/2: ${JSON.stringify(optionEasy)}`);
+  await click("[data-a11y-guide-collapse]");
+  if (!(await read()).collapsed) throw new Error("Easy Language panel did not fold.");
+  await click("[data-a11y-guide-collapse]");
+  if ((await read()).collapsed) throw new Error("Easy Language panel did not unfold.");
+  await click("[data-a11y-guide-next]");
+  if ((await read()).page !== "2/2") throw new Error("Easy Language next-page button did not advance.");
+  await click("[data-a11y-guide-previous]");
+  if ((await read()).page !== "1/2") throw new Error("Easy Language previous-page button did not return.");
   const touchScroll = await touchScrollOnce();
   await scrollTenTimes("options-easy");
-  await waitForGuide("options-smart-start");
+  const optionSmart = await waitForGuide("options-smart-start");
+  if (optionSmart.text === optionEasy.text) {
+    throw new Error("Easy Language concept copy repeated the Smart Guide action instruction.");
+  }
   await scrollTenTimes("options-smart");
-  await waitForEasy("options-smart-return", "음료 옵션", "1/2");
+  await waitForEasy("options-smart-return", "핫 · 아이스", "1/2");
 
   await click("#item-add");
   await wait(500);
@@ -308,17 +417,17 @@ try {
   await wait(120);
   await click("#menu-order-confirm");
   await wait(250);
-  const cartEasy = await assertVisible("cart-entered", "주문 확인");
+  const cartEasy = await assertVisible("cart-entered", "장바구니");
   if (cartEasy.collapsed) await click("[data-a11y-guide-collapse]");
   await click("[data-a11y-guide-next]");
-  const cartPageTwo = await assertVisible("cart-easy-page-two", "결제하기");
+  const cartPageTwo = await assertVisible("cart-easy-page-two", "수량");
   if (cartPageTwo.page !== "2/2") throw new Error(`Cart explanation could not reach page 2/2: ${JSON.stringify(cartPageTwo)}`);
   await scrollTenTimes("cart-easy");
   await waitForGuide("cart-smart-start");
   await scrollTenTimes("cart-smart");
-  const cartReturn = await waitForEasy("cart-smart-return", "결제하기", "2/2");
+  const cartReturn = await waitForEasy("cart-smart-return", "수량", "2/2");
   await click("#cart-pay");
-  const payment = await assertVisible("payment-entered", "결제 방법");
+  const payment = await assertVisible("payment-entered", "결제 수단");
   if (payment.page !== "1/2") throw new Error(`Payment Easy Language did not start at 1/2: ${JSON.stringify(payment)}`);
   await click("#payment-pay");
   let completeReady = false;
@@ -328,7 +437,7 @@ try {
     await wait(100);
   }
   if (!completeReady) throw new Error("The actual demo order did not reach the completion screen.");
-  const complete = await assertVisible("order-complete", "주문 완료");
+  const complete = await assertVisible("order-complete", "주문 번호");
   await click(".receipt-actions button");
   await click("#complete-reset");
   let returnedHome = false;
@@ -342,6 +451,9 @@ try {
     result: "PASS",
     viewport: `${viewportWidth}x${viewportHeight}`,
     firstScreenPanel: firstScreen.exists,
+    welcomeScrollOwner: startAfterProfile.actualOwner,
+    welcomeHintVisibleBeforeAndAfterSmartGuide: startRange <= 1 ||
+      (startAfterProfile.hintVisible && welcomeAfterGuide.hintVisible),
     optionsPanelImmediatelyVisible: optionEasy.visible,
     cartPanelImmediatelyVisible: cartReturn.visible,
     paymentPanelImmediatelyVisible: payment.visible,

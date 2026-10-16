@@ -733,7 +733,7 @@ export function createAccessibilitySdk(options) {
                 if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
                     guideOverlay.setAttribute("aria-hidden", "false");
                     delete guideOverlay.dataset.a11yPositionSuppressed;
-                    menuHint.setEnabled(!smartGuideVisible);
+                    menuHint.setEnabled(true);
                     scheduleGuideHitTest(target, action);
                     return;
                 }
@@ -810,7 +810,7 @@ export function createAccessibilitySdk(options) {
             collapsed: guidanceCollapsed,
             safetyCollapsed: guidanceSafetyCollapsed,
         };
-        menuHint.setEnabled(false);
+        menuHint.setEnabled(true);
         smartGuideVisible = true;
         const displayMs = currentProfile.slowGuidance ? 15_000 : GUIDE_AUTO_DISMISS_MS;
         guideDeadline = Date.now() + displayMs;
@@ -881,7 +881,7 @@ export function createAccessibilitySdk(options) {
     }
     function applyProfile(input) {
         sessionEnded = false;
-        menuHint.setEnabled(!smartGuideVisible);
+        menuHint.setEnabled(true);
         const previousVoiceGuidance = currentProfile.voiceGuidance;
         currentProfile = validateAccessibilityProfile(input);
         const nextClasses = new Set(accessibilityClasses(currentProfile));

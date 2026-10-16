@@ -341,7 +341,7 @@
   max-height: calc(100dvh - 24px);
   overflow: auto;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: 14px;
   background: #f5edc5;
   color: #3c3a2b;
@@ -349,7 +349,7 @@
   box-shadow: 0 12px 32px rgba(45,43,28,.18);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: 4px;
   animation: a11y-toast-in .28s ease-out;
   pointer-events: none;
 }
@@ -388,8 +388,8 @@
   flex: none;
   min-width: 44px;
   min-height: 44px;
-  padding: 3px 8px;
-  border: 1px solid currentColor;
+  padding: 0 4px;
+  border: 0;
   border-radius: 10px;
   background: transparent;
   color: inherit;
@@ -444,7 +444,8 @@
 .kiosk .a11y-guide-pager button:focus-visible,
 .kiosk .a11y-guide-close:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 .kiosk.a11y-high-contrast .a11y-guide-collapse,
-.kiosk.a11y-high-contrast .a11y-guide-pager button { border-width: 2px; }
+.kiosk.a11y-high-contrast .a11y-guide-pager button,
+.kiosk.a11y-high-contrast .a11y-guide-close { outline: 2px solid currentColor; outline-offset: -2px; }
 
 .kiosk .a11y-additional-menu-hint {
   position: fixed;
