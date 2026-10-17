@@ -242,7 +242,7 @@
     const viewportSdk = createAccessibilitySdk({
       root: scrollRoot,
       adapter: {
-        getSnapshot: () => ({ screenId: "bottom-viewport" }),
+         getSnapshot: () => ({ screenId: "start" }),
         getActions: () => [...scrollRoot.querySelectorAll("button")].map((element, index) => ({ id: `viewport.${index}`, name: "메뉴", element, enabled: true })),
         getTextTargets: () => [],
         getLayoutRegions: () => ({
@@ -291,6 +291,23 @@
         clickable,
       });
     }
+    const automaticProfile = viewportSdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: true,
+      viewportMode: null,
+    });
+    const automaticHeight = Number.parseFloat(scrollArea.style.getPropertyValue("--a11y-bottom-viewport-height"));
+    const automaticInset = Number.parseFloat(scrollArea.style.getPropertyValue("--a11y-bottom-viewport-bottom-inset"));
+    const automaticStartApplied = automaticProfile.viewportMode === null &&
+      scrollRoot.classList.contains("a11y-bottom-viewport-enabled") &&
+      Math.abs(automaticHeight - (innerHeight - automaticInset) * 0.8) <= 2;
+    const disabledAutoProfile = viewportSdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: false,
+      viewportMode: null,
+    });
+    const disabledAutoRestored = disabledAutoProfile.viewportMode === null &&
+      !scrollRoot.classList.contains("a11y-bottom-viewport-enabled");
     const invalidModeRejected = !viewportSdk.setViewportMode({ mode: "bottom", heightPercent: 90 });
     const originalWidth = scrollArea.getBoundingClientRect().width;
     scrollRoot.style.width = "80vw";
@@ -311,7 +328,7 @@
       item.lastMenuBottom <= item.footerTop + 1 &&
       item.clickable &&
       Number.parseFloat(item.safeInset) > 0
-    ) && restored;
+    ) && automaticStartApplied && disabledAutoRestored && restored;
     const documentRootSdk = createAccessibilitySdk({
       root: document.querySelector("#structure-a"),
       adapter: {
@@ -340,6 +357,10 @@
       invalidModeRejected,
       resizeWidths: { originalWidth, resizedWidth, restoredWidth },
       viewportCases,
+      automaticStartApplied,
+      automaticHeight,
+      automaticExpectedHeight: (innerHeight - automaticInset) * 0.8,
+      disabledAutoRestored,
       restored,
       documentRootApplied,
       documentRootHeight: documentRootRect.height,

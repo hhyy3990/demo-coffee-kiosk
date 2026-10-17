@@ -415,7 +415,7 @@ export function createAccessibilitySdk(options) {
     function effectiveViewportMode(screenId = adapter.getSnapshot().screenId) {
         if (currentProfile.viewportMode)
             return currentProfile.viewportMode;
-        if (currentProfile.easyLanguage && screenId !== "start" && typeof root.getBoundingClientRect === "function") {
+        if (currentProfile.easyLanguage && typeof root.getBoundingClientRect === "function") {
             return { mode: "bottom", heightPercent: 80 };
         }
         return null;

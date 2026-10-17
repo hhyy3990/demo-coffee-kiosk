@@ -310,7 +310,9 @@ export default function App() {
 
   const easyExplanations = useMemo(() => {
     if (!preferences.easyLanguage) return [];
-    if (stage === "start") return [];
+    if (stage === "start") return [
+      { title: "쉬운 말 안내가 켜져 있어요.", text: "업무를 선택하면 어려운 말을 쉽게 설명해 드려요." },
+    ];
     if (stage === "menu") return [
       { title: "메뉴 분류", text: "비슷한 메뉴끼리 모아 둔 곳이에요." },
       { title: "메뉴 카드", text: "메뉴 카드에는 이름과 가격, 간단한 설명이 있어요." },

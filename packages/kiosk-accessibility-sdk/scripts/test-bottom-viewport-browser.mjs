@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 const chromium = process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium";
 const url = "http://127.0.0.1:5000/packages/kiosk-accessibility-sdk/test/layout-browser-fixture.html";
-const sizes = [[320, 844], [390, 844], [1080, 1920]];
+const sizes = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
 const reports = [];
 
 for (const [index, [width, height]] of sizes.entries()) {

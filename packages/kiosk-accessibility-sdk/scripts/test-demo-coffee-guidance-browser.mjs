@@ -516,7 +516,22 @@ try {
   }
   if (!ready) throw new Error("Demo Coffee start screen did not load.");
   const startBeforeProfile = await readHomeScroll();
+  const defaultStartNotice = await read();
+  if (defaultStartNotice.exists) {
+    throw new Error(`The start notice appeared while Easy Language was disabled: ${JSON.stringify(defaultStartNotice)}`);
+  }
+  const defaultStartViewport = await evaluate(`(() => {
+    const root = document.querySelector(".kiosk");
+    return { active: root.classList.contains("a11y-bottom-viewport-enabled"),
+      height: root.style.getPropertyValue("--a11y-bottom-viewport-height") };
+  })()`);
+  if (defaultStartViewport.active || defaultStartViewport.height) {
+    throw new Error(`Easy Language-off/null start screen unexpectedly used bottom viewport: ${
+      JSON.stringify(defaultStartViewport)
+    }`);
+  }
   await click(".demo-entry-button");
+  await wait(350);
   const firstScreen = await read();
   const startAfterProfile = await readHomeScroll();
   console.log(JSON.stringify({ label: "welcome-scroll-owner", startBeforeProfile, startAfterProfile }));
@@ -529,9 +544,47 @@ try {
       Math.abs(startAfterProfile.hintBottomGap - 12) > 1)) {
     throw new Error(`Scrollable welcome screen has no SDK hint: ${JSON.stringify(startAfterProfile)}`);
   }
-  if (firstScreen.exists) throw new Error(`Easy Language unexpectedly appeared on the welcome screen: ${JSON.stringify(firstScreen)}`);
+  if (!firstScreen.exists || !firstScreen.visible ||
+      firstScreen.title !== "쉬운 말 안내가 켜져 있어요." ||
+      firstScreen.text !== "업무를 선택하면 어려운 말을 쉽게 설명해 드려요." ||
+      (firstScreen.page !== "" && firstScreen.page !== "1/1")) {
+    throw new Error(`The start screen Easy Language activation notice was incorrect: ${JSON.stringify(firstScreen)}`);
+  }
+  const startViewportBeforeFold = await evaluate(`(() => {
+    const root = document.querySelector(".kiosk");
+    return { active: root.classList.contains("a11y-bottom-viewport-enabled"),
+      height: root.style.getPropertyValue("--a11y-bottom-viewport-height") };
+  })()`);
+  await click("[data-a11y-guide-collapse]");
+  const foldedStartNotice = await read();
+  const startViewportAfterFold = await evaluate(`(() => {
+    const root = document.querySelector(".kiosk");
+    return { active: root.classList.contains("a11y-bottom-viewport-enabled"),
+      height: root.style.getPropertyValue("--a11y-bottom-viewport-height") };
+  })()`);
+  if (!foldedStartNotice.collapsed || !startViewportBeforeFold.active ||
+      !startViewportAfterFold.active || startViewportBeforeFold.height !== startViewportAfterFold.height) {
+    throw new Error(`Folding the start notice changed its bottom-viewport mode: ${
+      JSON.stringify({ foldedStartNotice, startViewportBeforeFold, startViewportAfterFold })
+    }`);
+  }
   await wait(10_250);
   const smartWelcome = await read();
+  if (!smartWelcome.visible || smartWelcome.collapsed || !smartWelcome.countdown) {
+    throw new Error(`The existing start Smart Guide did not expand the folded notice: ${JSON.stringify(smartWelcome)}`);
+  }
+  let restoredStartNotice = null;
+  if (process.env.GUIDANCE_VERIFY_RESTORE === "1") {
+    await wait(15_250);
+    restoredStartNotice = await read();
+    if (!restoredStartNotice.exists || !restoredStartNotice.collapsed ||
+        restoredStartNotice.title !== "쉬운 말 안내가 켜져 있어요." ||
+        restoredStartNotice.text !== "업무를 선택하면 어려운 말을 쉽게 설명해 드려요.") {
+      throw new Error(`The start notice did not restore its original folded state: ${
+        JSON.stringify(restoredStartNotice)
+      }`);
+    }
+  }
   const welcomeAfterGuide = await readHomeScroll();
   if (startRange > 1 && (!welcomeAfterGuide.hintVisible ||
       !welcomeAfterGuide.hintHitTargets?.visuallyOnTop ||
@@ -711,7 +764,13 @@ try {
     result: "PASS",
     viewport: `${viewportWidth}x${viewportHeight}`,
     firstScreenPanel: firstScreen.exists,
+    defaultStartNoticeAbsent: !defaultStartNotice.exists,
+    firstScreenNoticeText: firstScreen.text,
+    startViewportBeforeFold,
+    startViewportAfterFold,
+    restoredStartNotice: Boolean(restoredStartNotice),
     welcomeScrollOwner: startAfterProfile.actualOwner,
+    defaultStartViewport,
     welcomeHintVisibleBeforeAndAfterSmartGuide: startRange <= 1 ||
       (startAfterProfile.hintVisible && welcomeAfterGuide.hintVisible),
     welcomeHintCycle,

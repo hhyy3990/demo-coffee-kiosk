@@ -17,11 +17,11 @@ Observers that trigger profile or layout work must ignore SDK-owned hint/guide i
 
 The SDK's lower-viewport method accepts 60%, 70%, and 80% heights. Central QR profiles v3/v4 carry explicit `preferences.viewportMode` (`null` or `{ mode: "bottom", heightPercent: 60 | 70 | 80 }`) and the SDK applies it through the shared layout path. Normalize v1/v2 to `null`; never infer viewport mode from legacy `bottomControls`. v4 adds language and guidance-style preferences; older schemas must normalize these to inactive defaults.
 
-When easy language is enabled with no explicit viewport selection, the automatic bottom-80% layout applies only on an active business/work screen, not the welcome/start screen. Explicit 60%, 70%, and 80% choices remain authoritative.
+When easy language is enabled with no explicit viewport selection, the automatic bottom-80% layout applies on every screen, including welcome/start. Explicit 60%, 70%, and 80% choices remain authoritative; easy language off with a null viewport stays in normal layout.
 
-**Why:** The user explicitly limited the automatic layout to actual work screens so accessibility settings do not shrink the welcome surface.
+**Why:** The user approved the same automatic layout for the start screen as for work screens.
 
-**How to apply:** Derive the effective viewport from both the unchanged profile and the host's stable screen ID, recalculate at screen transitions, and keep the raw QR preference unchanged.
+**How to apply:** Derive the effective viewport from the unchanged profile, not a screen-name exclusion; recalculate at screen transitions and keep raw QR preferences unchanged. DemoCoffee's start screen uses one short host-owned Easy Language activation notice and adds no new Smart Guide copy.
 
 **Why:** Explicit viewport modes avoid reinterpreting legacy flags, while version-gating the new v4 preferences prevents stale QR profiles from unexpectedly enabling new behavior. Each host still has different fixed controls and scroll ownership.
 
