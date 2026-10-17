@@ -129,6 +129,12 @@ When fitting Easy Language pages, reserve the rendered copy container's integer 
 
 **How to apply:** Compare the exact text with measured wrapper scroll/client heights and inspect rendered lines within that wrapper. Keep page fitting and header/pager geometry stable across page changes.
 
+Scroll-guidance owner and bottom-control measurement must tolerate lightweight non-browser test DOMs without `Document`, `documentElement`, or layout methods.
+
+**Why:** The lifecycle harness intentionally uses partial DOM shims; browser-only globals or geometry assumptions can make every SDK session initialization fail before its behavior is tested.
+
+**How to apply:** Guard layout reads and treat unavailable geometry as no measurable fixed obstacle; verify real positioning separately in Chromium.
+
 When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
 
 **Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.

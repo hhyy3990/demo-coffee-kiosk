@@ -17,15 +17,18 @@ function fixedBottomObstacle(
   controls: readonly HTMLElement[] | undefined,
   owner: ScrollOwner,
 ): HTMLElement | undefined {
-  const viewportHeight = document.documentElement.clientHeight || innerHeight;
-  const ownerBottom = owner instanceof Document
+  const viewportHeight = document.documentElement?.clientHeight || globalThis.innerHeight || 0;
+  const ownerElement = owner as HTMLElement;
+  const ownerBottom = owner === document || typeof ownerElement.getBoundingClientRect !== "function"
     ? viewportHeight
     : (() => {
-      const rect = owner.getBoundingClientRect();
-      const scaleY = owner.offsetHeight > 0 ? rect.height / owner.offsetHeight : 1;
-      return rect.top + (owner.clientTop + owner.clientHeight) * scaleY;
+      const element = ownerElement;
+      const rect = element.getBoundingClientRect();
+      const scaleY = element.offsetHeight > 0 ? rect.height / element.offsetHeight : 1;
+      return rect.top + (element.clientTop + element.clientHeight) * scaleY;
     })();
   return controls?.filter((element) => {
+    if (typeof element.getBoundingClientRect !== "function") return false;
     if (!shown(element)) return false;
     const position = getComputedStyle(element).position;
     if (position !== "fixed" && position !== "sticky") return false;
