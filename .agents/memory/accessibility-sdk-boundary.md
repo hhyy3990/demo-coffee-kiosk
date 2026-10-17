@@ -123,6 +123,12 @@ For host-specific text regressions, use only the exact source supplied for that 
 
 **How to apply:** Preserve source strings verbatim in fixtures, report measured fixture results separately from host-app findings, and mark unavailable host behavior unverified.
 
+When fitting Easy Language pages, reserve the rendered copy container's integer scroll height, not only fractional text bounding-box height. Keep enough copy-box height for subpixel line rounding, and assess clipping on the actual overflow-clipped copy wrapper rather than its visible-overflow text child.
+
+**Why:** Fractional line boxes can round the inner text child's scroll height above its visible bounding box even when the outer copy wrapper has enough reserved height; fitting against only one measurement either clips copy or creates false-positive fixture failures.
+
+**How to apply:** Compare the exact text with measured wrapper scroll/client heights and inspect rendered lines within that wrapper. Keep page fitting and header/pager geometry stable across page changes.
+
 When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
 
 **Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.

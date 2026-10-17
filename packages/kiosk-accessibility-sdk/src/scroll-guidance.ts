@@ -13,6 +13,29 @@ function shown(el: HTMLElement): boolean {
     Number(s.opacity) !== 0 && r.width > 0 && r.height > 0;
 }
 
+function fixedBottomObstacle(
+  controls: readonly HTMLElement[] | undefined,
+  owner: ScrollOwner,
+): HTMLElement | undefined {
+  const viewportHeight = document.documentElement.clientHeight || innerHeight;
+  const ownerBottom = owner instanceof Document
+    ? viewportHeight
+    : (() => {
+      const rect = owner.getBoundingClientRect();
+      const scaleY = owner.offsetHeight > 0 ? rect.height / owner.offsetHeight : 1;
+      return rect.top + (owner.clientTop + owner.clientHeight) * scaleY;
+    })();
+  return controls?.filter((element) => {
+    if (!shown(element)) return false;
+    const position = getComputedStyle(element).position;
+    if (position !== "fixed" && position !== "sticky") return false;
+    const rect = element.getBoundingClientRect();
+    return rect.top < ownerBottom && rect.bottom > 0 && rect.top < viewportHeight;
+  }).sort((a, b) =>
+    a.getBoundingClientRect().top - b.getBoundingClientRect().top,
+  )[0];
+}
+
 function findVerticalOwner(
   root: HTMLElement,
   area?: HTMLElement | null,
@@ -75,6 +98,8 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
   const owner = typeof root.querySelectorAll === "function"
     ? findVerticalOwner(root, regions.scrollArea)
     : null;
+  const effectiveOwner = owner ?? root;
+  const obstacle = fixedBottomObstacle(regions.bottomControls, effectiveOwner);
   const actions = regions.primaryActions ?? [];
   for (const candidate of activeOverlay ? [] : actions) {
     const el = candidate.element;
@@ -87,19 +112,21 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
         : (document.documentElement.clientHeight || innerHeight);
     if (rect.bottom > lowerEdge + 1 &&
         ownerCanScrollBelow(owner)) {
-      const obstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
-      return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root,
-        ...(obstacle && shown(obstacle) ? { obstacle } : {}) };
+      const slotObstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
+      return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: effectiveOwner,
+        ...(obstacle ? { obstacle } : {}),
+        ...(!obstacle && slotObstacle && shown(slotObstacle) ? { obstacle: slotObstacle } : {}) };
     }
   }
 
   if (ownerCanScrollBelow(owner)) {
-    const obstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
+    const slotObstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
     return {
       kind: "vertical",
       message: DEFAULT_CONTENT_SCROLL_MESSAGE,
-      owner: owner ?? root,
-      ...(obstacle && shown(obstacle) ? { obstacle } : {}),
+      owner: effectiveOwner,
+      ...(obstacle ? { obstacle } : {}),
+      ...(!obstacle && slotObstacle && shown(slotObstacle) ? { obstacle: slotObstacle } : {}),
     };
   }
   return null;

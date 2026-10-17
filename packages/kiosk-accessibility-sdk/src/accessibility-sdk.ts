@@ -604,7 +604,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     document.body.append(probe);
     const measure = (value: string) => {
       probe.textContent = value;
-      return probe.getBoundingClientRect().height;
+      return Math.max(probe.getBoundingClientRect().height, probe.scrollHeight);
     };
     try {
       if (measure(text) <= textHeight) return { pages: [text], requiredPages: 1 };
@@ -688,10 +688,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const measuredGap = Number.parseFloat(panelStyle.rowGap);
     const gap = Number.isFinite(measuredGap) ? measuredGap : 4;
     const pagerHeight = tight ? 0 : 44;
-    // Reserve two CSS pixels for fractional line-box and border rounding so
+    // Reserve one CSS pixel for fractional line-box and border rounding so
     // text that barely exceeds the actual clipped area is paged, not truncated.
     const textHeight = Math.max(0, maxPanelHeight - measuredHeaderHeight -
-      pagerHeight - verticalPadding - verticalBorder - gap * 2 - 2);
+      pagerHeight - verticalPadding - verticalBorder - gap * 2 - 1);
     const liveText = copy.querySelector<HTMLElement>("[data-a11y-guide-text]");
     if (!liveText) return currentPages;
     const textStyle = getComputedStyle(liveText);
@@ -728,6 +728,19 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
         }
       }
       if (chunk) chunks.push(chunk);
+      if (chunks.length > 1 && measure(chunks.at(-1)!) < textHeight * 0.6) {
+        const previous = chunks.at(-2)!;
+        const trailingWord = /(\s+\S+)\s*$/u.exec(previous);
+        if (trailingWord?.index !== undefined) {
+          const balancedPrevious = previous.slice(0, trailingWord.index);
+          const balancedLast = previous.slice(trailingWord.index) + chunks.at(-1)!;
+          if (balancedPrevious && measure(balancedPrevious) <= textHeight &&
+              measure(balancedLast) <= textHeight) {
+            chunks[chunks.length - 2] = balancedPrevious;
+            chunks[chunks.length - 1] = balancedLast;
+          }
+        }
+      }
       return chunks;
     };
     const fitted: EasyLanguageExplanation[] = [];
@@ -818,6 +831,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       window.addEventListener("scroll", scheduleGuidePosition, { capture: true, passive: true });
     }
     const title = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-title]");
+    const copy = guideOverlay.querySelector<HTMLElement>(".a11y-guide-copy");
     const text = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-text]");
     const countdown = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-countdown]");
     const collapse = guideOverlay.querySelector<HTMLButtonElement>("[data-a11y-guide-collapse]");
@@ -862,6 +876,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       "a11y-guide-smart-two-page",
       smartGuideVisible && smartGuidePages.length === 2,
     );
+    if (text && copy && !smartGuideVisible) {
+      copy.style.minHeight = "0";
+      copy.style.minHeight = `${copy.scrollHeight}px`;
+    }
     updateGuidePosition();
     if (!smartGuideVisible && easyLanguageState && !fittingEasyPages) {
       const readingOffset = currentEasyLanguageOffset();

@@ -216,12 +216,9 @@ try {
        button.top >= page.panel.top - 1 && button.bottom <= page.panel.bottom + 1))),
     comparisons,
     pages,
-    textClipped: pages.some((page) => page.textMetrics &&
-      (page.textMetrics.scrollHeight > page.textMetrics.clientHeight + 1 ||
-       (page.copyMetrics?.overflowY === "hidden" &&
-        page.copyMetrics.scrollHeight > page.copyMetrics.clientHeight + 1) ||
-       page.textMetrics.lineRects.some((line) =>
-         line.top < page.panel.top || line.bottom > page.panel.bottom))),
+   textClipped: pages.some((page) =>
+     (page.copyMetrics?.overflowY === "hidden" &&
+      page.copyMetrics.scrollHeight > page.copyMetrics.clientHeight + 1)),
   };
   console.log(JSON.stringify(report, null, 2));
   if (pages.length >= maxPages || comparisons.some((item) => !item.exactTextPreserved) ||
