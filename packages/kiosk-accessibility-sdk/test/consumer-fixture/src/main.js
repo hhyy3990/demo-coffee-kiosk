@@ -91,6 +91,23 @@ const easyExplanations = [
   { title: "다음으로 이동", text: "내용이 맞으면 계속 버튼을 누릅니다." },
   { title: "도움 요청", text: "어려우면 직원에게 도움을 요청할 수 있습니다." },
 ];
+const certificateCopy = {
+  typeSelection: {
+    stepId: "certificate.type-selection",
+    explanations: [
+      { title: "주민등록표 등본", text: "주민등록표 등본은 한 세대의 구성과 주소 정보를 확인하는 주민등록 서류입니다." },
+      { title: "주민등록표 초본", text: "초본 발급은 아직 준비 중입니다. 이 데모에서는 등본만 진행할 수 있습니다." },
+    ],
+  },
+  idInput: {
+    stepId: "certificate.id-input",
+    explanations: [
+      { title: "주민등록번호", text: "주민등록번호는 주민을 구분하는 데 쓰는 13자리 번호입니다. 실제 번호는 입력하지 마세요." },
+      { title: "입력한 숫자 보호", text: "입력한 숫자는 화면에서 점으로 표시됩니다. 데모에는 임의 숫자만 사용하며, 화면을 나가거나 처음 화면으로 돌아가면 입력값이 지워집니다." },
+      { title: "입력 수정", text: "‘정정’은 마지막 숫자 하나를 지우고, ‘전체 삭제’는 입력한 숫자를 모두 지웁니다." },
+    ],
+  },
+};
 const guideStep = "host.review.continue";
 sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
 sdk.setGuideState({
@@ -618,6 +635,22 @@ window.__sdkPackageSmoke = {
       closeTextRect: measureText(".a11y-guide-close"),
       closeLabel: panel?.querySelector(".a11y-guide-close")?.getAttribute("aria-label") ?? "",
       textRect: measure("[data-a11y-guide-text]"),
+      textMetrics: (() => {
+        const element = panel?.querySelector("[data-a11y-guide-text]");
+        if (!element) return null;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rect = element.getBoundingClientRect();
+        return {
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          overflowY: getComputedStyle(element).overflowY,
+          lineHeight: getComputedStyle(element).lineHeight,
+          lineRects: [...range.getClientRects()].map(({ top, bottom, height }) => ({ top, bottom, height })),
+          top: rect.top,
+          bottom: rect.bottom,
+        };
+      })(),
       previousRect: measure("[data-a11y-guide-previous]"),
       previousTextRect: measureText("[data-a11y-guide-previous]"),
       nextRect: measure("[data-a11y-guide-next]"),
@@ -663,6 +696,33 @@ window.__sdkPackageSmoke = {
       message: { title: "스마트 길잡이", text: "계속 버튼을 눌러 진행하세요.", actionId: "host.review.continue" },
     });
     return profile;
+  },
+  setCertificateCopy(caseName, viewportChoice = "80") {
+    const selected = certificateCopy[caseName];
+    if (!selected) throw new Error(`Unknown certificate-copy fixture: ${caseName}`);
+    const viewportMode = viewportChoice === "auto"
+      ? null
+      : { mode: "bottom", heightPercent: Number(viewportChoice) };
+    profile = validateAccessibilityProfile({
+      ...profile,
+      textSize: "extraLarge",
+      buttonSize: "large",
+      contrast: "high",
+      easyLanguage: true,
+      smartGuide: true,
+      viewportMode,
+    });
+    sdk.applyProfile(profile);
+    sdk.notifyScreenChange(selected.stepId);
+    sdk.setEasyLanguageState({ stepId: selected.stepId, explanations: selected.explanations });
+    sdk.setGuideState({
+      stepId: selected.stepId,
+      enabled: true,
+      paused: true,
+      delaySeconds: 10,
+      message: { title: "다음 단계", text: "계속 버튼을 눌러 진행하세요.", actionId: "host.review.continue" },
+    });
+    return { ...selected, viewportMode };
   },
   moveToStep(step) {
     sdk.notifyScreenChange(step);

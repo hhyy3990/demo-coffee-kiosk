@@ -105,6 +105,12 @@ For a shared Easy Language/Smart Guide panel, keep its top anchor stable across 
 
 **How to apply:** Bound the panel before choosing its initial safe position, include its borders in the available text-height budget, preserve that position while content changes, and test complete text traversal, page, fold, Smart Guide, and restoration transitions with real bounding-rectangle and hit-target measurements. When splitting oversized copy, attach whitespace to neighboring text pages rather than emitting blank pages; verify that concatenating pages exactly reproduces the source. Warn host authors about long explanations, but never silently truncate them.
 
+For host-specific text regressions, use only the exact source supplied for that host. Consumer-fixture results are SDK-level evidence and must not be presented as proof of another host's behavior.
+
+**Why:** Substituting unavailable host copy would make a reproduction claim unreliable.
+
+**How to apply:** Preserve source strings verbatim in fixtures, report measured fixture results separately from host-app findings, and mark unavailable host behavior unverified.
+
 When a protected action is inside a scrollport, placement and hit testing must use its rectangle clipped by the actual overflow ancestors; fully clipped controls are not visible obstacles. Nested scroll events must be observed in capture phase, and scrolling while Smart Guide is visible must not shorten its display lifetime. Reset easy-language page and fold state on a new task step, and let the fold control reopen a safety-collapsed panel.
 
 **Why:** Actual mobile flows exposed false occlusion from offscreen child buttons, scroll-triggered guide dismissal, and stale/collapsed guidance across task steps; tight safe-area heights also need subpixel tolerance to avoid collapsing readable copy.

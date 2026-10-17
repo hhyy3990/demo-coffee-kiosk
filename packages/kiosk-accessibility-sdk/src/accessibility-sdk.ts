@@ -586,7 +586,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const measuredGap = Number.parseFloat(panelStyle.rowGap);
     const gap = Number.isFinite(measuredGap) ? measuredGap : 4;
     const pagerHeight = tight ? 0 : 44;
-    const textHeight = Math.max(tight ? 36 : 24, maxPanelHeight - header.getBoundingClientRect().height -
+    const textHeight = Math.max(0, maxPanelHeight - header.getBoundingClientRect().height -
       pagerHeight - verticalPadding - verticalBorder - gap * 2);
     const liveText = copy.querySelector<HTMLElement>("[data-a11y-guide-text]");
     if (!liveText) return currentPages;
@@ -614,13 +614,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       for (const token of tokens) {
         if (measure(token) > textHeight) {
           if (chunk) chunks.push(chunk);
+          chunks.push(token);
           chunk = "";
-          for (const char of Array.from(token)) {
-            if (chunk && measure(chunk + char) > textHeight) {
-              chunks.push(chunk);
-              chunk = char;
-            } else chunk += char;
-          }
         } else if (measure(chunk + token) <= textHeight || !chunk) {
           chunk += token;
         } else {
@@ -671,7 +666,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       if ((explanation.text.length > 240 || originalHeight > textHeight) &&
           !warnedEasyText.has(warningKey) && typeof console !== "undefined") {
         warnedEasyText.add(warningKey);
-        console.warn(`[kiosk-accessibility-sdk] 쉬운 말 설명의 렌더 높이 ${Math.ceil(originalHeight)}px, 사용 가능 높이 ${Math.floor(textHeight)}px, 한 줄 최소 높이 ${Math.ceil(measure("가"))}px입니다.${canFitOneLine ? (pieces.length > 1 ? ` 내용은 ${pieces.length}페이지로 나눴습니다.` : "") : " 한 줄도 들어가지 않아 글자 단위 페이지 분할을 중단했습니다. 패널의 실제 가용 높이를 늘려야 합니다."} 호스트에서 문장별 설명으로 전달하는 것을 권장합니다.`);
+        const oversizedToken = sentences.some((sentence) =>
+          (sentence.match(/\s+|[^\s]+/gu) ?? [sentence]).some((token) =>
+            !/^\s+$/u.test(token) && measure(token) > textHeight),
+        );
+        console.warn(`[kiosk-accessibility-sdk] 쉬운 말 설명의 렌더 높이 ${Math.ceil(originalHeight)}px, 사용 가능 높이 ${Math.floor(textHeight)}px, 한 줄 최소 높이 ${Math.ceil(measure("가"))}px입니다.${!canFitOneLine ? " 한 줄도 들어가지 않아 글자 단위 페이지 분할을 중단했습니다." : oversizedToken ? " 단어가 사용 가능 높이를 넘어 단어를 분할하지 않았습니다." : pieces.length > 1 ? ` 내용은 ${pieces.length}페이지로 나눴습니다.` : ""} 호스트에서 문장별 설명으로 전달하는 것을 권장합니다.`);
       }
       fitted.push(...pieces.map((text) => ({ title: explanation.title, text })));
     }

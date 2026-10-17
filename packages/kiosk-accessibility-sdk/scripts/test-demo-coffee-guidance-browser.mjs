@@ -208,6 +208,56 @@ try {
       clickPassesThrough: initial.hintHitTargets.clickPassesThrough,
     };
   };
+  const readMenuHintPlacement = () => evaluate(`(() => {
+    const owner = document.querySelector(".a11y-bottom-viewport-scroll-area") ||
+      document.querySelector('[data-a11y-slot="scroll-content"]') ||
+      document.querySelector(".shell");
+    const hint = document.querySelector(".a11y-additional-menu-hint");
+    const cart = document.querySelector(".cart-bar");
+    const hintRect = hint?.getBoundingClientRect();
+    const cartRect = cart?.getBoundingClientRect();
+    const ownerRect = owner?.getBoundingClientRect();
+    const scale = owner && owner.offsetHeight > 0 ? ownerRect.height / owner.offsetHeight : 1;
+    const workBottom = owner && ownerRect
+      ? ownerRect.top + (owner.clientTop + owner.clientHeight) * scale : innerHeight;
+    const cartVisible = Boolean(cart && getComputedStyle(cart).display !== "none" &&
+      getComputedStyle(cart).visibility !== "hidden" && cartRect.width > 0 && cartRect.height > 0);
+    return {
+      ownerClass: owner?.className ?? "",
+      ownerRange: owner ? owner.scrollHeight - owner.clientHeight : -1,
+      ownerScrollTop: owner?.scrollTop ?? -1,
+      windowScrollY: window.scrollY,
+      documentScrollTop: document.scrollingElement?.scrollTop ?? -1,
+      hintVisible: Boolean(hint && hint.getAttribute("aria-hidden") !== "true" &&
+        getComputedStyle(hint).display !== "none" && getComputedStyle(hint).visibility !== "hidden"),
+      hintTop: hintRect?.top ?? null,
+      hintBottom: hintRect?.bottom ?? null,
+      workBottom,
+      cartVisible,
+      cartTop: cartVisible ? cartRect.top : null,
+      gapToAnchor: hintRect ? (cartVisible ? cartRect.top : workBottom) - hintRect.bottom : null,
+      clickPassesThrough: Boolean(hint && getComputedStyle(hint).pointerEvents === "none"),
+    };
+  })()`);
+  const assertMenuHintPlacement = async (label, cartExpected, previous = null) => {
+    const state = await readMenuHintPlacement();
+    console.log(JSON.stringify({ label, menuHintPlacement: state }));
+    const gapOk = Math.abs((state.gapToAnchor ?? NaN) - 12) <= 1;
+    const previousAnchor = cartExpected ? previous?.cartTop : previous?.workBottom;
+    const currentAnchor = cartExpected ? state.cartTop : state.workBottom;
+    const stable = !previous || Math.abs(
+      ((state.hintTop ?? NaN) - previous.hintTop) -
+      ((currentAnchor ?? NaN) - (previousAnchor ?? NaN)),
+    ) <= 1;
+    if (!state.hintVisible || state.cartVisible !== cartExpected ||
+        state.ownerRange <= 1 || !gapOk || !state.clickPassesThrough || !stable ||
+        (state.ownerClass.includes("a11y-bottom-viewport") && Math.abs(state.windowScrollY) > 1)) {
+      throw new Error(`${label}: menu hint placement failed: ${
+        JSON.stringify({ state, previous, gapOk, stable })
+      }`);
+    }
+    return state;
+  };
   const read = () => evaluate(`(() => {
     const panel = document.querySelector(".a11y-guide-toast");
     if (!panel) return { exists: false, visible: false };
@@ -494,6 +544,9 @@ try {
   const welcomeHintCycle = await scrollWelcomeHintCycle();
   console.log(JSON.stringify({ label: "welcome-scroll-hint-cycle", ...welcomeHintCycle }));
   await click("#start-store");
+  const emptyMenuHint = viewportWidth <= 600
+    ? await assertMenuHintPlacement("empty-cart-menu-hint", false)
+    : null;
   const menuNavBefore = await evaluate(`(() => {
     const shell = document.querySelector('[data-a11y-slot="scroll-content"]');
     const rail = document.querySelector("#category-nav-list");
@@ -543,6 +596,9 @@ try {
 
   await click("#item-add");
   await wait(500);
+  const cartBarHint = viewportWidth <= 600
+    ? await assertMenuHintPlacement("cart-bar-menu-hint", true)
+    : null;
   if (viewportWidth <= 600) {
     const beforeMenuLayer = await evaluate(`(() => {
       const nav = document.querySelector(".category-nav-controls");
@@ -566,10 +622,20 @@ try {
       return { navTop: nav.getBoundingClientRect().top, cartTop: cart.getBoundingClientRect().top,
         orderButtonHit: hit === button || button.contains(hit) };
     })()`);
+    await wait(180);
+    const cartBarHintAfterScroll = await assertMenuHintPlacement(
+      "cart-bar-menu-hint-after-scroll", true, cartBarHint,
+    );
     if (beforeMenuLayer.navPosition === "sticky" || beforeMenuLayer.navZ !== "1" ||
       beforeMenuLayer.cartPosition !== "sticky" || Number(beforeMenuLayer.cartZ) <= Number(beforeMenuLayer.navZ) ||
       !layeredMenu.orderButtonHit) {
       throw new Error(`Category rail/order bar stacking regressed: ${JSON.stringify({ beforeMenuLayer, layeredMenu })}`);
+    }
+    if (Math.abs(
+      (cartBarHintAfterScroll.hintTop - cartBarHint.hintTop) -
+      (cartBarHintAfterScroll.cartTop - cartBarHint.cartTop),
+    ) > 1) {
+      throw new Error("Scroll moved the menu hint independently of the sticky cart bar.");
     }
   }
   const menuScrollPoint = await evaluate(`(() => {
@@ -636,6 +702,11 @@ try {
     await wait(100);
   }
   if (!returnedHome) throw new Error("The complete demo order did not return to the welcome screen.");
+  await click(".demo-entry-button");
+  await click("#start-store");
+  const emptyMenuHintAfterReset = viewportWidth <= 600
+    ? await assertMenuHintPlacement("empty-cart-menu-hint-after-reset", false, emptyMenuHint)
+    : null;
   console.log(JSON.stringify({
     result: "PASS",
     viewport: `${viewportWidth}x${viewportHeight}`,
@@ -644,6 +715,9 @@ try {
     welcomeHintVisibleBeforeAndAfterSmartGuide: startRange <= 1 ||
       (startAfterProfile.hintVisible && welcomeAfterGuide.hintVisible),
     welcomeHintCycle,
+    emptyMenuHint,
+    cartBarHint,
+    emptyMenuHintAfterReset,
     optionsPanelImmediatelyVisible: optionEasy.visible,
     cartPanelImmediatelyVisible: cartReturn.visible,
     paymentPanelImmediatelyVisible: payment.visible,
