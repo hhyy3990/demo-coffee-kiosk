@@ -472,7 +472,7 @@ export function createAccessibilitySdk(options) {
             (Number.parseFloat(panelStyle.borderBottomWidth) || 0);
         const gap = Number.parseFloat(panelStyle.rowGap) || 0;
         const textHeight = Math.max(0, maxHeight - header.getBoundingClientRect().height -
-            padding - borders - gap - 2);
+            padding - borders - gap);
         const textStyle = getComputedStyle(liveText);
         const probe = document.createElement("span");
         probe.className = "a11y-guide-copy";
@@ -767,6 +767,7 @@ export function createAccessibilitySdk(options) {
         }
         guideOverlay.classList.toggle("a11y-guide-collapsed", guidanceCollapsed || guidanceSafetyCollapsed);
         guideOverlay.classList.toggle("a11y-guide-smart", smartGuideVisible);
+        guideOverlay.classList.toggle("a11y-guide-smart-two-page", smartGuideVisible && smartGuidePages.length === 2);
         updateGuidePosition();
         if (!smartGuideVisible && easyLanguageState && !fittingEasyPages) {
             const readingOffset = currentEasyLanguageOffset();

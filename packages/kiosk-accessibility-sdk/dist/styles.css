@@ -429,6 +429,16 @@
 .kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-header {
   gap: 2px;
 }
+.kiosk .a11y-guide-toast.a11y-guide-smart.a11y-guide-tight .a11y-guide-header {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+}
+.kiosk .a11y-guide-toast.a11y-guide-smart-two-page.a11y-guide-tight .a11y-guide-copy {
+  min-height: 52px;
+}
 .kiosk .a11y-guide-toast.a11y-guide-tight .a11y-guide-pager {
   flex: none;
   width: auto;

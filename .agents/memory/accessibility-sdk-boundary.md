@@ -93,6 +93,12 @@ When reducing shared guidance-panel height, compress icon and control chrome rat
 
 **How to apply:** Prefer a compact single-line header, preserve inherited profile-scaled body text and safe wrapping, and measure actual control rectangles at 320px widths in both normal and bottom-viewport modes.
 
+At tight Smart Guide heights, calculate the copy budget from measured header, padding, border, and gap sizes without an arbitrary safety inset; a couple of pixels can falsely reject copy that fits in two lines. Check the clipped copy container's own scroll/client dimensions, since a nested text span can differ by one pixel from integer rounding.
+
+**Why:** The supplied 360×667 kiosk case had just enough height for the exact two-page wording once the header was reduced to the 44px touch-target size; a fixed inset made the SDK suppress the guide.
+
+**How to apply:** Keep touch targets at least 44×44 CSS px, preserve profile-scaled text, and test measured container geometry and exact page concatenation at short mobile viewports.
+
 The shared SDK owns only the completion countdown and its state notifications. The kiosk host decides when work is truly complete, owns all business data, and supplies the return-home callback; start the timer only after receipts, printing, or other final host work has finished.
 
 **Why:** A generic accessibility SDK must not infer that a payment, application, or clinical workflow has completed, and its session reset cannot clear host-owned data by itself.

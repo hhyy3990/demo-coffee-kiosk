@@ -87,18 +87,20 @@ try {
   await send("Page.navigate", { url: baseUrl });
   await poll("Boolean(window.__sdkPackageSmoke?.startGuide)", Boolean);
 
-  const longText = "결제 화면에서 선택한 서비스와 금액을 확인하고 결제 방법을 선택한 뒤 화면의 안내에 따라 결제를 진행해 주세요. 확인해.";
+  const longText = "증명서 종류, 발급 부수, 표시 항목과 수수료를 확인해 주세요. 내용이 맞으면 결제 방법을 눌러 가상 결제를 진행하세요.";
   if ([...longText].length !== 67) {
-    throw new Error(`Expected the synthetic payment fixture length to remain 67; got ${[...longText].length}.`);
+    throw new Error(`Expected the supplied payment guide length to remain 67; got ${[...longText].length}.`);
   }
   const run = async (slow, text, expectedPages, totalMs, halfMs = 0, restoreEasy = false) => {
     await evaluate(`window.__sdkPackageSmoke.setTestProfile({
       textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
       viewportMode:{mode:"bottom",heightPercent:80}
     })`);
+    let restoreBefore = null;
     if (restoreEasy) {
       await evaluate(`document.querySelector("[data-a11y-guide-next]").click();
         document.querySelector("[data-a11y-guide-collapse]").click()`);
+      restoreBefore = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     }
     const started = await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},0,${JSON.stringify(text)})`);
     await wait(350);
@@ -106,6 +108,51 @@ try {
       item.title === "스마트 길잡이");
     const firstText = state.text;
     const first = state;
+    const firstGeometry = await evaluate(`(() => {
+      const panel = document.querySelector(".a11y-guide-toast");
+      const copy = panel.querySelector(".a11y-guide-copy");
+      const rect = (selector) => {
+        const box = panel.querySelector(selector).getBoundingClientRect();
+        return { left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+          width: box.width, height: box.height };
+      };
+      const style = getComputedStyle(panel);
+      return {
+        panelMaxHeight: panel.style.maxHeight,
+        panelTop: panel.getBoundingClientRect().top,
+        headerHeight: rect(".a11y-guide-header").height,
+        headerGap: getComputedStyle(panel.querySelector(".a11y-guide-header")).gap,
+        panelPadding: style.padding,
+        textAvailableHeight: rect(".a11y-guide-copy").height,
+        copyScrollHeight: copy.scrollHeight,
+        copyClientHeight: copy.clientHeight,
+        textScrollHeight: panel.querySelector("[data-a11y-guide-text]").scrollHeight,
+        textClientHeight: panel.querySelector("[data-a11y-guide-text]").clientHeight,
+        textLineHeight: getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).lineHeight,
+        close: rect(".a11y-guide-close"),
+        collapse: rect("[data-a11y-guide-collapse]"),
+        title: rect("[data-a11y-guide-title]"),
+        countdown: rect("[data-a11y-guide-countdown]"),
+        workAreaHeight: document.querySelector(".a11y-bottom-viewport-scroll-area")?.getBoundingClientRect().height ?? null,
+      };
+    })()`);
+    if (expectedPages === 2) {
+      if (Math.abs(first.panelRect.top - 8) > 1 ||
+          firstGeometry.headerHeight > 44.1 ||
+          firstGeometry.close.width < 44 || firstGeometry.close.height < 44 ||
+          firstGeometry.collapse.width < 44 || firstGeometry.collapse.height < 44 ||
+          firstGeometry.copyScrollHeight > firstGeometry.copyClientHeight ||
+          firstGeometry.textScrollHeight > firstGeometry.textClientHeight + 1) {
+        throw new Error(`360/320 Smart Guide geometry failed: ${JSON.stringify(firstGeometry)}`);
+      }
+      for (const [a, b] of [[firstGeometry.title, firstGeometry.countdown],
+        [firstGeometry.title, firstGeometry.close], [firstGeometry.title, firstGeometry.collapse],
+        [firstGeometry.countdown, firstGeometry.close]]) {
+        if (Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1) {
+          throw new Error(`Smart Guide header items overlap: ${JSON.stringify({ a, b, firstGeometry })}`);
+        }
+      }
+    }
     if (expectedPages === 2) {
       state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
         item.title === "스마트 길잡이" && item.text !== firstText, halfMs + 1200);
@@ -135,10 +182,11 @@ try {
       collapsed: document.querySelector(".a11y-guide-toast")?.classList.contains("a11y-guide-collapsed"),
       page: document.querySelector("[data-a11y-guide-page]")?.textContent
     })`) : null;
-    if (restoreEasy && (!restored.collapsed || !restored.page.startsWith("2/"))) {
-      throw new Error(`Easy Language page/fold state did not restore: ${JSON.stringify(restored)}`);
+    if (restoreEasy && (restored.collapsed !== restoreBefore.collapsed || restored.page !== restoreBefore.page)) {
+      throw new Error(`Easy Language page/fold state did not restore: ${JSON.stringify({ before: restoreBefore, after: restored })}`);
     }
-    return { slow, expectedPages, elapsed: Math.round(elapsed), firstText, secondText: state.text, restored };
+    return { slow, expectedPages, elapsed: Math.round(elapsed), firstText, secondText: state.text,
+      firstGeometry, restored: restoreEasy ? { before: restoreBefore, after: restored } : null };
   };
 
   const layoutMatrix = [];
@@ -194,7 +242,7 @@ try {
 
   const results = [];
   results.push(await run(false, "다음 버튼을 눌러 진행하세요.", 1, 10_000));
-  results.push(await run(false, longText, 2, 15_000, 7_500, true));
+  results.push(await run(false, longText, 2, 15_000, 7_500));
   results.push(await run(true, "다음 버튼을 눌러 진행하세요.", 1, 20_000));
   results.push(await run(true, longText, 2, 20_000, 10_000));
   const guideDelays = [];
@@ -211,8 +259,13 @@ try {
     await evaluate('document.querySelector(".a11y-guide-close").click()');
     guideDelays.push({ seconds, elapsed: Math.round(elapsed) });
   }
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 360, height: 667, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 360, screenHeight: 667,
+  });
+  results.push(await run(false, longText, 2, 15_000, 7_500, true));
   console.log(JSON.stringify({
-    result: "PASS", syntheticTextLength: [...longText].length, results,
+    result: "PASS", suppliedTextLength: [...longText].length, results,
     layoutCases: layoutMatrix.length, oversizedGuidePreservedBySuppression: tooLongFallback.title !== "스마트 길잡이",
     guideDelays,
   }, null, 2));
