@@ -37,7 +37,7 @@ document.querySelector("#quantity-plus").addEventListener("click", () => {
 
 const adapter = {
   getSnapshot: () => ({
-    screenId: `host.${hostState.step}`,
+    screenId: hostState.step === "start" ? "start" : `host.${hostState.step}`,
     state: { step: hostState.step, actionCount: hostState.actionCount },
   }),
   getActions: () => [{
@@ -92,6 +92,12 @@ const easyExplanations = [
   { title: "도움 요청", text: "어려우면 직원에게 도움을 요청할 수 있습니다." },
 ];
 const certificateCopy = {
+  startScreen: {
+    stepId: "start",
+    explanations: [
+      { title: "쉬운 말 안내가 켜져 있어요.", text: "업무를 선택하면 어려운 말을 쉽게 설명해 드려요." },
+    ],
+  },
   typeSelection: {
     stepId: "certificate.type-selection",
     explanations: [
@@ -700,6 +706,7 @@ window.__sdkPackageSmoke = {
   setCertificateCopy(caseName, viewportChoice = "80") {
     const selected = certificateCopy[caseName];
     if (!selected) throw new Error(`Unknown certificate-copy fixture: ${caseName}`);
+    if (selected.stepId === "start") hostState.step = "start";
     const viewportMode = viewportChoice === "auto"
       ? null
       : { mode: "bottom", heightPercent: Number(viewportChoice) };

@@ -23,6 +23,12 @@ When easy language is enabled with no explicit viewport selection, the automatic
 
 **How to apply:** Derive the effective viewport from the unchanged profile, not a screen-name exclusion; recalculate at screen transitions and keep raw QR preferences unchanged. DemoCoffee's start screen uses one short host-owned Easy Language activation notice and adds no new Smart Guide copy.
 
+For Easy Language pagination in short viewports, measure the header with the pager visible even when a one-page state hides it; pager visibility changes header height and can otherwise make page fitting oscillate. Keep the fitting guard active during the one redraw, and use the full safe band after the fixed-control clearance is accounted for.
+
+**Why:** At 360×667, the hidden/visible pager changed available copy height around the line-wrap boundary, causing synchronous render recursion and fractional text clipping.
+
+**How to apply:** Validate identical copy at 320×844, 360×667, 390×844, and 1080×1920 in automatic and explicit 80% modes; assert exact text, no clipping, and stable panel top across page changes.
+
 **Why:** Explicit viewport modes avoid reinterpreting legacy flags, while version-gating the new v4 preferences prevents stale QR profiles from unexpectedly enabling new behavior. Each host still has different fixed controls and scroll ownership.
 
 **How to apply:** Route validated v3/v4 profile settings through the SDK's common viewport controller; preserve v1-v3 behavior and keep v4-only preferences inert for older schemas. Restore SDK-owned classes and inline styles on `endSession()`. Verify host scroll ownership, fixed/modal overlays, and guidance placement on each kiosk. Transform/contain ancestors and unusual nested scroll layouts still require host-specific testing.

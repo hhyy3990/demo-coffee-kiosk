@@ -201,9 +201,9 @@ function positionGuide(
     overlay.style.top = `${safeTop}px`;
     overlay.style.bottom = "auto";
     overlay.style.width = `min(500px, calc(100vw - 24px))`;
-    // Leave a small subpixel tolerance so a panel at the exact safe-area
-    // height does not fail placement from fractional font metrics.
-    overlay.style.maxHeight = `${Math.max(0, availableHeight - 2)}px`;
+    // safeBottom already leaves an 8px clearance to fixed controls; use the
+    // full safe band so fractional text line boxes are not clipped by a second inset.
+    overlay.style.maxHeight = `${Math.max(0, availableHeight)}px`;
     overlay.style.overflow = "hidden";
     overlay.style.visibility = "hidden";
     const height = overlay.getBoundingClientRect().height;
@@ -578,6 +578,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     guideOverlay.classList.toggle("a11y-guide-tight", tight);
     if (tight && pager.parentElement !== header) header.append(pager);
     else if (!tight && pager.parentElement !== guideOverlay) copy.after(pager);
+    const pagerWasHidden = pager.hidden;
+    if (tight) pager.hidden = false;
+    const measuredHeaderHeight = header.getBoundingClientRect().height;
+    pager.hidden = pagerWasHidden;
     const panelStyle = getComputedStyle(guideOverlay);
     const verticalPadding = (Number.parseFloat(panelStyle.paddingTop) || 0) +
       (Number.parseFloat(panelStyle.paddingBottom) || 0);
@@ -586,8 +590,10 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const measuredGap = Number.parseFloat(panelStyle.rowGap);
     const gap = Number.isFinite(measuredGap) ? measuredGap : 4;
     const pagerHeight = tight ? 0 : 44;
-    const textHeight = Math.max(0, maxPanelHeight - header.getBoundingClientRect().height -
-      pagerHeight - verticalPadding - verticalBorder - gap * 2);
+    // Reserve two CSS pixels for fractional line-box and border rounding so
+    // text that barely exceeds the actual clipped area is paged, not truncated.
+    const textHeight = Math.max(0, maxPanelHeight - measuredHeaderHeight -
+      pagerHeight - verticalPadding - verticalBorder - gap * 2 - 2);
     const liveText = copy.querySelector<HTMLElement>("[data-a11y-guide-text]");
     if (!liveText) return currentPages;
     const textStyle = getComputedStyle(liveText);
@@ -758,17 +764,20 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     if (!smartGuideVisible && easyLanguageState && !fittingEasyPages) {
       const readingOffset = currentEasyLanguageOffset();
       fittingEasyPages = true;
-      const pages = fitEasyLanguagePages();
-      const changed = pages.length !== easyLanguageState.explanations.length ||
-        pages.some((page, index) => page.text !== easyLanguageState?.explanations[index]?.text);
-      if (changed) {
-        easyLanguageState = { ...easyLanguageState, explanations: pages };
-        easyLanguageIndex = findEasyLanguagePageAtOffset(pages, readingOffset);
+      try {
+        const pages = fitEasyLanguagePages();
+        const changed = pages.length !== easyLanguageState.explanations.length ||
+          pages.some((page, index) => page.text !== easyLanguageState?.explanations[index]?.text);
+        if (changed) {
+          easyLanguageState = { ...easyLanguageState, explanations: pages };
+          easyLanguageIndex = findEasyLanguagePageAtOffset(pages, readingOffset);
+          // The pager's measured reservation is independent of its current visibility.
+          // Keep fitting guarded while redrawing the fitted copy to avoid recursive refits.
+          renderGuidancePanel();
+        }
+      } finally {
         fittingEasyPages = false;
-        renderGuidancePanel();
-        return;
       }
-      fittingEasyPages = false;
     }
   }
 
