@@ -672,7 +672,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     if (!copy || !header || !pager || copy.clientWidth < 40) return currentPages;
     const maxPanelHeight = Number.parseFloat(guideOverlay.style.maxHeight) ||
       Math.max(120, innerHeight - 24);
-    const tight = maxPanelHeight < 136;
+    // Reclaim the separate pager row while the remaining body area cannot
+    // hold two readable lines; this includes the explicit 70% short-mobile case.
+    const tight = maxPanelHeight < 160;
     guideOverlay.classList.toggle("a11y-guide-tight", tight);
     if (tight && pager.parentElement !== header) header.append(pager);
     else if (!tight && pager.parentElement !== guideOverlay) copy.after(pager);

@@ -116,6 +116,7 @@ try {
       return {
         page: state.page, pageCount: state.pageCount, title: state.title, text: state.text,
         panel: state.panelRect, header: state.headerRect, copy: rect(".a11y-guide-copy"),
+         titleRect: state.titleRect, collapse: rect("[data-a11y-guide-collapse]"),
         copyMetrics: (() => {
           const element = panel?.querySelector(".a11y-guide-copy");
           if (!element) return null;
@@ -171,6 +172,45 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 320));
   }
 
+  let interactionTest = null;
+  if (width === 360 && height === 667 && viewportChoice === "70" && caseName === "typeSelection") {
+    const intersects = (a, b) => a && b && a.width > 0 && b.width > 0 &&
+      Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1 &&
+      Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1;
+    const headerOverlaps = [
+      ["title", "pager"], ["title", "collapse"], ["pager", "collapse"],
+    ].filter(([first, second]) => intersects(pages[0]?.[first], pages[0]?.[second]));
+    if (headerOverlaps.length) throw new Error(`70% header controls overlap: ${JSON.stringify(headerOverlaps)}`);
+    const clickControl = async (selector) => {
+      await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+      await new Promise((resolve) => setTimeout(resolve, 320));
+      return evaluate("window.__sdkPackageSmoke.readGuidance()");
+    };
+    const previous = await clickControl("[data-a11y-guide-previous]");
+    if (previous.page !== "1/2" || previous.text !== pages[0]?.text) {
+      throw new Error(`Previous did not restore page 1: ${JSON.stringify(previous)}`);
+    }
+    const next = await clickControl("[data-a11y-guide-next]");
+    if (next.page !== "2/2" || next.text !== pages.at(-1)?.text) {
+      throw new Error(`Next did not restore page 2: ${JSON.stringify(next)}`);
+    }
+    const collapsed = await clickControl("[data-a11y-guide-collapse]");
+    const collapsedState = collapsed.collapsed;
+    const expanded = await clickControl("[data-a11y-guide-collapse]");
+    if (!collapsedState || expanded.collapsed || expanded.page !== "2/2" ||
+        expanded.text !== pages.at(-1)?.text) {
+      throw new Error(`Collapse/expand did not preserve page state: ${JSON.stringify({ collapsed, expanded })}`);
+    }
+    interactionTest = {
+      previousPage: previous.page,
+      nextPage: next.page,
+      collapsed: collapsedState,
+      expanded: !expanded.collapsed,
+      pageAfterExpand: expanded.page,
+      headerOverlaps,
+    };
+  }
+
   const grouped = new Map();
   for (const page of pages) {
     const group = grouped.get(page.title) ?? [];
@@ -203,6 +243,8 @@ try {
     effectiveViewportActive: pages[0]?.effectiveViewportActive ?? false,
     effectiveViewportHeight: pages[0]?.effectiveViewportHeight ?? "",
     pageCount: pages.length,
+    stableReportedPageCount: new Set(pages.map((page) => page.pageCount)).size <= 1,
+    interactionTest,
     pageTopRange: pages.length ? [
       Math.min(...pages.map((page) => page.panel.top)),
       Math.max(...pages.map((page) => page.panel.top)),
@@ -223,6 +265,7 @@ try {
   console.log(JSON.stringify(report, null, 2));
   if (pages.length >= maxPages || comparisons.some((item) => !item.exactTextPreserved) ||
       report.textClipped || report.oneCharacterPages.length || !report.controlsFit ||
+       !report.stableReportedPageCount ||
       report.pageTopRange[1] - report.pageTopRange[0] > 1) {
     process.exitCode = 1;
   }

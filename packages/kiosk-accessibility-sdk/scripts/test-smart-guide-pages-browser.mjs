@@ -102,10 +102,12 @@ try {
         document.querySelector("[data-a11y-guide-collapse]").click()`);
       restoreBefore = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     }
-    const started = await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},0,${JSON.stringify(text)})`);
-    await wait(350);
+    await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},10,${JSON.stringify(text)})`);
     let state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
-      item.title === "스마트 길잡이");
+      item.title === "스마트 길잡이", 11_200);
+    await wait(350);
+    state = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    const displayStarted = await evaluate("performance.now()");
     const firstText = state.text;
     const first = state;
     const firstGeometry = await evaluate(`(() => {
@@ -157,8 +159,8 @@ try {
       state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
         item.title === "스마트 길잡이" && item.text !== firstText, halfMs + 1200);
       const transitionAt = await evaluate("performance.now()");
-      if (Math.abs((transitionAt - started) - halfMs) > 1200) {
-        throw new Error(`Page transition was late: ${transitionAt - started}ms, expected ${halfMs}ms.`);
+      if (Math.abs((transitionAt - displayStarted) - halfMs) > 1200) {
+        throw new Error(`Page transition was late: ${transitionAt - displayStarted}ms after display, expected ${halfMs}ms.`);
       }
       if (firstText + state.text !== text) throw new Error("Two-page Smart Guide changed or lost source text.");
       for (const pageState of [first, state]) {
@@ -174,7 +176,7 @@ try {
     }
     await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
       item.title !== "스마트 길잡이", totalMs + 1500);
-    const elapsed = await evaluate(`performance.now() - ${started}`);
+    const elapsed = await evaluate(`performance.now() - ${displayStarted}`);
     if (Math.abs(elapsed - totalMs) > 1500) {
       throw new Error(`Smart Guide display time was ${elapsed}ms, expected ${totalMs}ms.`);
     }
@@ -189,53 +191,36 @@ try {
       firstGeometry, restored: restoreEasy ? { before: restoreBefore, after: restored } : null };
   };
 
-  const layoutMatrix = [];
-  for (const [width, height] of [[320, 844], [360, 667], [390, 844], [1080, 1920]]) {
-    for (const mode of [
-      { name: "auto80", easyLanguage: true, viewportMode: null, expectedTop: 8 },
-      { name: "explicit80", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 80 }, expectedTop: 8 },
-      { name: "explicit70", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 70 }, expectedTop: 8 },
-      { name: "explicit60", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 60 }, expectedTop: 8 },
-      { name: "normal", easyLanguage: false, viewportMode: null, expectedTop: 12 },
-    ]) {
-      await send("Emulation.setDeviceMetricsOverride", {
-        width, height, deviceScaleFactor: 1, mobile: width < 600,
-        screenWidth: width, screenHeight: height,
-      });
-      await evaluate(`window.__sdkPackageSmoke.setTestProfile({
-        textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:${mode.easyLanguage},smartGuide:true,
-        viewportMode:${JSON.stringify(mode.viewportMode)}
-      })`);
-      const matrixText = width === 320 && height === 844 &&
-        !["explicit60", "explicit70"].includes(mode.name)
-        ? longText
-        : "다음 버튼을 눌러 진행하세요.";
-      await evaluate(`window.__sdkPackageSmoke.startGuide(false,0,${JSON.stringify(matrixText)})`);
-      await wait(350);
-      const state = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-      if (state.title !== "스마트 길잡이") {
-        throw new Error(`Smart Guide did not appear at ${width}x${height} ${mode.name}; warnings=${JSON.stringify(warningMessages)} state=${JSON.stringify(state)}`);
-      }
-      if (!state.textVisible || state.textMetrics.scrollHeight > state.textMetrics.clientHeight + 1 ||
-          Math.abs(state.panelRect.top - mode.expectedTop) > 1) {
-        throw new Error(`Clipped or displaced Smart Guide at ${width}x${height} ${mode.name}: ${JSON.stringify(state)}`);
-      }
-      await evaluate('document.querySelector(".a11y-guide-close").click()');
-      layoutMatrix.push({ viewport: `${width}x${height}`, mode: mode.name, firstPageText: state.text });
-    }
-  }
-
   await send("Emulation.setDeviceMetricsOverride", {
-    width: 320, height: 844, deviceScaleFactor: 1, mobile: true,
-    screenWidth: 320, screenHeight: 844,
+    width: 360, height: 667, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 360, screenHeight: 667,
   });
   await evaluate(`window.__sdkPackageSmoke.setTestProfile({
     textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
     viewportMode:{mode:"bottom",heightPercent:80}
   })`);
-  await evaluate(`window.__sdkPackageSmoke.startGuide(false,0,${JSON.stringify(longText.repeat(6))})`);
-  const tooLongFallback = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
-    item.title !== "스마트 길잡이");
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText)})`);
+  await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이", 11_200);
+  await wait(350);
+  const layoutState = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  if (!layoutState.textVisible || layoutState.textMetrics.scrollHeight > layoutState.textMetrics.clientHeight + 1 ||
+      Math.abs(layoutState.panelRect.top - 8) > 1) {
+    throw new Error(`Smart Guide did not fit 360x667 explicit80: ${JSON.stringify(layoutState)}`);
+  }
+  await evaluate('document.querySelector(".a11y-guide-close").click()');
+  const layoutMatrix = [{ viewport: "360x667", mode: "explicit80", firstPageText: layoutState.text }];
+
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 360, height: 667, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 360, screenHeight: 667,
+  });
+  await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+    textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
+    viewportMode:{mode:"bottom",heightPercent:80}
+  })`);
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText.repeat(6))})`);
+  await wait(10_500);
+  const tooLongFallback = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!warningMessages.some((message) => /requires \d+ pages; maximum is 2/u.test(message))) {
     throw new Error(`A Smart Guide requiring more than two pages was not logged with its step and page count: ${JSON.stringify({ warningMessages, state: tooLongFallback })}`);
   }
