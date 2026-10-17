@@ -578,11 +578,10 @@ try {
   }
   const defaultDelayMs = await evaluate(`performance.now() - ${delayStarted}`);
   if (defaultGuide?.title !== "스마트 길잡이" || defaultDelayMs < 9_500 || defaultDelayMs > 11_500 ||
-    !defaultGuide.collapsed || defaultGuide.page !== "" || !defaultGuide.pagerHidden ||
+    defaultGuide.collapsed || defaultGuide.page !== "" || !defaultGuide.pagerHidden ||
     !defaultGuide.previousHidden || !defaultGuide.nextHidden || !defaultGuide.countdown.includes("10")) {
     throw new Error(`Real 10-second delay/guide start failed (${defaultDelayMs}ms): ${JSON.stringify(defaultGuide)}`);
   }
-  await pointerClick("[data-a11y-guide-collapse]");
   const expandedSmartGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (expandedSmartGuide.collapsed || expandedSmartGuide.title !== "스마트 길잡이" ||
     expandedSmartGuide.page !== "" || !expandedSmartGuide.pagerHidden ||
@@ -615,7 +614,7 @@ try {
   }
   const slowDelayMs = await evaluate(`performance.now() - ${slowDelayStarted}`);
   if (slowGuide?.title !== "스마트 길잡이" || slowDelayMs < 9_500 || slowDelayMs > 11_500 ||
-    !slowGuide.collapsed || slowGuide.page !== "" || !slowGuide.pagerHidden ||
+    slowGuide.collapsed || slowGuide.page !== "" || !slowGuide.pagerHidden ||
     !slowGuide.previousHidden || !slowGuide.nextHidden || !slowGuide.countdown.includes("15")) {
     throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
   }
@@ -626,7 +625,7 @@ try {
     await pointerClick("#quantity-plus");
     await pointerClick("#quantity-minus");
   }
-  await evaluate("window.scrollBy(0, 240)");
+  await evaluate("window.__sdkPackageSmoke.scrollTestOwner(240)");
   await wait(200);
   const duringInteractions = await evaluate("window.__sdkPackageSmoke.readInteractionState()");
   if (!duringInteractions.guide.visible || duringInteractions.guide.title !== "스마트 길잡이" ||
@@ -732,6 +731,7 @@ try {
     });
     for (const percent of viewportModes) {
       for (const variant of profiles) {
+        const effectivePercent = percent ?? (variant.easyLanguage ? 80 : null);
         const viewportMode = percent === null ? null : { mode: "bottom", heightPercent: percent };
         await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({ ...variant, viewportMode })})`);
         await new Promise((resolve) => setTimeout(resolve, 350));
@@ -757,7 +757,7 @@ try {
           Number.parseFloat(state.bodyFontSize) < minBodyFont ||
           state.iconAriaHidden !== "true" || state.iconRect.width > 20 ||
           state.collapseAccessibleName !== "안내 접기" ||
-          state.headerRect.height > (percent === 80 ? 56 : 44) ||
+          state.headerRect.height > (effectivePercent === 80 ? 56 : 44) ||
           !state.page.startsWith("1/")) {
           throw new Error(`Guidance layout failed at ${width}x${height}, viewport=${percent}: ${JSON.stringify(state)}`);
         }

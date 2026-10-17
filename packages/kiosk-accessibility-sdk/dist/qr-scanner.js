@@ -21,11 +21,19 @@ export function mountQrScanner(options) {
     <div class="qr-camera-actions"><button type="button" class="primary-button">카메라로 QR 스캔</button></div>
   </section>`;
     const video = container.querySelector("video");
+    const placeholder = container.querySelector(".qr-camera-placeholder");
     const status = container.querySelector(".qr-camera-status");
     const button = container.querySelector(".qr-camera-actions button");
     let controls = null;
     let handled = false;
     let destroyed = false;
+    const revealPreview = () => {
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+            placeholder.hidden = true;
+        }
+    };
+    video.addEventListener("loadeddata", revealPreview);
+    video.addEventListener("playing", revealPreview);
     const stop = () => {
         try {
             controls?.stop();
@@ -69,6 +77,7 @@ export function mountQrScanner(options) {
                 return;
             }
             controls = nextControls;
+            revealPreview();
             button.disabled = false;
             button.textContent = "카메라 끄기";
             status.textContent = "QR 코드를 찾고 있어요. 코드를 화면 가운데에 맞춰 주세요.";
@@ -98,6 +107,8 @@ export function mountQrScanner(options) {
             destroyed = true;
             handled = true;
             stop();
+            video.removeEventListener("loadeddata", revealPreview);
+            video.removeEventListener("playing", revealPreview);
             container.replaceChildren();
         },
     };

@@ -412,6 +412,14 @@ export function createAccessibilitySdk(options) {
     const bottomViewport = createBottomViewportController(root, adapter);
     const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
     const completion = createCompletionController((state) => { completionActive = state.active; });
+    function effectiveViewportMode(screenId = adapter.getSnapshot().screenId) {
+        if (currentProfile.viewportMode)
+            return currentProfile.viewportMode;
+        if (currentProfile.easyLanguage && screenId !== "start" && typeof root.getBoundingClientRect === "function") {
+            return { mode: "bottom", heightPercent: 80 };
+        }
+        return null;
+    }
     function currentEasyExplanation() {
         if (!currentProfile.easyLanguage || !easyLanguageState ||
             easyLanguageState.explanations.length === 0 || sessionEnded)
@@ -487,6 +495,7 @@ export function createAccessibilitySdk(options) {
             probe.textContent = value;
             return probe.getBoundingClientRect().height;
         };
+        const canFitOneLine = measure("가") <= textHeight + 0.5;
         const splitOversize = (sentence) => {
             const tokens = sentence.match(/\s+|[^\s]+/gu) ?? [sentence];
             const chunks = [];
@@ -553,8 +562,10 @@ export function createAccessibilitySdk(options) {
                     piece = "";
                     if (measure(sentence) <= textHeight)
                         piece = sentence;
-                    else
+                    else if (canFitOneLine)
                         appendSplitPieces(splitOversize(sentence));
+                    else
+                        pieces.push(sentence);
                 }
             }
             if (piece) {
@@ -567,7 +578,7 @@ export function createAccessibilitySdk(options) {
             if ((explanation.text.length > 240 || originalHeight > textHeight) &&
                 !warnedEasyText.has(warningKey) && typeof console !== "undefined") {
                 warnedEasyText.add(warningKey);
-                console.warn(`[kiosk-accessibility-sdk] 긴 쉬운 말 설명(렌더 높이 ${Math.ceil(originalHeight)}px, 사용 가능 ${Math.floor(textHeight)}px)을 감지했습니다.${pieces.length > 1 ? ` 내용은 ${pieces.length}페이지로 나눴습니다.` : ""} 호스트에서 문장별 설명으로 전달하는 것을 권장합니다.`);
+                console.warn(`[kiosk-accessibility-sdk] 쉬운 말 설명의 렌더 높이 ${Math.ceil(originalHeight)}px, 사용 가능 높이 ${Math.floor(textHeight)}px, 한 줄 최소 높이 ${Math.ceil(measure("가"))}px입니다.${canFitOneLine ? (pieces.length > 1 ? ` 내용은 ${pieces.length}페이지로 나눴습니다.` : "") : " 한 줄도 들어가지 않아 글자 단위 페이지 분할을 중단했습니다. 패널의 실제 가용 높이를 늘려야 합니다."} 호스트에서 문장별 설명으로 전달하는 것을 권장합니다.`);
             }
             fitted.push(...pieces.map((text) => ({ title: explanation.title, text })));
         }
@@ -990,6 +1001,8 @@ export function createAccessibilitySdk(options) {
             collapsed: guidanceCollapsed,
             safetyCollapsed: guidanceSafetyCollapsed,
         };
+        guidanceCollapsed = false;
+        guidanceSafetyCollapsed = false;
         menuHint.setEnabled(true);
         smartGuideVisible = true;
         const displayMs = currentProfile.slowGuidance ? 15_000 : GUIDE_AUTO_DISMISS_MS;
@@ -1076,7 +1089,7 @@ export function createAccessibilitySdk(options) {
         }
         // The QR profile is the source of truth for the viewport mode. Applying
         // v1/v2 normalizes it to null, while v3 applies its explicit setting here.
-        setViewportMode(currentProfile.viewportMode);
+        setViewportMode(effectiveViewportMode());
         menuHint.refresh();
         refreshNextItemButtons();
         if (previousVoiceGuidance && !currentProfile.voiceGuidance)
@@ -1208,6 +1221,7 @@ export function createAccessibilitySdk(options) {
     function notifyScreenChange(screenId) {
         const changed = screenChange.notify(screenId);
         if (changed) {
+            setViewportMode(effectiveViewportMode(screenId));
             easyLanguageState = null;
             easyLanguageSource = [];
             easyLanguageIndex = 0;

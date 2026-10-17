@@ -5,7 +5,7 @@ export const DEFAULT_CONTENT_SCROLL_MESSAGE =
   "아래에도 내용이 있어요";
 
 type ScrollOwner = HTMLElement | Document;
-type Hint = { kind: string; message: string; owner: ScrollOwner };
+type Hint = { kind: string; message: string; owner: ScrollOwner; obstacle?: HTMLElement };
 
 function shown(el: HTMLElement): boolean {
   const s = getComputedStyle(el), r = el.getBoundingClientRect();
@@ -87,15 +87,19 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
         : (document.documentElement.clientHeight || innerHeight);
     if (rect.bottom > lowerEdge + 1 &&
         ownerCanScrollBelow(owner)) {
-      return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root };
+      const obstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
+      return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root,
+        ...(obstacle && shown(obstacle) ? { obstacle } : {}) };
     }
   }
 
   if (ownerCanScrollBelow(owner)) {
+    const obstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
     return {
       kind: "vertical",
       message: DEFAULT_CONTENT_SCROLL_MESSAGE,
       owner: owner ?? root,
+      ...(obstacle && shown(obstacle) ? { obstacle } : {}),
     };
   }
   return null;
@@ -104,6 +108,7 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
 function placeHint(
   hint: HTMLElement,
   owner: ScrollOwner,
+  obstacle?: HTMLElement,
 ): boolean {
   const visualViewport = window.visualViewport;
   const viewportWidth = visualViewport?.width || document.documentElement.clientWidth || innerWidth;
@@ -126,7 +131,12 @@ function placeHint(
   }
   const anchorBottom = Math.min(viewportBottom, ownerBottom);
   if (anchorBottom <= viewportTop) return false;
-  hint.style.bottom = `${Math.max(12, viewportBottom - anchorBottom + 12)}px`;
+  let bottomInset = Math.max(12, viewportBottom - anchorBottom + 12);
+  if (obstacle && shown(obstacle)) {
+    const obstacleTop = obstacle.getBoundingClientRect().top;
+    bottomInset = Math.max(bottomInset, viewportBottom - obstacleTop + 12);
+  }
+  hint.style.bottom = `${bottomInset}px`;
   hint.style.pointerEvents = "none";
   hint.style.visibility = "visible";
   const height = hint.getBoundingClientRect().height;
@@ -189,7 +199,7 @@ export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAd
     element.removeAttribute("aria-hidden");
     const copy = element.querySelector<HTMLElement>(".a11y-additional-menu-copy");
     if (copy && copy.textContent !== hint.message) copy.textContent = hint.message;
-    if (placeHint(element, hint.owner)) {
+    if (placeHint(element, hint.owner, hint.obstacle)) {
       element.dataset.hintKind = hint.kind;
       if (root.dataset) delete root.dataset.a11yScrollGuidance;
     } else {

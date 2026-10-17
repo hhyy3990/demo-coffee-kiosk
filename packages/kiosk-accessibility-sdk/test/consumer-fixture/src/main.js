@@ -543,8 +543,16 @@ window.__sdkPackageSmoke = {
     };
   },
   readInteractionState() {
-    return { keypadClicks, quantity, optionChanges, scrollTop: window.scrollY,
+    const scrollOwner = root.querySelector(".a11y-bottom-viewport-scroll-area") ??
+      root.querySelector(".content");
+    return { keypadClicks, quantity, optionChanges, scrollTop: scrollOwner?.scrollTop ?? window.scrollY,
       guide: this.readGuidance() };
+  },
+  scrollTestOwner(amount) {
+    const scrollOwner = root.querySelector(".a11y-bottom-viewport-scroll-area") ??
+      root.querySelector(".content");
+    scrollOwner?.scrollBy(0, amount);
+    return scrollOwner?.scrollTop ?? window.scrollY;
   },
   updateGuideCopy(text) {
     sdk.setGuideState({

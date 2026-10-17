@@ -4,7 +4,15 @@ import { qrScanner } from "./load-sdk.mjs";
 const { mountQrScanner } = qrScanner;
 
 function fixture() {
-  const video = { srcObject: null, paused: false, pause() { this.paused = true; } };
+  const videoListeners = new Map();
+  const video = {
+    srcObject: null, paused: false, readyState: 2, videoWidth: 640,
+    pause() { this.paused = true; },
+    addEventListener(type, callback) { videoListeners.set(type, callback); },
+    removeEventListener(type) { videoListeners.delete(type); },
+    dispatch(type) { videoListeners.get(type)?.(); },
+  };
+  const placeholder = { hidden: false };
   const status = { textContent: "" };
   const button = {
     disabled: false,
@@ -15,7 +23,8 @@ function fixture() {
     innerHTML: "",
     emptied: false,
     querySelector(selector) {
-      return selector === "video" ? video : selector.includes("status") ? status : button;
+      return selector === "video" ? video : selector.includes("placeholder") ? placeholder :
+        selector.includes("status") ? status : button;
     },
     replaceChildren() { this.emptied = true; },
   };
@@ -24,7 +33,7 @@ function fixture() {
   Object.defineProperty(globalThis, "window", { configurable: true, value: { isSecureContext: true } });
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { mediaDevices: { getUserMedia() {} } } });
   return {
-    video, status, button, container,
+    video, status, button, placeholder, container,
     restore() {
       if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
       else delete globalThis.window;
@@ -44,6 +53,7 @@ test("a decoded QR stops the camera immediately and duplicate callbacks are igno
       container: f.container,
       readerFactory: () => ({
         decodeFromVideoDevice(_device, _video, callback) {
+          f.video.dispatch("loadeddata");
           callback({ getText: () => "official-qr" }, undefined, controls);
           callback({ getText: () => "duplicate-qr" }, undefined, controls);
           return Promise.resolve(controls);
@@ -56,6 +66,7 @@ test("a decoded QR stops the camera immediately and duplicate callbacks are igno
     assert.equal(scans, 1);
     assert.equal(stopped, 1);
     assert.equal(f.video.paused, true);
+    assert.equal(f.placeholder.hidden, true);
     handle.destroy();
     assert.equal(f.container.emptied, true);
   } finally {

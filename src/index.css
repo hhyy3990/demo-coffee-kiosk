@@ -323,8 +323,9 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .qr-error { margin:0 0 14px; }
 .qr-camera-panel { display:grid;gap:13px;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--card); }
 .qr-camera-stage { position:relative;min-height:190px;aspect-ratio:16/9;overflow:hidden;border-radius:14px;background:#292723;color:#fffaf1; }
-.qr-camera-video { position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover; }
+.qr-camera-video { position:absolute;z-index:0;inset:0;display:block;width:100%;height:100%;object-fit:cover; }
 .qr-camera-placeholder { position:absolute;z-index:1;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;color:#fffaf1;background:linear-gradient(145deg,#39332d,#201d19);font-size:.9em;font-weight:800; }
+.qr-camera-placeholder[hidden] { display:none; }
 .qr-camera-frame { position:absolute;z-index:2;left:50%;top:50%;width:min(54%,190px);aspect-ratio:1;transform:translate(-50%,-50%); }
 .qr-camera-frame i { position:absolute;width:29px;height:29px;border:3px solid #fffaf1; }
 .qr-camera-frame i:nth-child(1) { left:0;top:0;border-right:0;border-bottom:0;border-radius:9px 0 0; }

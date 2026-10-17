@@ -118,6 +118,15 @@ function createSessionHarness() {
   const rootClasses = makeClassList();
   const root = {
     classList: rootClasses,
+    style: (() => {
+      const values = new Map();
+      return {
+        getPropertyValue: (name) => values.get(name)?.value ?? "",
+        getPropertyPriority: (name) => values.get(name)?.priority ?? "",
+        setProperty: (name, value, priority = "") => values.set(name, { value, priority }),
+        removeProperty: (name) => values.delete(name),
+      };
+    })(),
     addEventListener() {},
     removeEventListener() {},
     contains: (element) => element === target,
@@ -469,6 +478,7 @@ test("Smart Guide shares the easy-language panel, counts down for 15 seconds, an
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
     assert.equal(panel.querySelector("[data-a11y-guide-countdown]").textContent, "15초");
+    assert.equal(panel.classList.contains("a11y-guide-collapsed"), false);
     assert.equal(panel.querySelector("[data-a11y-guide-pager]").hidden, true);
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "");
     assert.equal(panel.querySelector("[data-a11y-guide-previous]").hidden, true);
@@ -477,7 +487,7 @@ test("Smart Guide shares the easy-language panel, counts down for 15 seconds, an
       .filter(([, delay]) => delay === 15_000).at(-1)?.[0];
     assert.ok(dismissTimer);
     panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), false);
+    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
     h.timerCallbacks.get(dismissTimer)?.();
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");

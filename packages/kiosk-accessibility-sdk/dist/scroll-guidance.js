@@ -79,19 +79,23 @@ function currentHint(root, adapter) {
                 : (document.documentElement.clientHeight || innerHeight);
         if (rect.bottom > lowerEdge + 1 &&
             ownerCanScrollBelow(owner)) {
-            return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root };
+            const obstacle = root.querySelector('[data-a11y-slot="above-bottom-controls"]');
+            return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: owner ?? root,
+                ...(obstacle && shown(obstacle) ? { obstacle } : {}) };
         }
     }
     if (ownerCanScrollBelow(owner)) {
+        const obstacle = root.querySelector('[data-a11y-slot="above-bottom-controls"]');
         return {
             kind: "vertical",
             message: DEFAULT_CONTENT_SCROLL_MESSAGE,
             owner: owner ?? root,
+            ...(obstacle && shown(obstacle) ? { obstacle } : {}),
         };
     }
     return null;
 }
-function placeHint(hint, owner) {
+function placeHint(hint, owner, obstacle) {
     const visualViewport = window.visualViewport;
     const viewportWidth = visualViewport?.width || document.documentElement.clientWidth || innerWidth;
     const viewportTop = visualViewport?.offsetTop ?? 0;
@@ -114,7 +118,12 @@ function placeHint(hint, owner) {
     const anchorBottom = Math.min(viewportBottom, ownerBottom);
     if (anchorBottom <= viewportTop)
         return false;
-    hint.style.bottom = `${Math.max(12, viewportBottom - anchorBottom + 12)}px`;
+    let bottomInset = Math.max(12, viewportBottom - anchorBottom + 12);
+    if (obstacle && shown(obstacle)) {
+        const obstacleTop = obstacle.getBoundingClientRect().top;
+        bottomInset = Math.max(bottomInset, viewportBottom - obstacleTop + 12);
+    }
+    hint.style.bottom = `${bottomInset}px`;
     hint.style.pointerEvents = "none";
     hint.style.visibility = "visible";
     const height = hint.getBoundingClientRect().height;
@@ -180,7 +189,7 @@ export function createScrollGuidance(root, adapter) {
         const copy = element.querySelector(".a11y-additional-menu-copy");
         if (copy && copy.textContent !== hint.message)
             copy.textContent = hint.message;
-        if (placeHint(element, hint.owner)) {
+        if (placeHint(element, hint.owner, hint.obstacle)) {
             element.dataset.hintKind = hint.kind;
             if (root.dataset)
                 delete root.dataset.a11yScrollGuidance;
