@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>SDK standalone consumer smoke test</title>
+    <script type="module" crossorigin src="/assets/index-CUam6mV9.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-P2Xu9kJm.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CApJ1zmR.css">
+  </head>
+  <body>
+    <div id="kiosk-root" class="kiosk">
+      <main class="content" data-a11y-slot="scroll-content">
+        <p class="eyebrow">INDEPENDENT HOST</p>
+        <h1 data-a11y-text data-a11y-id="host.review.heading">확인 단계</h1>
+        <p data-a11y-text data-a11y-id="host.review.description">
+          이 화면은 카페 코드 없이 SDK 패키지를 불러옵니다.
+        </p>
+        <p data-a11y-detail>개인 데이터 없이 샘플 상태만 사용합니다.</p>
+        <label for="test-pin">확인 번호</label>
+        <input id="test-pin" value="12" inputmode="numeric" />
+        <div class="keypad" aria-label="숫자 키패드">
+          <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+          <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+          <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+          <button type="button">지움</button><button type="button">0</button><button type="button">확인</button>
+        </div>
+        <fieldset class="fixture-choices">
+          <legend>표시 항목</legend>
+          <label><input type="checkbox" value="address" /> 주소</label>
+          <label><input type="checkbox" value="date" /> 날짜</label>
+          <label><input type="checkbox" value="purpose" /> 발급 목적</label>
+        </fieldset>
+        <div class="fixture-quantity" aria-label="발급 부수">
+          <button id="quantity-minus" type="button" aria-label="부수 감소">−</button>
+          <output id="quantity-count">1</output>
+          <button id="quantity-plus" type="button" aria-label="부수 증가">+</button>
+        </div>
+        <section class="fixture-menu-list" aria-label="추가 항목">
+          <h2>추가 항목</h2>
+          <button class="fixture-menu-item" type="button">항목 1</button>
+          <button class="fixture-menu-item" type="button">항목 2</button>
+          <button class="fixture-menu-item" type="button">항목 3</button>
+          <button class="fixture-menu-item" type="button">항목 4</button>
+          <button class="fixture-menu-item" type="button">항목 5</button>
+          <button class="fixture-menu-item" type="button">항목 6</button>
+          <button class="fixture-menu-item" type="button">항목 7</button>
+          <button class="fixture-menu-item" type="button">항목 8</button>
+          <button class="fixture-menu-item" type="button">항목 9</button>
+          <button class="fixture-menu-item" type="button">항목 10</button>
+          <button class="fixture-menu-item" type="button">항목 11</button>
+          <button class="fixture-menu-item" type="button">항목 12</button>
+        </section>
+        <output id="host-state" aria-live="polite">업무 작업 0회</output>
+      </main>
+      <footer class="bottom-controls" data-a11y-slot="bottom-controls">
+        <button
+          id="host-continue"
+          data-a11y-action-id="host.review.continue"
+          type="button"
+        >
+          계속
+        </button>
+      </footer>
+      <output id="sdk-status" class="sdk-status" aria-live="polite">초기화 중</output>
+    </div>
+  </body>
+</html>
