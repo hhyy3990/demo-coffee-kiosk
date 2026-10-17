@@ -1,0 +1,224 @@
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const consumerRoot = process.env.KIOSK_SDK_CONSUMER_ROOT;
+if (!consumerRoot) throw new Error("KIOSK_SDK_CONSUMER_ROOT is required.");
+const repositoryRoot = process.cwd();
+const port = 49200 + process.pid % 700;
+const debugPort = port + 700;
+const baseUrl = `http://127.0.0.1:${port}`;
+const userData = await mkdtemp(join(tmpdir(), "sdk-smart-guide-chromium-"));
+const vite = spawn(process.execPath, [
+  resolve(repositoryRoot, "node_modules/.bin/vite"), "preview", "--host", "127.0.0.1",
+  "--port", String(port), "--strictPort", "--outDir", "build",
+], { cwd: consumerRoot, stdio: "ignore" });
+const browser = spawn(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
+  "--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+  `--remote-debugging-port=${debugPort}`, `--user-data-dir=${userData}`, "about:blank",
+], { stdio: "ignore", detached: true });
+
+let socket;
+try {
+  let response;
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    try { response = await fetch(baseUrl); if (response.ok) break; } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!response?.ok) throw new Error("Consumer preview did not start.");
+  let target;
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    try {
+      target = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`))
+        .json()).find((item) => item.type === "page");
+      if (target) break;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!target) throw new Error("Chromium page did not start.");
+  socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  let nextId = 0;
+  const pending = new Map();
+  const warningMessages = [];
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data));
+    if (message.method === "Runtime.consoleAPICalled" && message.params.type === "warning") {
+      warningMessages.push(message.params.args.map((arg) => arg.value ?? "").join(" "));
+    }
+    const item = pending.get(message.id);
+    if (!item) return;
+    pending.delete(message.id);
+    message.error ? item.reject(new Error(message.error.message)) : item.resolve(message.result);
+  });
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++nextId;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async (expression) => {
+    const result = await send("Runtime.evaluate", {
+      expression, returnByValue: true, awaitPromise: true,
+    });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    return result.result.value;
+  };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const poll = async (expression, predicate, timeoutMs = 1500) => {
+    const started = Date.now();
+    let value;
+    do {
+      value = await evaluate(expression);
+      if (predicate(value)) return value;
+      await wait(50);
+    } while (Date.now() - started < timeoutMs);
+    throw new Error(`Timed out waiting for browser state: ${JSON.stringify(value)}`);
+  };
+  await send("Page.enable");
+  await send("Runtime.enable");
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 320, height: 844, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 320, screenHeight: 844,
+  });
+  await send("Page.navigate", { url: baseUrl });
+  await poll("Boolean(window.__sdkPackageSmoke?.startGuide)", Boolean);
+
+  const longText = "결제 화면에서 선택한 서비스와 금액을 확인하고 결제 방법을 선택한 뒤 화면의 안내에 따라 결제를 진행해 주세요. 확인해.";
+  if ([...longText].length !== 67) {
+    throw new Error(`Expected the synthetic payment fixture length to remain 67; got ${[...longText].length}.`);
+  }
+  const run = async (slow, text, expectedPages, totalMs, halfMs = 0, restoreEasy = false) => {
+    await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+      textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
+      viewportMode:{mode:"bottom",heightPercent:80}
+    })`);
+    if (restoreEasy) {
+      await evaluate(`document.querySelector("[data-a11y-guide-next]").click();
+        document.querySelector("[data-a11y-guide-collapse]").click()`);
+    }
+    const started = await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},0,${JSON.stringify(text)})`);
+    await wait(350);
+    let state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+      item.title === "스마트 길잡이");
+    const firstText = state.text;
+    const first = state;
+    if (expectedPages === 2) {
+      state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+        item.title === "스마트 길잡이" && item.text !== firstText, halfMs + 1200);
+      const transitionAt = await evaluate("performance.now()");
+      if (Math.abs((transitionAt - started) - halfMs) > 1200) {
+        throw new Error(`Page transition was late: ${transitionAt - started}ms, expected ${halfMs}ms.`);
+      }
+      if (firstText + state.text !== text) throw new Error("Two-page Smart Guide changed or lost source text.");
+      for (const pageState of [first, state]) {
+        if (pageState.textMetrics.scrollHeight > pageState.textMetrics.clientHeight + 1) {
+          throw new Error(`Smart Guide page clipped: ${JSON.stringify(pageState.textMetrics)}`);
+        }
+      }
+      if (Math.abs(first.panelRect.top - state.panelRect.top) > 1) {
+        throw new Error("Smart Guide panel moved during the automatic page transition.");
+      }
+    } else if (firstText !== text) {
+      throw new Error("Single-page Smart Guide changed its source text.");
+    }
+    await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+      item.title !== "스마트 길잡이", totalMs + 1500);
+    const elapsed = await evaluate(`performance.now() - ${started}`);
+    if (Math.abs(elapsed - totalMs) > 1500) {
+      throw new Error(`Smart Guide display time was ${elapsed}ms, expected ${totalMs}ms.`);
+    }
+    const restored = restoreEasy ? await evaluate(`({
+      collapsed: document.querySelector(".a11y-guide-toast")?.classList.contains("a11y-guide-collapsed"),
+      page: document.querySelector("[data-a11y-guide-page]")?.textContent
+    })`) : null;
+    if (restoreEasy && (!restored.collapsed || !restored.page.startsWith("2/"))) {
+      throw new Error(`Easy Language page/fold state did not restore: ${JSON.stringify(restored)}`);
+    }
+    return { slow, expectedPages, elapsed: Math.round(elapsed), firstText, secondText: state.text, restored };
+  };
+
+  const layoutMatrix = [];
+  for (const [width, height] of [[320, 844], [360, 667], [390, 844], [1080, 1920]]) {
+    for (const mode of [
+      { name: "auto80", easyLanguage: true, viewportMode: null, expectedTop: 8 },
+      { name: "explicit80", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 80 }, expectedTop: 8 },
+      { name: "explicit70", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 70 }, expectedTop: 8 },
+      { name: "explicit60", easyLanguage: true, viewportMode: { mode: "bottom", heightPercent: 60 }, expectedTop: 8 },
+      { name: "normal", easyLanguage: false, viewportMode: null, expectedTop: 12 },
+    ]) {
+      await send("Emulation.setDeviceMetricsOverride", {
+        width, height, deviceScaleFactor: 1, mobile: width < 600,
+        screenWidth: width, screenHeight: height,
+      });
+      await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+        textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:${mode.easyLanguage},smartGuide:true,
+        viewportMode:${JSON.stringify(mode.viewportMode)}
+      })`);
+      const matrixText = width === 320 && height === 844 &&
+        !["explicit60", "explicit70"].includes(mode.name)
+        ? longText
+        : "다음 버튼을 눌러 진행하세요.";
+      await evaluate(`window.__sdkPackageSmoke.startGuide(false,0,${JSON.stringify(matrixText)})`);
+      await wait(350);
+      const state = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+      if (state.title !== "스마트 길잡이") {
+        throw new Error(`Smart Guide did not appear at ${width}x${height} ${mode.name}; warnings=${JSON.stringify(warningMessages)} state=${JSON.stringify(state)}`);
+      }
+      if (!state.textVisible || state.textMetrics.scrollHeight > state.textMetrics.clientHeight + 1 ||
+          Math.abs(state.panelRect.top - mode.expectedTop) > 1) {
+        throw new Error(`Clipped or displaced Smart Guide at ${width}x${height} ${mode.name}: ${JSON.stringify(state)}`);
+      }
+      await evaluate('document.querySelector(".a11y-guide-close").click()');
+      layoutMatrix.push({ viewport: `${width}x${height}`, mode: mode.name, firstPageText: state.text });
+    }
+  }
+
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 320, height: 844, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 320, screenHeight: 844,
+  });
+  await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+    textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
+    viewportMode:{mode:"bottom",heightPercent:80}
+  })`);
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,0,${JSON.stringify(longText.repeat(6))})`);
+  const tooLongFallback = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+    item.title !== "스마트 길잡이");
+  if (!warningMessages.some((message) => /requires \d+ pages; maximum is 2/u.test(message))) {
+    throw new Error(`A Smart Guide requiring more than two pages was not logged with its step and page count: ${JSON.stringify({ warningMessages, state: tooLongFallback })}`);
+  }
+
+  const results = [];
+  results.push(await run(false, "다음 버튼을 눌러 진행하세요.", 1, 10_000));
+  results.push(await run(false, longText, 2, 15_000, 7_500, true));
+  results.push(await run(true, "다음 버튼을 눌러 진행하세요.", 1, 20_000));
+  results.push(await run(true, longText, 2, 20_000, 10_000));
+  const guideDelays = [];
+  for (const seconds of [10, 15, 20]) {
+    const started = await evaluate(
+      `window.__sdkPackageSmoke.startGuide(false,${seconds},"다음 버튼을 눌러 진행하세요.")`,
+    );
+    await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이",
+      seconds * 1000 + 1200);
+    const elapsed = await evaluate(`performance.now() - ${started}`);
+    if (Math.abs(elapsed - seconds * 1000) > 1200) {
+      throw new Error(`guideDelaySeconds=${seconds} began after ${elapsed}ms.`);
+    }
+    await evaluate('document.querySelector(".a11y-guide-close").click()');
+    guideDelays.push({ seconds, elapsed: Math.round(elapsed) });
+  }
+  console.log(JSON.stringify({
+    result: "PASS", syntheticTextLength: [...longText].length, results,
+    layoutCases: layoutMatrix.length, oversizedGuidePreservedBySuppression: tooLongFallback.title !== "스마트 길잡이",
+    guideDelays,
+  }, null, 2));
+} finally {
+  try { socket?.close(); } catch {}
+  try { process.kill(-browser.pid, "SIGTERM"); } catch { browser.kill("SIGTERM"); }
+  vite.kill("SIGTERM");
+  await rm(userData, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+}

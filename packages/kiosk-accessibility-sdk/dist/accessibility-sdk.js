@@ -364,11 +364,14 @@ export function createAccessibilitySdk(options) {
     let fittingEasyPages = false;
     const warnedEasyText = new Set();
     let smartGuideVisible = false;
+    let smartGuidePages = [];
+    let smartGuidePageIndex = 0;
     let guidanceCollapsed = false;
     let guidanceSafetyCollapsed = false;
     let smartGuideCollapseSnapshot = null;
     let guideDeadline = 0;
     let guideCountdownTimer = null;
+    let smartGuidePageTimer = null;
     let interactionCount = 0;
     let lastScrollAt = 0;
     let destroyed = false;
@@ -443,10 +446,106 @@ export function createAccessibilitySdk(options) {
         return Math.max(0, explanations.length - 1);
     }
     function currentGuidanceMessage() {
-        if (smartGuideVisible && guideState.message)
-            return guideState.message;
+        if (smartGuideVisible && guideState.message) {
+            return {
+                ...guideState.message,
+                text: smartGuidePages[smartGuidePageIndex] ?? guideState.message.text,
+            };
+        }
         const explanation = currentEasyExplanation();
         return explanation ? { ...explanation, actionId: null } : null;
+    }
+    function fitSmartGuidePages(text) {
+        const overlay = guideOverlay;
+        const copy = overlay?.querySelector(".a11y-guide-copy");
+        const header = overlay?.querySelector(".a11y-guide-header");
+        const liveText = overlay?.querySelector("[data-a11y-guide-text]");
+        if (!overlay || !copy || !header || !liveText || copy.clientWidth < 40 ||
+            typeof getComputedStyle !== "function") {
+            return { pages: [text], requiredPages: 1 };
+        }
+        const panelStyle = getComputedStyle(overlay);
+        const maxHeight = Number.parseFloat(overlay.style.maxHeight) || Math.max(120, innerHeight - 24);
+        const padding = (Number.parseFloat(panelStyle.paddingTop) || 0) +
+            (Number.parseFloat(panelStyle.paddingBottom) || 0);
+        const borders = (Number.parseFloat(panelStyle.borderTopWidth) || 0) +
+            (Number.parseFloat(panelStyle.borderBottomWidth) || 0);
+        const gap = Number.parseFloat(panelStyle.rowGap) || 0;
+        const textHeight = Math.max(0, maxHeight - header.getBoundingClientRect().height -
+            padding - borders - gap - 2);
+        const textStyle = getComputedStyle(liveText);
+        const probe = document.createElement("span");
+        probe.className = "a11y-guide-copy";
+        Object.assign(probe.style, {
+            position: "fixed", left: "-10000px", top: "0", visibility: "hidden",
+            display: "block", width: `${copy.clientWidth}px`, maxHeight: "none",
+            overflow: "visible", lineHeight: textStyle.lineHeight, fontSize: textStyle.fontSize,
+            fontFamily: textStyle.fontFamily, fontWeight: textStyle.fontWeight,
+            letterSpacing: textStyle.letterSpacing, overflowWrap: textStyle.overflowWrap,
+            wordBreak: textStyle.wordBreak,
+        });
+        document.body.append(probe);
+        const measure = (value) => {
+            probe.textContent = value;
+            return probe.getBoundingClientRect().height;
+        };
+        try {
+            if (measure(text) <= textHeight)
+                return { pages: [text], requiredPages: 1 };
+            const candidates = [];
+            for (const match of text.matchAll(/[.!?。！？]+(?=\s|$)|\s+/gu)) {
+                const index = match.index + match[0].length;
+                if (index > 0 && index < text.length) {
+                    candidates.push({
+                        index,
+                        sentence: /^[.!?。！？]+$/u.test(match[0]),
+                    });
+                }
+            }
+            for (const sentenceOnly of [true, false]) {
+                const fitting = candidates
+                    .filter((candidate) => !sentenceOnly || candidate.sentence)
+                    .map((candidate) => ({
+                    candidate,
+                    firstHeight: measure(text.slice(0, candidate.index)),
+                    secondHeight: measure(text.slice(candidate.index)),
+                }))
+                    .filter((item) => item.firstHeight <= textHeight && item.secondHeight <= textHeight)
+                    .sort((a, b) => Math.abs(a.firstHeight - a.secondHeight) -
+                    Math.abs(b.firstHeight - b.secondHeight));
+                if (fitting.length) {
+                    const split = fitting[0].candidate.index;
+                    return { pages: [text.slice(0, split), text.slice(split)], requiredPages: 2 };
+                }
+            }
+            let requiredPages = 1;
+            let pageText = "";
+            const tokens = text.match(/\s+|[^\s]+/gu) ?? [text];
+            for (const token of tokens) {
+                if (measure(token) > textHeight) {
+                    for (const grapheme of Array.from(token)) {
+                        if (measure(pageText + grapheme) <= textHeight || !pageText) {
+                            pageText += grapheme;
+                        }
+                        else {
+                            requiredPages += 1;
+                            pageText = grapheme;
+                        }
+                    }
+                }
+                else if (measure(pageText + token) <= textHeight || !pageText) {
+                    pageText += token;
+                }
+                else {
+                    requiredPages += 1;
+                    pageText = token;
+                }
+            }
+            return { pages: [], requiredPages: Math.max(3, requiredPages) };
+        }
+        finally {
+            probe.remove();
+        }
     }
     function fitEasyLanguagePages() {
         const currentPages = [...(easyLanguageState?.explanations ?? easyLanguageSource)];
@@ -827,6 +926,12 @@ export function createAccessibilitySdk(options) {
             globalThis.clearTimeout(guideCountdownTimer);
             guideCountdownTimer = null;
         }
+        if (smartGuidePageTimer !== null) {
+            globalThis.clearTimeout(smartGuidePageTimer);
+            smartGuidePageTimer = null;
+        }
+        smartGuidePages = [];
+        smartGuidePageIndex = 0;
         if (guidePositionFrame) {
             window.cancelAnimationFrame(guidePositionFrame);
             guidePositionFrame = 0;
@@ -853,6 +958,11 @@ export function createAccessibilitySdk(options) {
             globalThis.clearTimeout(guideCountdownTimer);
         guideDismissTimer = null;
         guideCountdownTimer = null;
+        if (smartGuidePageTimer !== null)
+            globalThis.clearTimeout(smartGuidePageTimer);
+        smartGuidePageTimer = null;
+        smartGuidePages = [];
+        smartGuidePageIndex = 0;
         if (smartGuideCollapseSnapshot) {
             guidanceCollapsed = smartGuideCollapseSnapshot.collapsed;
             guidanceSafetyCollapsed = smartGuideCollapseSnapshot.safetyCollapsed;
@@ -1010,13 +1120,36 @@ export function createAccessibilitySdk(options) {
         guidanceSafetyCollapsed = false;
         menuHint.setEnabled(true);
         smartGuideVisible = true;
-        const displayMs = currentProfile.slowGuidance ? 15_000 : GUIDE_AUTO_DISMISS_MS;
-        guideDeadline = Date.now() + displayMs;
+        smartGuidePages = [guideState.message.text];
+        smartGuidePageIndex = 0;
         highlightedAction = action.highlightElement ?? target;
         highlightedAction.classList.add("a11y-guide-emphasis");
         renderGuidancePanel();
         if (!guideOverlay)
             return;
+        const fitted = fitSmartGuidePages(guideState.message.text);
+        if (fitted.pages.length === 0) {
+            const screenId = adapter.getSnapshot().screenId;
+            const stepId = guideState.stepId ?? screenId;
+            console.warn(`[kiosk-accessibility-sdk] Smart Guide step ${stepId} requires ${fitted.requiredPages} pages; maximum is 2. Host wording must be shortened.`);
+            finishSmartGuide();
+            return;
+        }
+        smartGuidePages = fitted.pages;
+        const displayMs = currentProfile.slowGuidance
+            ? 20_000
+            : fitted.pages.length === 2 ? 15_000 : GUIDE_AUTO_DISMISS_MS;
+        guideDeadline = Date.now() + displayMs;
+        renderGuidancePanel();
+        if (fitted.pages.length === 2) {
+            smartGuidePageTimer = globalThis.setTimeout(() => {
+                smartGuidePageTimer = null;
+                if (!smartGuideVisible || smartGuidePages.length !== 2)
+                    return;
+                smartGuidePageIndex = 1;
+                renderGuidancePanel();
+            }, displayMs / 2);
+        }
         const visibleGuide = guideOverlay;
         guideDismissTimer = globalThis.setTimeout(() => {
             if (guideOverlay !== visibleGuide)

@@ -397,8 +397,8 @@ test("same-step guidance copy updates do not reset a visible Smart Guide deadlin
     h.timerCallbacks.get([...h.timerCallbacks.keys()].at(-1))?.();
     assert.equal(h.children.length, 1);
     const dismissTimer = [...h.scheduledDelays.entries()]
-      .filter(([, delay]) => delay === 15_000).at(-1)?.[0];
-    assert.equal(h.scheduledDelays.get(dismissTimer), 15_000);
+      .filter(([, delay]) => delay === 20_000).at(-1)?.[0];
+    assert.equal(h.scheduledDelays.get(dismissTimer), 20_000);
     const timerCountWhileVisible = h.timerCallbacks.size;
     h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true, slowGuidance: true });
     assert.equal(h.timerCallbacks.size, timerCountWhileVisible);
@@ -444,7 +444,7 @@ test("easy-language guidance is paged and collapsible without an automatic timeo
   }
 });
 
-test("Smart Guide shares the easy-language panel, counts down for 15 seconds, and restores the same page and fold state", () => {
+test("Smart Guide shares the easy-language panel, counts down for 20 seconds, and restores the same page and fold state", () => {
   const h = createSessionHarness();
   try {
     h.sdk.applyProfile({
@@ -477,14 +477,14 @@ test("Smart Guide shares the easy-language panel, counts down for 15 seconds, an
     h.timerCallbacks.get(delayTimer)?.();
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
-    assert.equal(panel.querySelector("[data-a11y-guide-countdown]").textContent, "15초");
+    assert.equal(panel.querySelector("[data-a11y-guide-countdown]").textContent, "20초");
     assert.equal(panel.classList.contains("a11y-guide-collapsed"), false);
     assert.equal(panel.querySelector("[data-a11y-guide-pager]").hidden, true);
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "");
     assert.equal(panel.querySelector("[data-a11y-guide-previous]").hidden, true);
     assert.equal(panel.querySelector("[data-a11y-guide-next]").hidden, true);
     const dismissTimer = [...h.scheduledDelays.entries()]
-      .filter(([, delay]) => delay === 15_000).at(-1)?.[0];
+      .filter(([, delay]) => delay === 20_000).at(-1)?.[0];
     assert.ok(dismissTimer);
     panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
     assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);

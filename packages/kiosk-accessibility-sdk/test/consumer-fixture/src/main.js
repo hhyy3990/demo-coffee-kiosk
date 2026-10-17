@@ -674,7 +674,11 @@ window.__sdkPackageSmoke = {
       })(),
     };
   },
-  startGuide(slow = false, delaySeconds = 10) {
+  startGuide(
+    slow = false,
+    delaySeconds = 10,
+    text = "계속 버튼을 눌러 진행하세요.",
+  ) {
     const current = validateAccessibilityProfile({ ...profile, slowGuidance: slow });
     sdk.applyProfile(current);
     sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
@@ -683,7 +687,7 @@ window.__sdkPackageSmoke = {
       enabled: true,
       paused: false,
       delaySeconds,
-      message: { title: "스마트 길잡이", text: "계속 버튼을 눌러 진행하세요.", actionId: "host.review.continue" },
+      message: { title: "스마트 길잡이", text, actionId: "host.review.continue" },
     });
     return performance.now();
   },

@@ -485,7 +485,7 @@ try {
   const waitForEasy = async (label, expectedTitle, expectedPage) => {
     const started = performance.now();
     let state;
-    for (let attempt = 0; attempt < 165; attempt += 1) {
+    for (let attempt = 0; attempt < 215; attempt += 1) {
       state = await read();
       if (state.title === expectedTitle && state.visible && state.hitTest) break;
       await wait(100);
@@ -575,7 +575,7 @@ try {
   }
   let restoredStartNotice = null;
   if (process.env.GUIDANCE_VERIFY_RESTORE === "1") {
-    await wait(15_250);
+    await wait(20_250);
     restoredStartNotice = await read();
     if (!restoredStartNotice.exists || !restoredStartNotice.collapsed ||
         restoredStartNotice.title !== "쉬운 말 안내가 켜져 있어요." ||

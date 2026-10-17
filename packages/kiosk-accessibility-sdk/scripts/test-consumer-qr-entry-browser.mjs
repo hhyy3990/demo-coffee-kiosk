@@ -615,7 +615,7 @@ try {
   const slowDelayMs = await evaluate(`performance.now() - ${slowDelayStarted}`);
   if (slowGuide?.title !== "스마트 길잡이" || slowDelayMs < 9_500 || slowDelayMs > 11_500 ||
     slowGuide.collapsed || slowGuide.page !== "" || !slowGuide.pagerHidden ||
-    !slowGuide.previousHidden || !slowGuide.nextHidden || !slowGuide.countdown.includes("15")) {
+    !slowGuide.previousHidden || !slowGuide.nextHidden || !slowGuide.countdown.includes("20")) {
     throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
   }
   const slowVisibleAt = await evaluate("performance.now()");
@@ -635,19 +635,19 @@ try {
   }
   await wait(1_200);
   const slowCountdownAfter = await evaluate("window.__sdkPackageSmoke.readGuidance().countdown");
-  if (Number.parseInt(slowCountdownAfter, 10) >= 15) {
+  if (Number.parseInt(slowCountdownAfter, 10) >= 20) {
     throw new Error(`Slow guide countdown did not decrease: ${slowCountdownAfter}`);
   }
   let slowReturned;
-  for (let attempt = 0; attempt < 165; attempt += 1) {
+  for (let attempt = 0; attempt < 215; attempt += 1) {
     slowReturned = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     if (slowReturned.title === "다음으로 이동") break;
     await wait(100);
   }
   const slowVisibleMs = await evaluate(`performance.now() - ${slowVisibleAt}`);
   if (slowReturned?.title !== "다음으로 이동" || !slowReturned.page.startsWith("2/") ||
-    !slowReturned.collapsed || slowVisibleMs < 14_300 || slowVisibleMs > 16_500) {
-    throw new Error(`Real 15-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
+    !slowReturned.collapsed || slowVisibleMs < 19_300 || slowVisibleMs > 21_500) {
+    throw new Error(`Real 20-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
   }
   const sameStepInteractionResult = {
     keypadInputs: duringInteractions.keypadClicks,
@@ -657,7 +657,7 @@ try {
     guideVisibleAfterInput: duringInteractions.guide.visible,
     remainingAtObservation: duringInteractions.guide.countdown,
     totalVisibleMs: Math.round(slowVisibleMs),
-    endedBy: "slowGuidance 15-second display deadline; Easy Language page restored",
+    endedBy: "slowGuidance 20-second display deadline; Easy Language page restored",
   };
 
   const delay15Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 15)");
