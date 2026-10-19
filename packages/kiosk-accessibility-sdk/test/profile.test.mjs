@@ -23,7 +23,7 @@ test("profile validator preserves the central QR schema and known values", () =>
     guideDelaySeconds: 20,
   });
 
-  assert.equal(ACCESSIBILITY_PROFILE_SCHEMA_VERSION, 4);
+  assert.equal(ACCESSIBILITY_PROFILE_SCHEMA_VERSION, 5);
   assert.deepEqual(Object.keys(profile), Object.keys(DEFAULT_ACCESSIBILITY_PROFILE));
   assert.deepEqual(profile, {
     textSize: "extraLarge",
@@ -39,6 +39,7 @@ test("profile validator preserves the central QR schema and known values", () =>
     stepByStepGuidance: false,
     conciseGuidance: false,
     slowGuidance: false,
+    scrollGuidance: false,
   });
 });
 

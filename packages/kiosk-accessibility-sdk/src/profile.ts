@@ -1,7 +1,7 @@
 import type { BottomViewportConfig } from "./bottom-viewport.ts";
 
-export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 4 as const;
-export const ACCESSIBILITY_SDK_VERSION = "0.5.29" as const;
+export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 5 as const;
+export const ACCESSIBILITY_SDK_VERSION = "0.5.30" as const;
 
 export type TextSize = "standard" | "large" | "extraLarge";
 export type ButtonSize = "standard" | "large";
@@ -30,6 +30,8 @@ export interface AccessibilityProfile {
   stepByStepGuidance: boolean;
   conciseGuidance: boolean;
   slowGuidance: boolean;
+  /** Explicit opt-in for the scroll-content hint; omitted profiles default off. */
+  scrollGuidance: boolean;
 }
 
 export const DEFAULT_ACCESSIBILITY_PROFILE: Readonly<AccessibilityProfile> = Object.freeze({
@@ -46,6 +48,7 @@ export const DEFAULT_ACCESSIBILITY_PROFILE: Readonly<AccessibilityProfile> = Obj
   stepByStepGuidance: false,
   conciseGuidance: false,
   slowGuidance: false,
+  scrollGuidance: false,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,6 +87,7 @@ export function validateAccessibilityProfile(input: unknown): AccessibilityProfi
     stepByStepGuidance: input.stepByStepGuidance === true,
     conciseGuidance: input.conciseGuidance === true,
     slowGuidance: input.slowGuidance === true,
+    scrollGuidance: input.scrollGuidance === true,
   };
 }
 

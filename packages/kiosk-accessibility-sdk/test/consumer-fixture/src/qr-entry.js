@@ -90,8 +90,9 @@ const baseProfile = {
   textSize: "extraLarge",
   buttonSize: "large",
   contrast: "high",
+  scrollGuidance: true,
 };
-const mockQrProfile = async (schemaVersion, heightPercent) => {
+const mockQrProfile = async (schemaVersion, heightPercent, scrollGuidance = true) => {
   const preferences = schemaVersion === 3
     ? {
       textSize: "extraLarge",
@@ -102,6 +103,22 @@ const mockQrProfile = async (schemaVersion, heightPercent) => {
       smartGuide: true,
       guideDelaySeconds: 10,
       voiceGuidance: false,
+    }
+    : schemaVersion >= 4
+      ? {
+      textSize: "extraLarge",
+      buttonSize: "large",
+      contrast: "high",
+      easyLanguage: false,
+      viewportMode: heightPercent === null ? null : { mode: "bottom", heightPercent },
+      smartGuide: true,
+      guideDelaySeconds: 10,
+      voiceGuidance: false,
+      language: "ko",
+      stepByStepGuidance: false,
+      conciseGuidance: false,
+      slowGuidance: false,
+      ...(schemaVersion === 5 ? { scrollGuidance } : {}),
     }
     : {
       textSize: "extraLarge",
@@ -127,12 +144,17 @@ if (sdk && (!documentHost || percent !== null)) {
   if (percent === null) {
     sdk.applyProfile(baseProfile);
   } else {
-    const qrProfile = await mockQrProfile(3, percent);
+    const qrProfile = await mockQrProfile(5, percent);
     sdk.applyProfile({ ...baseProfile, ...qrProfile });
   }
 }
 
 const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+const isHintVisible = () => {
+  const hint = document.querySelector(".a11y-additional-menu-hint");
+  return Boolean(hint && hint.getAttribute("aria-hidden") !== "true" &&
+    getComputedStyle(hint).visibility !== "hidden");
+};
 await frame();
 dock.setActive(false);
 await frame();
@@ -283,40 +305,53 @@ window.qrConsumerTest = {
   },
   async verifyQrProfileReplacement() {
     if (!sdk) return { pass: false, reason: "SDK unavailable" };
-    const apply = async (version, height) => {
-      const profile = await mockQrProfile(version, height);
+    const apply = async (version, height, scrollGuidance = true) => {
+      const profile = await mockQrProfile(version, height, scrollGuidance);
       sdk.applyProfile(profile);
       await frame();
-      return { mode: sdk.profile.viewportMode, viewport: content.getBoundingClientRect().toJSON() };
+      return {
+        mode: sdk.profile.viewportMode,
+        scrollGuidance: sdk.profile.scrollGuidance,
+        hintVisible: isHintVisible(),
+        viewport: content.getBoundingClientRect().toJSON(),
+      };
     };
     const modes = [];
-    modes.push(await apply(3, 60));
-    modes.push(await apply(3, 70));
-    const repeatedSeventy = await apply(3, 70);
-    modes.push(await apply(3, 80));
-    modes.push(await apply(3, null));
+    modes.push(await apply(5, 60));
+    modes.push(await apply(5, 70));
+    const repeatedSeventy = await apply(5, 70);
+    modes.push(await apply(5, 80));
+    modes.push(await apply(5, null));
     const nullRestored = !root.classList.contains("a11y-bottom-viewport-enabled");
-    await apply(3, 80);
+    const disabled = await apply(5, 70, false);
+    const hiddenWhenOff = !disabled.hintVisible && !document.querySelector(".a11y-additional-menu-hint");
+    const reenabled = await apply(5, 80, true);
+    const visibleWhenOnAgain = reenabled.hintVisible;
     modes.push(await apply(2, 70));
+    const legacyHintOff = !modes.at(-1).hintVisible;
     const legacyRestored = !root.classList.contains("a11y-bottom-viewport-enabled");
-    await apply(3, 80);
+    await apply(5, 80);
     sdk.endSession();
     await frame();
     const ended = !root.classList.contains("a11y-bottom-viewport-enabled") &&
-      sdk.profile.viewportMode === null;
-    modes.push(await apply(3, 60));
+      sdk.profile.viewportMode === null && !isHintVisible();
+    modes.push(await apply(5, 60));
     const reactivated = sdk.profile.viewportMode?.heightPercent === 60 &&
       root.classList.contains("a11y-bottom-viewport-enabled");
     return {
       modes,
       nullRestored,
       legacyRestored,
+      hiddenWhenOff,
+      visibleWhenOnAgain,
+      legacyHintOff,
       ended,
       reactivated,
       repeatedSeventy: repeatedSeventy.mode?.heightPercent === 70 &&
         repeatedSeventy.viewport.height === modes[1].viewport.height,
       noAccumulation: modes[0].viewport.height === modes[5].viewport.height,
-      pass: nullRestored && legacyRestored && ended && reactivated &&
+      pass: nullRestored && legacyRestored && hiddenWhenOff && visibleWhenOnAgain &&
+        legacyHintOff && ended && reactivated &&
         repeatedSeventy.mode?.heightPercent === 70 &&
         repeatedSeventy.viewport.height === modes[1].viewport.height &&
         modes[0].mode?.heightPercent === 60 &&

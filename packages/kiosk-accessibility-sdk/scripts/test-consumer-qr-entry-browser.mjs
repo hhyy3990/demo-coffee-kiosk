@@ -570,7 +570,7 @@ try {
     await wait(50);
   }
    await pointerClick("[data-a11y-guide-next]");
-  const delayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+  const delayStarted = await evaluate('window.__sdkPackageSmoke.startGuide(false, 10)');
   let defaultGuide;
   for (let attempt = 0; attempt < 115; attempt += 1) {
     defaultGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -609,7 +609,7 @@ try {
     defaultVisibleMs < 9_300 || defaultVisibleMs > 11_500) {
     throw new Error(`Real 10-second guide return failed (${defaultVisibleMs}ms): ${JSON.stringify(defaultReturned)}`);
   }
-  const slowDelayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(true, 10)");
+  const slowDelayStarted = await evaluate('window.__sdkPackageSmoke.startGuide(true, 10)');
   let slowGuide;
   for (let attempt = 0; attempt < 115; attempt += 1) {
     slowGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -665,7 +665,7 @@ try {
     endedBy: "slowGuidance 20-second display deadline; Easy Language page restored",
   };
 
-  const delay15Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 15)");
+  const delay15Started = await evaluate('window.__sdkPackageSmoke.startGuide(false, 15, "15초 지연 시험")');
   let guide15;
   for (let attempt = 0; attempt < 165; attempt += 1) {
     guide15 = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -681,7 +681,7 @@ try {
     throw new Error("Closing the 15-second-delay guide did not return to easy-language page 2/3.");
   }
 
-  const delay20Started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 20)");
+  const delay20Started = await evaluate('window.__sdkPackageSmoke.startGuide(false, 20, "20초 지연 시험")');
   let guide20;
   for (let attempt = 0; attempt < 215; attempt += 1) {
     guide20 = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -693,7 +693,7 @@ try {
     throw new Error(`Real guideDelaySeconds=20 failed (${guideDelay20}ms): ${JSON.stringify(guide20)}`);
   }
   await evaluate("document.querySelector('.a11y-guide-close').click()");
-  await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+  await evaluate('window.__sdkPackageSmoke.startGuide(false, 10, "오래된 타이머 취소 시험")');
   let staleTimerGuide;
   for (let attempt = 0; attempt < 115; attempt += 1) {
     staleTimerGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -781,7 +781,7 @@ try {
       textSize: "extraLarge", buttonSize: "large", contrast: "high",
       easyLanguage: false, smartGuide: true, viewportMode,
     })})`);
-    const started = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
+    const started = await evaluate('window.__sdkPackageSmoke.startGuide(false, 10, "좁은 화면 시험")');
     let smart;
     for (let attempt = 0; attempt < 115; attempt += 1) {
       smart = await evaluate("window.__sdkPackageSmoke.readGuidance()");

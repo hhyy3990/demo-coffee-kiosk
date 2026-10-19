@@ -67,7 +67,7 @@ Manual Smart Guide X dismissal suppresses only the dismissed step and exact guid
 
 **Why:** Closing a guide and immediately rescheduling the same state makes it reappear against the user's explicit choice, while suppressing an entire step would also block deliberately changed guidance.
 
-**How to apply:** Keep dismissal identity semantic (step ID, action, title, and text); cancel pending idle work on X, preserve the Easy Language page, and clear the suppression at a new step or session.
+**How to apply:** Keep dismissal identity semantic (step ID, action, title, and text); cancel pending idle work on X, preserve the Easy Language page, and clear the suppression at a new step or session. Independent browser timing tests after X should use distinct guide text on the same step when they need to retrigger without resetting the explanation page.
 
 The unified easy-language/Smart Guide panel renders only host-supplied explanations. Keep the host's explanation `stepId` aligned with the corresponding guide step when they describe the same task state; after a committed screen change, replace the old explanation with the new screen's copy.
 
@@ -128,6 +128,12 @@ For host-specific text regressions, use only the exact source supplied for that 
 **Why:** Substituting unavailable host copy would make a reproduction claim unreliable.
 
 **How to apply:** Preserve source strings verbatim in fixtures, report measured fixture results separately from host-app findings, and mark unavailable host behavior unverified.
+
+Scroll-content guidance is an explicit QR v5 opt-in. Profiles v1-v4, a missing v5 field, no QR profile, and session reset all mean OFF; the SDK should detach its hint observers/listeners while disabled and restore them only when enabled.
+
+**Why:** The user requires old QR profiles and new QR codes to start with scroll guidance off, with the central QR service updated separately.
+
+**How to apply:** Keep profile normalization fail-closed, apply the effective profile on every QR transition, and test OFF→ON→OFF→ON plus session reset without changing business scrolling.
 
 When fitting Easy Language pages, reserve the rendered copy container's integer scroll height, not only fractional text bounding-box height. Keep enough copy-box height for subpixel line rounding, and assess clipping on the actual overflow-clipped copy wrapper rather than its visible-overflow text child.
 

@@ -185,7 +185,7 @@ export function createScrollGuidance(root, adapter) {
     let node = null;
     let frame = 0;
     let destroyed = false;
-    let enabled = true;
+    let enabled = false;
     const ensureNode = () => {
         if (node)
             return node;
@@ -270,24 +270,54 @@ export function createScrollGuidance(root, adapter) {
         if (relevant)
             schedule();
     });
-    observer?.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
-    resize?.observe(root);
-    root.addEventListener("scroll", onScroll, true);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", schedule, { passive: true });
-    window.visualViewport?.addEventListener("scroll", schedule, { passive: true });
-    window.visualViewport?.addEventListener("resize", schedule, { passive: true });
-    refresh();
+    let listening = false;
+    const attach = () => {
+        if (listening)
+            return;
+        listening = true;
+        observer?.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
+        resize?.observe(root);
+        root.addEventListener("scroll", onScroll, true);
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", schedule, { passive: true });
+        window.visualViewport?.addEventListener("scroll", schedule, { passive: true });
+        window.visualViewport?.addEventListener("resize", schedule, { passive: true });
+    };
+    const detach = () => {
+        if (!listening)
+            return;
+        listening = false;
+        observer?.disconnect();
+        resize?.disconnect();
+        root.removeEventListener("scroll", onScroll, true);
+        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("resize", schedule);
+        window.visualViewport?.removeEventListener("scroll", schedule);
+        window.visualViewport?.removeEventListener("resize", schedule);
+        if (frame)
+            cancelAnimationFrame(frame);
+        frame = 0;
+    };
     return {
         refresh,
         setEnabled(value) {
+            if (destroyed || enabled === value) {
+                if (value)
+                    refresh();
+                return;
+            }
             enabled = value;
-            if (enabled)
+            if (enabled) {
+                attach();
                 refresh();
+            }
             else {
+                detach();
                 node?.remove();
                 node = null;
+                if (root.dataset)
+                    delete root.dataset.a11yScrollGuidance;
             }
         },
         clear() { node?.remove(); node = null; },
@@ -295,15 +325,7 @@ export function createScrollGuidance(root, adapter) {
             if (destroyed)
                 return;
             destroyed = true;
-            observer?.disconnect();
-            resize?.disconnect();
-            root.removeEventListener("scroll", onScroll, true);
-            window.removeEventListener("scroll", onScroll);
-            window.removeEventListener("resize", schedule);
-            window.visualViewport?.removeEventListener("scroll", schedule);
-            window.visualViewport?.removeEventListener("resize", schedule);
-            if (frame)
-                cancelAnimationFrame(frame);
+            detach();
             node?.remove();
             node = null;
         },

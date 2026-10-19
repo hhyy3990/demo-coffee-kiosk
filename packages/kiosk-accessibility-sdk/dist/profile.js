@@ -1,5 +1,5 @@
-export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 4;
-export const ACCESSIBILITY_SDK_VERSION = "0.5.29";
+export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 5;
+export const ACCESSIBILITY_SDK_VERSION = "0.5.30";
 export const PROFILE_LANGUAGES = Object.freeze(["ko", "zh", "vi", "en", "th", "uz", "ja"]);
 export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     textSize: "standard",
@@ -15,6 +15,7 @@ export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     stepByStepGuidance: false,
     conciseGuidance: false,
     slowGuidance: false,
+    scrollGuidance: false,
 });
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -49,6 +50,7 @@ export function validateAccessibilityProfile(input) {
         stepByStepGuidance: input.stepByStepGuidance === true,
         conciseGuidance: input.conciseGuidance === true,
         slowGuidance: input.slowGuidance === true,
+        scrollGuidance: input.scrollGuidance === true,
     };
 }
 export function accessibilityClasses(profile) {

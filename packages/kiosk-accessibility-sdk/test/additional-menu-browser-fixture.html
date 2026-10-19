@@ -109,9 +109,24 @@
     async function hintVisible() { await wait(); const hint = document.querySelector(".a11y-additional-menu-hint"); return Boolean(hint && getComputedStyle(hint).visibility !== "hidden"); }
     async function checkScrollable(kind, count) {
       const instance = mount(kind, count, "호스트 문구는 공통 문구로 대체되어야 합니다.");
-      const startsVisible = await hintVisible();
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true });
+      const initiallyVisibleWhenEnabled = await hintVisible();
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: false });
+      await wait();
+      const removedWhenDisabled = !document.querySelector(".a11y-additional-menu-hint");
+      const hintScrollOwner = instance.scroll.scrollHeight > instance.scroll.clientHeight
+        ? instance.scroll
+        : document.scrollingElement;
+      const initialScrollTop = hintScrollOwner.scrollTop;
+      hintScrollOwner.scrollTop = initialScrollTop + 40;
+      await wait();
+      const scrollWorksWhenDisabled = hintScrollOwner.scrollTop > initialScrollTop;
+      hintScrollOwner.scrollTop = initialScrollTop;
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true });
+      const startsVisible = initiallyVisibleWhenEnabled && removedWhenDisabled &&
+        scrollWorksWhenDisabled && await hintVisible();
       const standardCopy = document.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 내용이 있어요";
-      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
       await wait();
       const testItem = root.querySelector(".menu-item");
       let contentStyleMutations = 0;
@@ -229,6 +244,8 @@
     }
     async function checkStackedFixedControls() {
       const instance = mount("own-scroll", 9);
+      instance.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true });
+      await wait();
       root.querySelector(".fixture-header").style.display = "none";
       Object.assign(instance.scroll.style, {
         position: "fixed", top: "0", right: "0", bottom: "0", left: "0", height: "100vh",
@@ -283,8 +300,8 @@
       };
       blocked.sdk.destroy();
       const enlarged = mount("fit", 10);
-      const hiddenBefore = await hintVisible();
-      enlarged.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large" });
+      const hiddenBefore = !(await hintVisible());
+      enlarged.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true, textSize: "extraLarge", buttonSize: "large" });
       const appearsAfterProfile = await hintVisible();
       const enlargedState = analyzeAdditionalMenuOverflow(root, enlarged.adapter);
       window.dispatchEvent(new Event("resize"));
@@ -314,6 +331,7 @@
           primaryActions: [{ element: pay, message: "아래에 결제하기 버튼이 있습니다. 화면을 위로 밀어보세요." }],
         }),
       } });
+      primarySdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: true });
       result.primaryButton = { beginsGuided: await hintVisible(), correctMessage: document.querySelector(".a11y-additional-menu-copy")?.textContent === "아래에도 버튼이 있어요" };
       scroll.scrollTop = scroll.scrollHeight;
       scroll.dispatchEvent(new Event("scroll", { bubbles: true }));

@@ -210,7 +210,7 @@
       },
     });
     const scrollBefore = scrollSdk.inspectLayout();
-    scrollSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, buttonSize: "large", bottomControls: true });
+    scrollSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, buttonSize: "large", bottomControls: true, scrollGuidance: true });
     const legacyBottomControlsDidNotOptIn = !scrollRoot.classList.contains("a11y-bottom-viewport-enabled");
     scrollArea.scrollTop = scrollArea.scrollHeight;
     const lastRect = lastMenu.getBoundingClientRect();
@@ -260,6 +260,7 @@
       const beforeButtonHeight = lastMenu.getBoundingClientRect().height;
       const appliedProfile = viewportSdk.applyProfile({
         ...DEFAULT_ACCESSIBILITY_PROFILE,
+        scrollGuidance: true,
         viewportMode: { mode: "bottom", heightPercent },
       });
       const applied = viewportSdk.profile.viewportMode?.heightPercent === heightPercent &&
@@ -294,6 +295,7 @@
     const automaticProfile = viewportSdk.applyProfile({
       ...DEFAULT_ACCESSIBILITY_PROFILE,
       easyLanguage: true,
+      scrollGuidance: true,
       viewportMode: null,
     });
     const automaticHeight = Number.parseFloat(scrollArea.style.getPropertyValue("--a11y-bottom-viewport-height"));
@@ -304,6 +306,7 @@
     const disabledAutoProfile = viewportSdk.applyProfile({
       ...DEFAULT_ACCESSIBILITY_PROFILE,
       easyLanguage: false,
+      scrollGuidance: true,
       viewportMode: null,
     });
     const disabledAutoRestored = disabledAutoProfile.viewportMode === null &&
@@ -393,7 +396,14 @@
           }),
         },
       });
-      modalSdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, textSize: "extraLarge", buttonSize: "large", contrast: "high" });
+      const verifyModalHints = innerWidth < 800;
+      modalSdk.applyProfile({
+        ...DEFAULT_ACCESSIBILITY_PROFILE,
+        textSize: "extraLarge",
+        buttonSize: "large",
+        contrast: "high",
+        scrollGuidance: verifyModalHints,
+      });
       modalSdk.setViewportMode({ mode: "bottom", heightPercent: 70 });
       const guideStates = [];
       const maxScroll = () => scrollArea.scrollHeight - scrollArea.clientHeight;
@@ -522,13 +532,15 @@
       return {
         results,
         guideStates,
-        pass: guideStates.slice(0, 4).every((item) => item.visible && Math.abs((item.bottomGap ?? Infinity) - 12) <= 1) &&
-          !guideStates[4].visible && guideStates[5].visible &&
+        pass: (verifyModalHints
+          ? guideStates.slice(0, 4).every((item) => item.visible && Math.abs((item.bottomGap ?? Infinity) - 12) <= 1) &&
+            !guideStates[4].visible && guideStates[5].visible
+          : guideStates.every((item) => !item.visible)) &&
           results.every((item) =>
             item.stableDuringOpen && item.stableAfterClose &&
             item.focusMovedToDialog && item.focusReturnedAfterClose &&
             item.closeButtonHitTest && item.modalAtBottom &&
-            item.hintVisibleAtTop === (item.kind === "qr" && item.modalHasScrollableContent) &&
+            item.hintVisibleAtTop === (verifyModalHints && item.kind === "qr" && item.modalHasScrollableContent) &&
             !item.hintVisibleAtBottom
           ),
       };

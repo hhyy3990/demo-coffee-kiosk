@@ -37,7 +37,7 @@ function profileFromCentralResponse(body) {
         throw new Error("QR_UNAVAILABLE");
     const record = body;
     if (record.schemaVersion !== 1 && record.schemaVersion !== 2 &&
-        record.schemaVersion !== 3 && record.schemaVersion !== 4) {
+        record.schemaVersion !== 3 && record.schemaVersion !== 4 && record.schemaVersion !== 5) {
         throw new Error("QR_UNAVAILABLE");
     }
     if (typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) {
@@ -90,7 +90,7 @@ function profileFromCentralResponse(body) {
         !("viewportMode" in profileData)) {
         throw new Error("QR_UNAVAILABLE");
     }
-    if (schemaVersion === 4) {
+    if (schemaVersion >= 4) {
         if (!PROFILE_LANGUAGES.includes(profileData.language) ||
             typeof profileData.stepByStepGuidance !== "boolean" ||
             typeof profileData.conciseGuidance !== "boolean" ||
@@ -98,8 +98,13 @@ function profileFromCentralResponse(body) {
             throw new Error("QR_UNAVAILABLE");
         }
     }
+    if (schemaVersion === 5 && "scrollGuidance" in profileData &&
+        typeof profileData.scrollGuidance !== "boolean") {
+        throw new Error("QR_UNAVAILABLE");
+    }
     return validateAccessibilityProfile({
         ...profileData,
+        scrollGuidance: schemaVersion === 5 && profileData.scrollGuidance === true,
         bottomControls: false,
         ...(schemaVersion === 3 ? {
             language: "ko",

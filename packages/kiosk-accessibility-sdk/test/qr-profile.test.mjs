@@ -14,6 +14,7 @@ const v4Profile = {
   guideDelaySeconds: 15, voiceGuidance: false, language: "ko",
   stepByStepGuidance: false, conciseGuidance: false, slowGuidance: false,
 };
+const v5Profile = { ...v4Profile, scrollGuidance: true };
 const token = "valid-test-token-123456789";
 const officialUrl = `${CENTRAL_QR_ORIGIN}/profile?token=${token}`;
 const centralResponse = (schemaVersion, preferences = goodProfile) => ({
@@ -67,8 +68,8 @@ test("v1 and v2 profiles apply only after strict required-field validation", asy
   }
 });
 
-test("v1-v3 normalize all v4-only preferences to inactive defaults", async () => {
-  for (const schemaVersion of [1, 2, 3]) {
+test("v1-v4 normalize v5-only scroll guidance to OFF", async () => {
+  for (const schemaVersion of [1, 2, 3, 4]) {
     const preferences = schemaVersion < 3
       ? { ...goodProfile, language: "en", stepByStepGuidance: true, conciseGuidance: true, slowGuidance: true }
       : {
@@ -81,11 +82,20 @@ test("v1-v3 normalize all v4-only preferences to inactive defaults", async () =>
       fetcher: async () => new Response(JSON.stringify(centralResponse(schemaVersion, preferences)), { status: 200 }),
     });
     const profile = await client.resolve(token);
-    assert.deepEqual(
-      [profile.language, profile.stepByStepGuidance, profile.conciseGuidance, profile.slowGuidance],
-      ["ko", false, false, false],
-    );
-    if (schemaVersion === 3) assert.deepEqual(profile.viewportMode, { mode: "bottom", heightPercent: 60 });
+    assert.equal(profile.scrollGuidance, false);
+    if (schemaVersion < 4) {
+      assert.deepEqual(
+        [profile.language, profile.stepByStepGuidance, profile.conciseGuidance, profile.slowGuidance],
+        ["ko", false, false, false],
+      );
+    } else {
+      assert.deepEqual(
+        [profile.language, profile.stepByStepGuidance, profile.conciseGuidance, profile.slowGuidance],
+        ["vi", true, true, true],
+      );
+    }
+    if (schemaVersion === 1 || schemaVersion === 2) assert.equal(profile.viewportMode, null);
+    else assert.deepEqual(profile.viewportMode, { mode: "bottom", heightPercent: 60 });
   }
 });
 
@@ -214,10 +224,34 @@ test("v4 rejects malformed or incomplete language and guidance preferences", asy
   }
 });
 
+test("v5 supports scroll guidance opt-in and defaults missing preference to OFF", async () => {
+  for (const scrollGuidance of [true, false, undefined]) {
+    const preferences = { ...v5Profile };
+    if (scrollGuidance === undefined) delete preferences.scrollGuidance;
+    else preferences.scrollGuidance = scrollGuidance;
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(JSON.stringify(centralResponse(5, preferences)), { status: 200 }),
+    });
+    assert.equal((await client.resolve(token)).scrollGuidance, scrollGuidance === true);
+  }
+});
+
+test("v5 rejects a malformed scroll-guidance preference", async () => {
+  for (const scrollGuidance of ["true", 1, null]) {
+    const client = createQrProfileClient({
+      fetcher: async () => new Response(
+        JSON.stringify(centralResponse(5, { ...v5Profile, scrollGuidance })),
+        { status: 200 },
+      ),
+    });
+    await assert.rejects(client.resolve(token), /QR_UNAVAILABLE/);
+  }
+});
+
 test("invalid QR data, unknown schema and unsupported response envelopes fail closed", async () => {
   let requests = 0;
   const unsupportedCases = [
-    { schemaVersion: 5, preferences: goodProfile },
+    { schemaVersion: 6, preferences: goodProfile },
     { schemaVersion: 2, preferences: { ...goodProfile, simplifiedLayout: true } },
     { schemaVersion: 2, preferences: { ...goodProfile, textSize: "huge" } },
     { schemaVersion: 2, profile: { preferences: goodProfile } },

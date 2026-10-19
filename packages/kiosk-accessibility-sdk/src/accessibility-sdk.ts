@@ -1269,9 +1269,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
 
   function applyProfile(input: unknown): AccessibilityProfile {
     sessionEnded = false;
-    menuHint.setEnabled(true);
     const previousVoiceGuidance = currentProfile.voiceGuidance;
     currentProfile = validateAccessibilityProfile(input);
+    menuHint.setEnabled(currentProfile.scrollGuidance);
     const nextClasses = new Set(accessibilityClasses(currentProfile));
     for (const className of MANAGED_CLASSES) {
       root.classList.toggle(className, nextClasses.has(className));
