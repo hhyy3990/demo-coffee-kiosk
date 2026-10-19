@@ -12,11 +12,10 @@
     #fixture-root { position: relative; width: 100%; min-height: 100vh; }
     #fixture-result { position: fixed; left: -10000px; top: 0; }
     .fixture-header { height: 104px; padding: 12px; }
-    .fixture-scroll { height: 560px; overflow-y: auto; padding-bottom: 96px; }
+    .fixture-scroll { height: min(654px, calc(100vh - 190px)); overflow-y: auto; padding-bottom: 96px; }
     .fixture-list { display: grid; gap: 8px; }
     .menu-item { display: block; width: 100%; min-height: 82px; border: 1px solid #777; background: white; }
-    .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 104px; padding: 20px; background: #ddd; }
-    .fixture-qr-dock { position: fixed; z-index: 10; right: 0; bottom: 104px; left: 0; height: 72px; background: #eee; }
+    .fixture-footer { position: fixed; z-index: 6; right: 0; bottom: 0; left: 0; height: 86px; padding: 20px; background: #ddd; }
     #fixture-root.document-scroll .fixture-scroll { height: auto; overflow: visible; padding-bottom: 0; }
     #fixture-root.document-scroll .menu-item { min-height: 160px; }
     #fixture-root.document-scroll .menu-item:nth-child(9) { margin-top: 130px; }
@@ -33,11 +32,15 @@
   <div id="fixture-root"></div>
   <pre id="fixture-result">pending</pre>
   <script type="module">
-    import { analyzeAdditionalMenuOverflow, createAccessibilitySdk, DEFAULT_ACCESSIBILITY_PROFILE } from "/packages/kiosk-accessibility-sdk/dist/index.js";
+    import { analyzeAdditionalMenuOverflow, createAccessibilitySdk, createQrEntryDock, DEFAULT_ACCESSIBILITY_PROFILE } from "/packages/kiosk-accessibility-sdk/dist/index.js";
     const root = document.querySelector("#fixture-root");
     const result = {};
     const wait = () => new Promise((resolve) => setTimeout(resolve, 100));
+    let dockController = null;
+    let qrOpenCount = 0;
     function mount(kind, count, message) {
+      dockController?.destroy();
+      dockController = null;
       document.querySelector(".fixture-footer")?.remove();
       document.querySelector("[data-a11y-qr-entry-dock]")?.remove();
       root.replaceChildren();
@@ -45,8 +48,8 @@
       const header = document.createElement("header");
       header.className = "fixture-header";
       header.textContent = "메뉴 영역";
-      const scroll = document.createElement("div");
-      scroll.className = "fixture-scroll";
+      const scroll = document.createElement("main");
+      scroll.className = "stage fixture-scroll";
       const list = document.createElement("div");
       list.className = "fixture-list";
       for (let index = 0; index < count; index += 1) {
@@ -59,16 +62,12 @@
       }
       scroll.append(list);
       const footer = document.createElement("footer");
-      footer.className = "fixture-footer";
+      footer.className = "device-footer fixture-footer";
       footer.dataset.a11ySlot = "bottom-controls";
       if (kind === "unreachable") footer.style.height = "60px";
       footer.textContent = "하단 조작부";
-      const dock = document.createElement("aside");
-      dock.dataset.a11yQrEntryDock = "true";
-      dock.className = "fixture-qr-dock";
-      dock.textContent = "SDK QR 도크";
       root.append(header, scroll);
-      document.body.append(footer, dock);
+      document.body.append(footer);
       const adapter = {
         getSnapshot: () => ({ screenId: `fixture.${kind}` }),
         getActions: () => [...root.querySelectorAll(".menu-item")].map((element, index) => ({
@@ -78,12 +77,32 @@
         getLayoutRegions: () => ({
           scrollArea: scroll,
           bottomControls: [footer],
-          guidanceAvoidAreas: [dock],
+          guidanceAvoidAreas: [...document.querySelectorAll("[data-a11y-qr-entry-dock]")],
           menuItems: [...root.querySelectorAll(".menu-item")],
           ...(message ? { menuMessage: message } : {}),
         }),
       };
-      return { scroll, footer, dock, sdk: createAccessibilitySdk({ root, adapter }), adapter };
+      const dockRequired = kind === "own-scroll" && innerWidth <= 600;
+      if (dockRequired) {
+        dockController = createQrEntryDock({
+          root,
+          adapter,
+          active: true,
+          onOpenQr: () => { qrOpenCount += 1; },
+        });
+      }
+      const dock = document.querySelector("[data-a11y-qr-entry-dock]");
+      if (dock) {
+        Object.assign(dock.style, {
+          position: "fixed", zIndex: "10", left: "0", right: "0", bottom: "86px",
+          top: "auto", width: "auto", height: "72px",
+        });
+        Object.assign(dock.querySelector("button").style, { width: "100%", height: "100%" });
+      }
+      return {
+        scroll, footer, dock, dockController, dockRequired,
+        sdk: createAccessibilitySdk({ root, adapter }), adapter,
+      };
     }
     async function hintVisible() { await wait(); const hint = document.querySelector(".a11y-additional-menu-hint"); return Boolean(hint && getComputedStyle(hint).visibility !== "hidden"); }
     async function checkScrollable(kind, count) {
@@ -118,10 +137,51 @@
         ? innerHeight
         : scrollRect.top + instance.scroll.clientTop + instance.scroll.clientHeight;
       const ownerBottom = Math.min(scrollOwnerBottom, instance.footer.getBoundingClientRect().top);
-      const anchoredToOwner = !hint || Boolean(hintRect && Math.abs(ownerBottom - hintRect.bottom - 12) <= 1);
+      const anchoredToOwner = !hint || Boolean(hintRect && hintRect.top >= 0 && hintRect.bottom <= ownerBottom + 1);
       const footerRect = instance.footer.getBoundingClientRect();
       const noFooterOverlap = !hintRect || hintRect.bottom <= footerRect.top;
       const footerGap = hintRect ? footerRect.top - hintRect.bottom : null;
+      const dockRect = instance.dock?.getBoundingClientRect() ?? null;
+      const dockGap = hintRect && dockRect ? dockRect.top - hintRect.bottom : null;
+      const noDockOverlap = !hintRect || !dockRect || hintRect.bottom <= dockRect.top;
+      const dockButton = instance.dock?.querySelector("button") ?? null;
+      const dockButtonRect = dockButton?.getBoundingClientRect() ?? null;
+      const noQrButtonOverlap = !hintRect || !dockButtonRect ||
+        hintRect.left >= dockButtonRect.right || hintRect.right <= dockButtonRect.left ||
+        hintRect.top >= dockButtonRect.bottom || hintRect.bottom <= dockButtonRect.top;
+      const dockLabelVisible = !instance.dockRequired || Boolean(dockButton && dockButton.getClientRects().length &&
+        dockButton.getAttribute("aria-label") === "내 QR로 화면 설정" &&
+        dockButton.textContent.includes("내 QR로 화면 설정"));
+      const qrOpensBefore = qrOpenCount;
+      dockButton?.click();
+      const qrDockClickable = !instance.dockRequired || qrOpenCount === qrOpensBefore + 1;
+      if (innerWidth === 390 && innerHeight === 844 && instance.dockRequired) {
+        result.bottomModes = [];
+        for (const mode of [70, 80]) {
+          instance.scroll.style.height = "582px";
+          instance.footer.style.height = "93px";
+          instance.dock.style.bottom = "93px";
+          window.dispatchEvent(new Event("resize"));
+          await wait();
+          const modeHint = document.querySelector(".a11y-additional-menu-hint");
+          const modeHintRect = modeHint?.getBoundingClientRect();
+          const modeDockRect = instance.dock.getBoundingClientRect();
+          result.bottomModes.push({
+            mode,
+            visible: Boolean(modeHint && getComputedStyle(modeHint).visibility === "visible"),
+            hintTop: modeHintRect?.top ?? null,
+            hintBottom: modeHintRect?.bottom ?? null,
+            dockTop: modeDockRect.top,
+            noOverlap: Boolean(modeHintRect && modeHintRect.bottom <= modeDockRect.top),
+            originalPositionKept: Boolean(modeHintRect && Math.abs(modeHintRect.bottom - 674) <= 1),
+          });
+        }
+        instance.scroll.style.height = "";
+        instance.footer.style.height = "86px";
+        instance.dock.style.bottom = "86px";
+        window.dispatchEvent(new Event("resize"));
+        await wait();
+      }
       if (kind === "document-scroll") window.scrollTo(0, document.documentElement.scrollHeight);
       else instance.scroll.scrollTop = instance.scroll.scrollHeight;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -160,11 +220,10 @@
       instance.sdk.endSession();
       const clearsOnSessionEnd = !document.querySelector(".a11y-additional-menu-hint");
       instance.sdk.destroy();
+      instance.dockController?.destroy();
       const clearsOnDestroy = !document.querySelector(".a11y-additional-menu-hint");
-      const dockRect = instance.dock.getBoundingClientRect().toJSON();
       const controlsRect = instance.footer.getBoundingClientRect().toJSON();
-      instance.dock.remove();
-       return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, anchoredToOwner, ownerBottom, normalOverlap, passThroughAtOverlap, noFooterOverlap, footerGap, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
+      return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, anchoredToOwner, ownerBottom, normalOverlap, passThroughAtOverlap, noFooterOverlap, footerGap, noDockOverlap, noQrButtonOverlap, dockGap, dockRequired: instance.dockRequired, dockLabelVisible, qrDockClickable, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect: dockRect?.toJSON() ?? null, dockButtonRect: dockButtonRect?.toJSON() ?? null, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
@@ -382,7 +441,9 @@
       const guidancePassed = (item) => item.startsVisible && !item.noSafeSpaceAtStart &&
         item.standardCopy && item.hidesAtEnd && item.returnsAfterScrollUp && item.lastReached &&
         item.clickable && item.clicked && item.anchoredToOwner && item.normalOverlap &&
-        item.noFooterOverlap && item.footerGap >= 11 &&
+        item.noFooterOverlap && item.footerGap >= 11 && item.noDockOverlap &&
+        item.noQrButtonOverlap &&
+        (!item.dockRequired || (item.dockGap >= 11 && item.dockLabelVisible && item.qrDockClickable)) &&
         item.hintPointerEventsNone &&
         item.scrollStable && item.contentStyleMutations.unchanged && item.clearsOnSessionEnd && item.clearsOnDestroy;
       result.passed = guidancePassed(result.fixtureA) && guidancePassed(result.fixtureB) &&
@@ -392,6 +453,8 @@
         result.sessionReset && result.newScreenReanalyzed &&
         result.primaryButton.beginsGuided && result.primaryButton.correctMessage &&
         result.primaryButton.reachableButtonHitTest && result.primaryButton.hidesWhenVisible &&
+        (!result.bottomModes || result.bottomModes.every((mode) =>
+          mode.visible && mode.noOverlap && mode.originalPositionKept)) &&
         Object.values(result.automaticTargets).every(Boolean) &&
         Object.values(result.composite).every(Boolean) && Object.values(result.smallControls).every(Boolean);
     } catch (error) {

@@ -90,7 +90,14 @@ function currentHint(root, adapter) {
         ? findVerticalOwner(root, regions.scrollArea)
         : null;
     const effectiveOwner = owner ?? root;
-    const obstacle = fixedBottomObstacle(regions.bottomControls, effectiveOwner);
+    const qrDocks = typeof document.querySelectorAll === "function"
+        ? [...document.querySelectorAll("[data-a11y-qr-entry-dock]")]
+        : [];
+    const obstacle = fixedBottomObstacle([...new Set([
+            ...(regions.bottomControls ?? []),
+            ...(regions.guidanceAvoidAreas ?? []),
+            ...qrDocks,
+        ])], effectiveOwner);
     const actions = regions.primaryActions ?? [];
     for (const candidate of activeOverlay ? [] : actions) {
         const el = candidate.element;
@@ -146,16 +153,22 @@ function placeHint(hint, owner, obstacle) {
     if (anchorBottom <= viewportTop)
         return false;
     let bottomInset = Math.max(12, viewportBottom - anchorBottom + 12);
-    if (obstacle && shown(obstacle)) {
-        const obstacleTop = obstacle.getBoundingClientRect().top;
-        bottomInset = Math.max(bottomInset, viewportBottom - obstacleTop + 12);
-    }
     hint.style.bottom = `${bottomInset}px`;
     hint.style.pointerEvents = "none";
     hint.style.visibility = "visible";
-    const height = hint.getBoundingClientRect().height;
-    const rect = hint.getBoundingClientRect();
+    let rect = hint.getBoundingClientRect();
     hint.style.left = `${Math.max(viewportLeft + 12, viewportLeft + (vw - rect.width) / 2)}px`;
+    rect = hint.getBoundingClientRect();
+    if (obstacle && shown(obstacle)) {
+        const obstacleRect = obstacle.getBoundingClientRect();
+        const overlapsObstacle = rect.left < obstacleRect.right && rect.right > obstacleRect.left &&
+            rect.top < obstacleRect.bottom && rect.bottom > obstacleRect.top;
+        if (overlapsObstacle) {
+            bottomInset = Math.max(bottomInset, viewportBottom - obstacleRect.top + 12);
+            hint.style.bottom = `${bottomInset}px`;
+        }
+    }
+    const height = hint.getBoundingClientRect().height;
     return height > 0;
 }
 export function createScrollGuidance(root, adapter) {
