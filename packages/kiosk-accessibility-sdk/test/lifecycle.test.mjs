@@ -414,7 +414,7 @@ test("same-step guidance copy updates do not reset a visible Smart Guide deadlin
   }
 });
 
-test("easy-language guidance is paged and collapsible without an automatic timeout", () => {
+test("easy-language guidance is paged, always expanded, and has no automatic timeout", () => {
   const h = createSessionHarness();
   try {
     h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, easyLanguage: true });
@@ -431,20 +431,20 @@ test("easy-language guidance is paged and collapsible without an automatic timeo
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "1/3");
     assert.equal(panel.querySelector("[data-a11y-guide-previous]").disabled, true);
     assert.equal(panel.querySelector("[data-a11y-guide-next]").disabled, false);
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     panel.querySelector("[data-a11y-guide-next]").dispatch("click", { stopPropagation() {} });
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
-    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
     panel.querySelector("[data-a11y-guide-previous]").dispatch("click", { stopPropagation() {} });
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "1/3");
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     assert.equal(h.scheduledDelays.size, 0);
   } finally {
     h.restore();
   }
 });
 
-test("Smart Guide shares the easy-language panel, counts down for 20 seconds, and restores the same page and fold state", () => {
+test("Smart Guide shares the expanded easy-language panel and restores its page when dismissed", () => {
   const h = createSessionHarness();
   try {
     h.sdk.applyProfile({
@@ -463,8 +463,7 @@ test("Smart Guide shares the easy-language panel, counts down for 20 seconds, an
     });
     const panel = h.children[0];
     panel.querySelector("[data-a11y-guide-next]").dispatch("click", { stopPropagation() {} });
-    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     h.sdk.setGuideState({
       stepId: "test.confirm",
       enabled: true,
@@ -478,7 +477,7 @@ test("Smart Guide shares the easy-language panel, counts down for 20 seconds, an
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
     assert.equal(panel.querySelector("[data-a11y-guide-countdown]").textContent, "20초");
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), false);
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     assert.equal(panel.querySelector("[data-a11y-guide-pager]").hidden, true);
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "");
     assert.equal(panel.querySelector("[data-a11y-guide-previous]").hidden, true);
@@ -486,19 +485,60 @@ test("Smart Guide shares the easy-language panel, counts down for 20 seconds, an
     const dismissTimer = [...h.scheduledDelays.entries()]
       .filter(([, delay]) => delay === 20_000).at(-1)?.[0];
     assert.ok(dismissTimer);
-    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
     h.timerCallbacks.get(dismissTimer)?.();
     assert.equal(h.children[0], panel);
     assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
-    assert.equal(panel.classList.contains("a11y-guide-collapsed"), true);
-    panel.querySelector("[data-a11y-guide-collapse]").dispatch("click", { stopPropagation() {} });
-    assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
-    assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     h.sdk.endSession();
     assert.equal(h.children.length, 0);
     assert.equal(h.sdk.profile.easyLanguage, false);
+  } finally {
+    h.restore();
+  }
+});
+
+test("Smart Guide X immediately restores the same Easy Language page and replaces its dismissal timer", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: true,
+      smartGuide: true,
+    });
+    h.sdk.setEasyLanguageState({
+      stepId: "test.confirm",
+      explanations: [
+        { title: "발급 부수", text: "서류를 몇 장 받을지 고르는 것입니다." },
+        { title: "수수료", text: "서류를 만드는 데 필요한 금액입니다." },
+        { title: "신청", text: "입력한 내용으로 발급을 시작합니다." },
+      ],
+    });
+    const panel = h.children[0];
+    panel.querySelector("[data-a11y-guide-next]").dispatch("click", { stopPropagation() {} });
+    const beforeGuideTimers = new Set(h.scheduledDelays.keys());
+    h.sdk.setGuideState({
+      stepId: "test.confirm",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "다음 단계", text: "확인 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    const idleTimer = [...h.scheduledDelays.entries()]
+      .filter(([id, delay]) => !beforeGuideTimers.has(id) && delay === 10_000).at(-1)?.[0];
+    assert.ok(idleTimer);
+    h.timerCallbacks.get(idleTimer)?.();
+    assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
+    const dismissalTimer = [...h.scheduledDelays.entries()]
+      .filter(([id, delay]) => !beforeGuideTimers.has(id) && id !== idleTimer && delay === 10_000).at(-1)?.[0];
+    assert.ok(dismissalTimer);
+    panel.querySelector(".a11y-guide-close").dispatch("click", { stopPropagation() {} });
+    assert.equal(h.clearedTimers.has(dismissalTimer), true);
+    assert.equal(panel.querySelector("[data-a11y-guide-title]").textContent, "수수료");
+    assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
+    assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
+    assert.notEqual(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
+    assert.equal([...h.scheduledDelays.entries()].at(-1)?.[1], 10_000);
   } finally {
     h.restore();
   }

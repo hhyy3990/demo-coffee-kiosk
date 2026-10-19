@@ -321,8 +321,7 @@ window.__sdkPackageSmoke = {
       await frame();
       const panel = root.querySelector(".a11y-guide-toast");
       const rect = panel?.getBoundingClientRect();
-      const buttonRects = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]",
-        "[data-a11y-guide-collapse]"].map((selector) => {
+      const buttonRects = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]"].map((selector) => {
         const button = panel?.querySelector(selector);
         const box = button?.getBoundingClientRect();
         let ancestor = button;
@@ -348,7 +347,8 @@ window.__sdkPackageSmoke = {
         visible: Boolean(panel && getComputedStyle(panel).visibility === "visible"),
         overflow: panel ? getComputedStyle(panel).overflow : "",
         scrollable: Boolean(panel && ["auto", "scroll"].includes(getComputedStyle(panel).overflowY)),
-        collapsed: Boolean(panel?.classList.contains("a11y-guide-collapsed")),
+        collapsed: false,
+        foldButtonAbsent: !panel?.querySelector("[data-a11y-guide-collapse]"),
         bodyScrollable: Boolean(panel && panel.scrollHeight > panel.clientHeight),
         buttons: buttonRects,
       };
@@ -378,10 +378,11 @@ window.__sdkPackageSmoke = {
     samples.push(await sample("이전→페이지 1"));
     root.querySelector("[data-a11y-guide-next]")?.click();
     samples.push(await sample("다음→페이지 2 재방문"));
-    root.querySelector("[data-a11y-guide-collapse]")?.click();
-    samples.push(await sample("접기"));
-    root.querySelector("[data-a11y-guide-collapse]")?.click();
-    samples.push(await sample("펼치기"));
+    const alwaysExpanded = await sample("접기·펼치기 제거");
+    if (!alwaysExpanded.foldButtonAbsent || alwaysExpanded.collapsed) {
+      throw new Error("Guidance fold controls must not be present.");
+    }
+    samples.push(alwaysExpanded);
     sdk.setGuideState({
       stepId: guideStep, enabled: true, paused: false, delaySeconds: 0,
       message: { title: "스마트 길잡이", text: "현재 단계의 다음 동작을 안내합니다.", actionId: "host.review.continue" },
@@ -475,8 +476,7 @@ window.__sdkPackageSmoke = {
       const range = document.createRange();
       if (copy) range.selectNodeContents(copy);
       const textBox = copy ? range.getBoundingClientRect() : null;
-      const controls = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]",
-        "[data-a11y-guide-collapse]"].map((selector) => {
+      const controls = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]"].map((selector) => {
         const button = panel()?.querySelector(selector);
         const rect = button?.getBoundingClientRect();
         return { hidden: Boolean(button?.hidden), width: rect?.width ?? 0,
@@ -487,7 +487,7 @@ window.__sdkPackageSmoke = {
         textTop: textBox?.top ?? null, textBottom: textBox?.bottom ?? null,
         overflow: panel() ? getComputedStyle(panel()).overflow : "",
         bodyScrollable: Boolean(panel() && panel().scrollHeight > panel().clientHeight),
-        collapsed: Boolean(panel()?.classList.contains("a11y-guide-collapsed")), controls };
+         collapsed: false, foldButtonAbsent: !panel()?.querySelector("[data-a11y-guide-collapse]"), controls };
     };
     for (let index = 0; index < toModes.length; index += 1) {
       const before = sample();
@@ -622,7 +622,8 @@ window.__sdkPackageSmoke = {
       textVisible: Boolean(panel?.querySelector("[data-a11y-guide-text]")?.getClientRects().length &&
         getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).display !== "none"),
       page: panel?.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
-      collapsed: panel?.classList.contains("a11y-guide-collapsed") ?? false,
+       collapsed: false,
+       foldButtonAbsent: !panel?.querySelector("[data-a11y-guide-collapse]"),
       pagerHidden: panel?.querySelector("[data-a11y-guide-pager]")?.hidden ?? true,
       previousHidden: panel?.querySelector("[data-a11y-guide-previous]")?.hidden ?? true,
       nextHidden: panel?.querySelector("[data-a11y-guide-next]")?.hidden ?? true,
@@ -633,10 +634,6 @@ window.__sdkPackageSmoke = {
       iconRect: measure(".a11y-guide-icon"),
       iconAriaHidden: panel?.querySelector(".a11y-guide-icon")?.getAttribute("aria-hidden") ?? "",
       countdownRect: measure("[data-a11y-guide-countdown]"),
-      collapseRect: measure("[data-a11y-guide-collapse]"),
-      collapseTextRect: measureText("[data-a11y-guide-collapse]"),
-      collapseLabel: panel?.querySelector("[data-a11y-guide-collapse]")?.textContent ?? "",
-      collapseAccessibleName: panel?.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
       closeRect: measure(".a11y-guide-close"),
       closeTextRect: measureText(".a11y-guide-close"),
       closeLabel: panel?.querySelector(".a11y-guide-close")?.getAttribute("aria-label") ?? "",

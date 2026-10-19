@@ -57,7 +57,7 @@ function visibleBottomFor(item, root, controls) {
     }
     const itemRect = item.getBoundingClientRect();
     for (const control of controls) {
-        if (!root.contains(control) || !visible(control))
+        if (!control.isConnected || !visible(control))
             continue;
         const position = window.getComputedStyle(control).position;
         if (position !== "fixed" && position !== "sticky")
@@ -107,9 +107,6 @@ export function analyzeAdditionalMenuOverflow(root, adapter) {
         scrollOwner,
     };
 }
-function overlaps(a, b) {
-    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
 export function createAdditionalMenuHint(root, adapter) {
     let hint = null;
     let frame = 0;
@@ -140,55 +137,53 @@ export function createAdditionalMenuHint(root, adapter) {
     }
     function place(element) {
         const regions = adapter.getLayoutRegions();
-        const rootRect = root.getBoundingClientRect();
         const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
         const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
         const width = Math.min(360, viewportWidth - 24);
+        const left = Math.max(12, (viewportWidth - width) / 2);
         element.style.width = `${width}px`;
-        element.style.left = `${Math.max(12, (viewportWidth - width) / 2)}px`;
-        element.style.top = "12px";
+        element.style.left = `${left}px`;
+        element.style.top = "0px";
         element.style.visibility = "hidden";
         const measured = element.getBoundingClientRect();
         const height = Math.max(44, measured.height);
-        const items = regions.menuItems ?? [];
-        const actions = adapter.getActions().map((action) => action.element);
-        const controls = regions.bottomControls ?? [];
-        const guide = root.querySelector(".a11y-guide-toast");
-        const obstacles = [...items, ...actions, ...controls, ...(guide ? [guide] : [])]
-            .filter((item) => item !== element && root.contains(item) && visible(item))
-            .map((item) => item.getBoundingClientRect())
-            .filter((rect) => rect.bottom > 0 && rect.top < viewportHeight);
-        const horizontalPositions = [
-            Math.max(12, (viewportWidth - width) / 2),
-            12,
-            Math.max(12, viewportWidth - width - 12),
-        ];
-        const topPositions = [
-            Math.max(12, Math.min(viewportHeight - height - 12, rootRect.top + 12)),
-            Math.max(12, Math.min(viewportHeight - height - 12, rootRect.bottom - height - 12)),
-            12,
-            Math.max(12, viewportHeight - height - 12),
-        ];
-        for (const top of [...new Set(topPositions)]) {
-            for (const left of [...new Set(horizontalPositions)]) {
-                const candidate = new DOMRect(left, top, width, height);
-                if (obstacles.some((obstacle) => overlaps(candidate, obstacle)))
-                    continue;
-                element.style.left = `${left}px`;
-                element.style.top = `${top}px`;
-                element.style.visibility = "visible";
-                return true;
+        const owner = findScrollOwner(root, regions.menuItems ?? [], regions.scrollArea);
+        let safeBottom = owner && typeof Document !== "undefined" && owner instanceof Document
+            ? viewportHeight
+            : owner
+                ? Math.min(viewportHeight, owner.getBoundingClientRect().top +
+                    owner.clientTop + owner.clientHeight)
+                : viewportHeight;
+        for (const control of regions.bottomControls ?? []) {
+            if (!control.isConnected || !visible(control))
+                continue;
+            const position = window.getComputedStyle(control).position;
+            if (position !== "fixed" && position !== "sticky")
+                continue;
+            const rect = control.getBoundingClientRect();
+            const overlapsHintWidth = left < rect.right && left + width > rect.left;
+            if (overlapsHintWidth && rect.bottom > 0 && rect.top < safeBottom) {
+                safeBottom = Math.min(safeBottom, rect.top);
             }
         }
-        element.style.visibility = "hidden";
-        return false;
+        const top = safeBottom - height - 12;
+        if (top < 12)
+            return false;
+        element.style.top = `${top}px`;
+        element.style.visibility = "visible";
+        return true;
     }
     function refresh() {
         if (destroyed)
             return;
         const regions = adapter.getLayoutRegions();
         const items = regions.menuItems ?? [];
-        const nextObserved = new Set([root, ...(regions.scrollArea ? [regions.scrollArea] : []), ...items]);
+        const nextObserved = new Set([
+            root,
+            ...(regions.scrollArea ? [regions.scrollArea] : []),
+            ...items,
+            ...(regions.bottomControls ?? []),
+        ]);
         for (const element of observed) {
             if (!nextObserved.has(element)) {
                 resizeObserver?.unobserve(element);

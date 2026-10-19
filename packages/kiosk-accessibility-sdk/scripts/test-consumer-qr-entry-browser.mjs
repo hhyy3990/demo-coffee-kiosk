@@ -487,9 +487,10 @@ try {
     throw new Error("Next-page clicks did not reach explanation page 3.");
   }
    await pointerClick("[data-a11y-guide-previous]");
-   await pointerClick("[data-a11y-guide-collapse]");
   easy = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-  if (!easy.page.startsWith("2/") || !easy.collapsed) throw new Error(`Paging/collapse failed: ${JSON.stringify(easy)}`);
+   if (!easy.page.startsWith("2/") || easy.collapsed || !easy.foldButtonAbsent) {
+     throw new Error(`Paging must remain expanded without fold controls: ${JSON.stringify(easy)}`);
+   }
 
   for (const [width, height] of panelGuidanceViewports) {
     await send("Emulation.setDeviceMetricsOverride", {
@@ -519,6 +520,7 @@ try {
             panel.getAttribute("aria-hidden") !== "true"),
           retained: Boolean(panel), page: panel?.querySelector("[data-a11y-guide-page]")?.textContent,
           collapsed: panel?.classList.contains("a11y-guide-collapsed"),
+          foldButtonAbsent: !panel?.querySelector("[data-a11y-guide-collapse]"),
           panel: rect(panel), action: rect(document.querySelector("#host-continue")),
           keypad: rect(document.querySelector(".keypad")), hitTargets,
           suppressionRecorded: window.__sdkPackageSmoke.read().guidePlacementDiagnostics.length > 0,
@@ -567,8 +569,7 @@ try {
     if (guideFixtureLoaded) break;
     await wait(50);
   }
-  await pointerClick("[data-a11y-guide-next]");
-  await pointerClick("[data-a11y-guide-collapse]");
+   await pointerClick("[data-a11y-guide-next]");
   const delayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(false, 10)");
   let defaultGuide;
   for (let attempt = 0; attempt < 115; attempt += 1) {
@@ -578,12 +579,14 @@ try {
   }
   const defaultDelayMs = await evaluate(`performance.now() - ${delayStarted}`);
   if (defaultGuide?.title !== "스마트 길잡이" || defaultDelayMs < 9_500 || defaultDelayMs > 11_500 ||
-    defaultGuide.collapsed || defaultGuide.page !== "" || !defaultGuide.pagerHidden ||
+    defaultGuide.collapsed || !defaultGuide.foldButtonAbsent ||
+    defaultGuide.page !== "" || !defaultGuide.pagerHidden ||
     !defaultGuide.previousHidden || !defaultGuide.nextHidden || !defaultGuide.countdown.includes("10")) {
     throw new Error(`Real 10-second delay/guide start failed (${defaultDelayMs}ms): ${JSON.stringify(defaultGuide)}`);
   }
   const expandedSmartGuide = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-  if (expandedSmartGuide.collapsed || expandedSmartGuide.title !== "스마트 길잡이" ||
+  if (expandedSmartGuide.collapsed || !expandedSmartGuide.foldButtonAbsent ||
+    expandedSmartGuide.title !== "스마트 길잡이" ||
     expandedSmartGuide.page !== "" || !expandedSmartGuide.pagerHidden ||
     !expandedSmartGuide.text.includes("계속 버튼을 눌러 진행하세요.")) {
     throw new Error(`Smart Guide content was mixed with easy-language paging: ${JSON.stringify(expandedSmartGuide)}`);
@@ -602,7 +605,8 @@ try {
   }
   const defaultVisibleMs = await evaluate(`performance.now() - ${defaultVisibleAt}`);
   if (defaultReturned?.title !== "다음으로 이동" || !defaultReturned.page.startsWith("2/") ||
-    !defaultReturned.collapsed || defaultVisibleMs < 9_300 || defaultVisibleMs > 11_500) {
+    defaultReturned.collapsed || !defaultReturned.foldButtonAbsent ||
+    defaultVisibleMs < 9_300 || defaultVisibleMs > 11_500) {
     throw new Error(`Real 10-second guide return failed (${defaultVisibleMs}ms): ${JSON.stringify(defaultReturned)}`);
   }
   const slowDelayStarted = await evaluate("window.__sdkPackageSmoke.startGuide(true, 10)");
@@ -614,7 +618,7 @@ try {
   }
   const slowDelayMs = await evaluate(`performance.now() - ${slowDelayStarted}`);
   if (slowGuide?.title !== "스마트 길잡이" || slowDelayMs < 9_500 || slowDelayMs > 11_500 ||
-    slowGuide.collapsed || slowGuide.page !== "" || !slowGuide.pagerHidden ||
+    slowGuide.collapsed || !slowGuide.foldButtonAbsent || slowGuide.page !== "" || !slowGuide.pagerHidden ||
     !slowGuide.previousHidden || !slowGuide.nextHidden || !slowGuide.countdown.includes("20")) {
     throw new Error(`Real slow-guide start failed (${slowDelayMs}ms): ${JSON.stringify(slowGuide)}`);
   }
@@ -646,7 +650,8 @@ try {
   }
   const slowVisibleMs = await evaluate(`performance.now() - ${slowVisibleAt}`);
   if (slowReturned?.title !== "다음으로 이동" || !slowReturned.page.startsWith("2/") ||
-    !slowReturned.collapsed || slowVisibleMs < 19_300 || slowVisibleMs > 21_500) {
+    slowReturned.collapsed || !slowReturned.foldButtonAbsent ||
+    slowVisibleMs < 19_300 || slowVisibleMs > 21_500) {
     throw new Error(`Real 20-second guide return failed (${slowVisibleMs}ms): ${JSON.stringify(slowReturned)}`);
   }
   const sameStepInteractionResult = {
@@ -706,12 +711,10 @@ try {
     !afterOldDismissDeadline.pagerHidden) {
     throw new Error(`An old guide timeout affected the next step: ${JSON.stringify(afterOldDismissDeadline)}`);
   }
-  if (afterOldDismissDeadline.collapsed) {
-    await evaluate("document.querySelector('[data-a11y-guide-collapse]').click()");
-  }
   const expanded = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-  if (expanded.collapsed || expanded.title !== "새 단계" || !expanded.pagerHidden) {
-    throw new Error(`Single-page panel could not reopen after the timer check: ${JSON.stringify(expanded)}`);
+  if (expanded.collapsed || !expanded.foldButtonAbsent ||
+      expanded.title !== "새 단계" || !expanded.pagerHidden) {
+    throw new Error(`New-step panel was not always expanded after the timer check: ${JSON.stringify(expanded)}`);
   }
   const guidanceViewports = [[320, 844], [360, 667], [390, 844], [1080, 1920]];
   const viewportModes = [null, 60, 70, 80];
@@ -736,14 +739,9 @@ try {
         await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({ ...variant, viewportMode })})`);
         await new Promise((resolve) => setTimeout(resolve, 350));
         const state = await evaluate("window.__sdkPackageSmoke.readGuidance()");
-        const controls = [
-          state.collapseRect,
-          state.previousRect,
-          state.nextRect,
-        ];
+        const controls = [state.previousRect, state.nextRect];
         const buttonsFit = controls.every((rect) => rect && rect.width >= 44 &&
           Math.abs(rect.height - 44) < 0.1) &&
-          textFitsButton(state.collapseRect, state.collapseTextRect) &&
           textFitsButton(state.previousRect, state.previousTextRect) &&
           textFitsButton(state.nextRect, state.nextTextRect);
         const minBodyFont = variant.textSize === "extraLarge" ? 20 :
@@ -751,12 +749,11 @@ try {
         const panel = state.panelRect;
         const overlaps = (a, b) => a && b && a.left < b.right && a.right > b.left &&
           a.top < b.bottom && a.bottom > b.top;
-        if (!state.visible || !state.textVisible || state.collapsed || !buttonsFit ||
+        if (!state.visible || !state.textVisible || state.collapsed || !state.foldButtonAbsent || !buttonsFit ||
           !state.textRect || !panel || state.panelRect.left < 0 || state.panelRect.right > width ||
           overlaps(panel, state.actionRect) || overlaps(panel, state.keypadRect) ||
           Number.parseFloat(state.bodyFontSize) < minBodyFont ||
           state.iconAriaHidden !== "true" || state.iconRect.width > 20 ||
-          state.collapseAccessibleName !== "안내 접기" ||
           state.headerRect.height > (effectivePercent === 80 ? 56 : 44) ||
           !state.page.startsWith("1/")) {
           throw new Error(`Guidance layout failed at ${width}x${height}, viewport=${percent}: ${JSON.stringify(state)}`);
@@ -766,7 +763,7 @@ try {
           viewportMode: percent ?? "null",
           profile: `${variant.textSize}/${variant.buttonSize}/${variant.contrast}`,
           panelHeight: Math.round(panel.bottom - panel.top),
-          collapseTarget: `${Math.round(state.collapseRect.width)}x${Math.round(state.collapseRect.height)}`,
+          foldControl: "absent",
           previousTarget: `${Math.round(state.previousRect.width)}x${Math.round(state.previousRect.height)}`,
           nextTarget: `${Math.round(state.nextRect.width)}x${Math.round(state.nextRect.height)}`,
           bodyFontSize: state.bodyFontSize,
@@ -795,12 +792,11 @@ try {
     smart = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     if (smart?.title !== "스마트 길잡이" || !smart.visible || !smart.pagerHidden ||
       !smart.previousHidden || !smart.nextHidden || !smart.countdown ||
-           smart.closeRect.width < 44 || Math.abs(smart.closeRect.height - 44) >= 0.1 ||
-           smart.collapseRect.width < 44 || Math.abs(smart.collapseRect.height - 44) >= 0.1 ||
+            smart.closeRect.width < 44 || Math.abs(smart.closeRect.height - 44) >= 0.1 ||
+            !smart.foldButtonAbsent ||
            !textFitsButton(smart.closeRect, smart.closeTextRect) ||
-           !textFitsButton(smart.collapseRect, smart.collapseTextRect) ||
       smart.iconRect.width !== 0 || smart.closeLabel !== "안내 닫기" ||
-      smart.collapseAccessibleName !== "안내 접기" || smart.headerRect.height > 44) {
+       smart.headerRect.height > 44) {
       throw new Error(`Smart Guide-only layout failed at ${width}x${height}: ${JSON.stringify(smart)}`);
     }
     smartOnlyLayouts.push({ viewport: `${width}x${height}`, viewportMode: percent ?? "null",
@@ -816,7 +812,7 @@ try {
     easyLanguage: true, smartGuide: false, viewportMode: null,
   })})`);
   await wait(350);
-  await evaluate("document.querySelector('[data-a11y-guide-collapse]').focus()");
+  await evaluate("document.querySelector('[data-a11y-guide-previous]').focus()");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   const keyboardForward = await evaluate(`({

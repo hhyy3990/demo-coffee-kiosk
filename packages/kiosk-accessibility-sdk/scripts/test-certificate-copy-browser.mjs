@@ -116,7 +116,7 @@ try {
       return {
         page: state.page, pageCount: state.pageCount, title: state.title, text: state.text,
         panel: state.panelRect, header: state.headerRect, copy: rect(".a11y-guide-copy"),
-         titleRect: state.titleRect, collapse: rect("[data-a11y-guide-collapse]"),
+         titleRect: state.titleRect,
         copyMetrics: (() => {
           const element = panel?.querySelector(".a11y-guide-copy");
           if (!element) return null;
@@ -178,7 +178,7 @@ try {
       Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1 &&
       Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1;
     const headerOverlaps = [
-      ["title", "pager"], ["title", "collapse"], ["pager", "collapse"],
+      ["title", "pager"],
     ].filter(([first, second]) => intersects(pages[0]?.[first], pages[0]?.[second]));
     if (headerOverlaps.length) throw new Error(`70% header controls overlap: ${JSON.stringify(headerOverlaps)}`);
     const clickControl = async (selector) => {
@@ -194,18 +194,16 @@ try {
     if (next.page !== "2/2" || next.text !== pages.at(-1)?.text) {
       throw new Error(`Next did not restore page 2: ${JSON.stringify(next)}`);
     }
-    const collapsed = await clickControl("[data-a11y-guide-collapse]");
-    const collapsedState = collapsed.collapsed;
-    const expanded = await clickControl("[data-a11y-guide-collapse]");
-    if (!collapsedState || expanded.collapsed || expanded.page !== "2/2" ||
+    const foldButtonAbsent = await evaluate("!document.querySelector('[data-a11y-guide-collapse]')");
+    const expanded = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    if (!foldButtonAbsent || expanded.collapsed || expanded.page !== "2/2" ||
         expanded.text !== pages.at(-1)?.text) {
-      throw new Error(`Collapse/expand did not preserve page state: ${JSON.stringify({ collapsed, expanded })}`);
+      throw new Error(`Fold controls must be absent while preserving the selected page: ${JSON.stringify({ foldButtonAbsent, expanded })}`);
     }
     interactionTest = {
       previousPage: previous.page,
       nextPage: next.page,
-      collapsed: collapsedState,
-      expanded: !expanded.collapsed,
+      foldButtonAbsent,
       pageAfterExpand: expanded.page,
       headerOverlaps,
     };

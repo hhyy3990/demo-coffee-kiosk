@@ -381,7 +381,6 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.kiosk .a11y-guide-collapse,
 .kiosk .a11y-guide-pager button,
 .kiosk .a11y-guide-close {
   box-sizing: border-box;
@@ -402,11 +401,6 @@
   white-space: normal;
   pointer-events: auto;
   vertical-align: middle;
-}
-.kiosk .a11y-guide-collapse {
-  width: 44px;
-  padding: 0 !important;
-  font-size: 1.2em;
 }
 .kiosk .a11y-guide-copy {
   grid-column: 1 / -1;
@@ -485,12 +479,8 @@
 }
 .kiosk .a11y-guide-toast.a11y-guide-smart .a11y-guide-icon { display: none; }
 .kiosk .a11y-guide-toast.a11y-guide-smart .a11y-guide-countdown { font-size: .82em; }
-.kiosk .a11y-guide-collapsed .a11y-guide-copy [data-a11y-guide-text],
-.kiosk .a11y-guide-collapsed .a11y-guide-pager { display: none; }
-.kiosk .a11y-guide-collapse:focus-visible,
 .kiosk .a11y-guide-pager button:focus-visible,
 .kiosk .a11y-guide-close:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-.kiosk.a11y-high-contrast .a11y-guide-collapse,
 .kiosk.a11y-high-contrast .a11y-guide-pager button,
 .kiosk.a11y-high-contrast .a11y-guide-close { outline: 2px solid currentColor; outline-offset: -2px; }
 

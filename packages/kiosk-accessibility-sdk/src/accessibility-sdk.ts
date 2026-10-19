@@ -357,7 +357,6 @@ function createGuideOverlay(
   root: HTMLElement,
   handlers: {
     onClose: () => void;
-    onCollapse: () => void;
     onPrevious: () => void;
     onNext: () => void;
   },
@@ -389,18 +388,6 @@ function createGuideOverlay(
   const text = document.createElement("span");
   text.dataset.a11yGuideText = "true";
   copy.append(text);
-
-  const collapse = document.createElement("button");
-  collapse.type = "button";
-  collapse.className = "a11y-guide-collapse";
-  collapse.dataset.a11yGuideCollapse = "true";
-  collapse.setAttribute("aria-expanded", "true");
-  collapse.setAttribute("aria-label", "안내 접기");
-  collapse.textContent = "⌄";
-  collapse.addEventListener("click", (event) => {
-    event.stopPropagation();
-    handlers.onCollapse();
-  });
 
   const pager = document.createElement("nav");
   pager.className = "a11y-guide-pager";
@@ -436,7 +423,7 @@ function createGuideOverlay(
     handlers.onClose();
   });
 
-  header.append(icon, countdown, title, close, collapse);
+  header.append(icon, countdown, title, close);
   aside.append(header, copy, pager);
   const slot = !root.classList.contains("a11y-bottom-viewport-poc-shell") &&
     typeof root.querySelector === "function"
@@ -474,9 +461,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let smartGuideVisible = false;
   let smartGuidePages: string[] = [];
   let smartGuidePageIndex = 0;
-  let guidanceCollapsed = false;
-  let guidanceSafetyCollapsed = false;
-  let smartGuideCollapseSnapshot: { collapsed: boolean; safetyCollapsed: boolean } | null = null;
   let guideDeadline = 0;
   let guideCountdownTimer: ReturnType<typeof setTimeout> | null = null;
   let smartGuidePageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -812,13 +796,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           finishSmartGuide();
           scheduleGuide();
         },
-        onCollapse: () => {
-          guidanceCollapsed = guidanceCollapsed || guidanceSafetyCollapsed
-            ? false
-            : true;
-          guidanceSafetyCollapsed = false;
-          renderGuidancePanel();
-        },
         onPrevious: () => {
           if (easyLanguageIndex > 0) easyLanguageIndex -= 1;
           renderGuidancePanel();
@@ -836,7 +813,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const copy = guideOverlay.querySelector<HTMLElement>(".a11y-guide-copy");
     const text = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-text]");
     const countdown = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-countdown]");
-    const collapse = guideOverlay.querySelector<HTMLButtonElement>("[data-a11y-guide-collapse]");
     const pager = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-pager]");
     const previous = guideOverlay.querySelector<HTMLButtonElement>("[data-a11y-guide-previous]");
     const next = guideOverlay.querySelector<HTMLButtonElement>("[data-a11y-guide-next]");
@@ -866,13 +842,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       page.textContent = count > 1 ? `${easyLanguageIndex + 1}/${count}` : "";
     }
     if (close) close.hidden = !smartGuideVisible;
-    if (collapse) {
-      const collapsed = guidanceCollapsed || guidanceSafetyCollapsed;
-      collapse.textContent = collapsed ? "⌃" : "⌄";
-      collapse.setAttribute("aria-label", collapsed ? "안내 펼치기" : "안내 접기");
-      collapse.setAttribute("aria-expanded", String(!collapsed));
-    }
-    guideOverlay.classList.toggle("a11y-guide-collapsed", guidanceCollapsed || guidanceSafetyCollapsed);
     guideOverlay.classList.toggle("a11y-guide-smart", smartGuideVisible);
     guideOverlay.classList.toggle(
       "a11y-guide-smart-two-page",
@@ -1024,7 +993,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   function removeGuide(): void {
     const hadGuide = guideOverlay !== null;
     smartGuideVisible = false;
-    smartGuideCollapseSnapshot = null;
     guideDeadline = 0;
     if (guideDismissTimer !== null) {
       globalThis.clearTimeout(guideDismissTimer);
@@ -1069,11 +1037,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     smartGuidePageTimer = null;
     smartGuidePages = [];
     smartGuidePageIndex = 0;
-    if (smartGuideCollapseSnapshot) {
-      guidanceCollapsed = smartGuideCollapseSnapshot.collapsed;
-      guidanceSafetyCollapsed = smartGuideCollapseSnapshot.safetyCollapsed;
-      smartGuideCollapseSnapshot = null;
-    }
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
     if (currentEasyExplanation()) renderGuidancePanel();
@@ -1132,22 +1095,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
         adapter.getActions().find((item) => item.enabled);
     const target = action?.element ?? root;
     if (!positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
-      if (!(guidanceCollapsed || guidanceSafetyCollapsed)) {
-        guidanceSafetyCollapsed = true;
-        guideOverlay.classList.add("a11y-guide-collapsed");
-        const collapse = guideOverlay.querySelector<HTMLElement>("[data-a11y-guide-collapse]");
-        if (collapse) {
-          collapse.textContent = "∧ 펼치기";
-          collapse.setAttribute("aria-expanded", "false");
-        }
-        if (positionGuide(guideOverlay, target, root, adapter.getLayoutRegions())) {
-          guideOverlay.setAttribute("aria-hidden", "false");
-          delete guideOverlay.dataset.a11yPositionSuppressed;
-            menuHint.setEnabled(true);
-          scheduleGuideHitTest(target, action);
-          return;
-        }
-      }
       const guideRect = guideOverlay.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
       const screenId = adapter.getSnapshot().screenId;
@@ -1176,7 +1123,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
           expandedHeight: guideRect.height,
           targetOverlap: guideRect.left < targetRect.right && guideRect.right > targetRect.left &&
             guideRect.top < targetRect.bottom && guideRect.bottom > targetRect.top,
-          safetyCollapsed: guidanceSafetyCollapsed,
         },
         recommendation: "Guidance retained but temporarily hidden because no safe position passed registered-action overlap and pointer hit-test checks.",
       }]);
@@ -1217,12 +1163,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const target = action?.element ?? null;
     if (!action || !target || !root.contains(target)) return;
     if (smartGuideVisible) finishSmartGuide();
-    smartGuideCollapseSnapshot = {
-      collapsed: guidanceCollapsed,
-      safetyCollapsed: guidanceSafetyCollapsed,
-    };
-    guidanceCollapsed = false;
-    guidanceSafetyCollapsed = false;
     menuHint.setEnabled(true);
     smartGuideVisible = true;
     smartGuidePages = [guideState.message.text];
@@ -1352,8 +1292,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       : [];
     if (easyLanguageState?.stepId !== stepId) {
       easyLanguageIndex = 0;
-      guidanceCollapsed = false;
-      guidanceSafetyCollapsed = false;
     }
     easyLanguageSource = explanations;
     easyLanguageState = stepId && explanations.length > 0 ? { stepId, explanations } : null;
@@ -1519,8 +1457,6 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     easyLanguageState = null;
     easyLanguageSource = [];
     easyLanguageIndex = 0;
-    guidanceCollapsed = false;
-    guidanceSafetyCollapsed = false;
     for (const state of navigationStates.values()) stopNavigationEmphasis(state);
     navigationStates.clear();
     removeGuide();

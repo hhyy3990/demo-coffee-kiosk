@@ -329,7 +329,8 @@ try {
       previousHidden: panel.querySelector("[data-a11y-guide-previous]")?.hidden ?? true,
       nextHidden: panel.querySelector("[data-a11y-guide-next]")?.hidden ?? true,
       countdown: panel.querySelector("[data-a11y-guide-countdown]")?.textContent ?? "",
-      collapsed: panel.classList.contains("a11y-guide-collapsed"),
+      collapsed: false,
+      foldButtonAbsent: !panel.querySelector("[data-a11y-guide-collapse]"),
       primaryOverlaps: primary.filter((button) => {
         const r = visibleRect(button);
         return r && overlaps(rect, r);
@@ -346,8 +347,8 @@ try {
           centerHit: hit === button || button.contains(hit),
           visibleInViewport: Boolean(visible) };
       }),
-      guideControls: ["[data-a11y-guide-collapse]", "[data-a11y-guide-previous]",
-        "[data-a11y-guide-next]", ".a11y-guide-close"].map((selector) => {
+      guideControls: ["[data-a11y-guide-previous]", "[data-a11y-guide-next]",
+        ".a11y-guide-close"].map((selector) => {
         const button = panel.querySelector(selector);
         if (!button || button.hidden) return null;
         const r = button.getBoundingClientRect();
@@ -365,7 +366,7 @@ try {
             textRect.right <= r.right + 1 && textRect.top >= r.top - 1 &&
             textRect.bottom <= r.bottom + 1 };
       }).filter(Boolean),
-      collapseAccessibleName: panel.querySelector("[data-a11y-guide-collapse]")?.getAttribute("aria-label") ?? "",
+      foldButtonAbsent: !panel.querySelector("[data-a11y-guide-collapse]"),
       scrollOwner: (() => {
         const el = document.querySelector('[data-a11y-slot="scroll-content"]');
         return el ? { top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom,
@@ -402,7 +403,7 @@ try {
       state.guideControls.some((control, index, controls) => controls.slice(index + 1).some((other) =>
         control.left < other.right && control.right > other.left &&
         control.top < other.bottom && control.bottom > other.top)) ||
-      !state.collapseAccessibleName ||
+      !state.foldButtonAbsent ||
       (expectedTitle && state.title !== expectedTitle)) {
       throw new Error(`${label}: guidance is not visibly and safely presented: ${JSON.stringify(state)}`);
     }
@@ -555,23 +556,24 @@ try {
     return { active: root.classList.contains("a11y-bottom-viewport-enabled"),
       height: root.style.getPropertyValue("--a11y-bottom-viewport-height") };
   })()`);
-  await click("[data-a11y-guide-collapse]");
-  const foldedStartNotice = await read();
+  const expandedStartNotice = await read();
   const startViewportAfterFold = await evaluate(`(() => {
     const root = document.querySelector(".kiosk");
     return { active: root.classList.contains("a11y-bottom-viewport-enabled"),
       height: root.style.getPropertyValue("--a11y-bottom-viewport-height") };
   })()`);
-  if (!foldedStartNotice.collapsed || !startViewportBeforeFold.active ||
-      !startViewportAfterFold.active || startViewportBeforeFold.height !== startViewportAfterFold.height) {
-    throw new Error(`Folding the start notice changed its bottom-viewport mode: ${
-      JSON.stringify({ foldedStartNotice, startViewportBeforeFold, startViewportAfterFold })
+  if (!expandedStartNotice.foldButtonAbsent || expandedStartNotice.collapsed ||
+      !startViewportBeforeFold.active || !startViewportAfterFold.active ||
+      startViewportBeforeFold.height !== startViewportAfterFold.height) {
+    throw new Error(`The start notice must remain expanded without fold controls: ${
+      JSON.stringify({ expandedStartNotice, startViewportBeforeFold, startViewportAfterFold })
     }`);
   }
   await wait(10_250);
   const smartWelcome = await read();
-  if (!smartWelcome.visible || smartWelcome.collapsed || !smartWelcome.countdown) {
-    throw new Error(`The existing start Smart Guide did not expand the folded notice: ${JSON.stringify(smartWelcome)}`);
+  if (!smartWelcome.visible || smartWelcome.collapsed || !smartWelcome.foldButtonAbsent ||
+      !smartWelcome.countdown) {
+    throw new Error(`The start Smart Guide did not remain expanded: ${JSON.stringify(smartWelcome)}`);
   }
   let restoredStartNotice = null;
   if (process.env.GUIDANCE_VERIFY_RESTORE === "1") {
@@ -630,10 +632,9 @@ try {
   await wait(250);
   const optionEasy = await assertVisible("options-entered", "핫 · 아이스");
   if (optionEasy.page !== "1/2") throw new Error(`Options Easy Language did not start at 1/2: ${JSON.stringify(optionEasy)}`);
-  await click("[data-a11y-guide-collapse]");
-  if (!(await read()).collapsed) throw new Error("Easy Language panel did not fold.");
-  await click("[data-a11y-guide-collapse]");
-  if ((await read()).collapsed) throw new Error("Easy Language panel did not unfold.");
+  if (!(await read()).foldButtonAbsent || (await read()).collapsed) {
+    throw new Error("Easy Language fold controls must be absent.");
+  }
   await click("[data-a11y-guide-next]");
   if ((await read()).page !== "2/2") throw new Error("Easy Language next-page button did not advance.");
   await click("[data-a11y-guide-previous]");
@@ -702,7 +703,9 @@ try {
   await click("#menu-order-confirm");
   await wait(250);
   const cartEasy = await assertVisible("cart-entered", "장바구니");
-  if (cartEasy.collapsed) await click("[data-a11y-guide-collapse]");
+  if (cartEasy.collapsed || !cartEasy.foldButtonAbsent) {
+    throw new Error("Cart Easy Language must remain expanded without fold controls.");
+  }
   await click("[data-a11y-guide-next]");
   const cartPageTwo = await assertVisible("cart-easy-page-two", "수량");
   if (cartPageTwo.page !== "2/2") throw new Error(`Cart explanation could not reach page 2/2: ${JSON.stringify(cartPageTwo)}`);

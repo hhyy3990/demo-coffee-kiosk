@@ -38,6 +38,7 @@
     const result = {};
     const wait = () => new Promise((resolve) => setTimeout(resolve, 100));
     function mount(kind, count, message) {
+      document.querySelector(".fixture-footer")?.remove();
       document.querySelector("[data-a11y-qr-entry-dock]")?.remove();
       root.replaceChildren();
       root.className = `kiosk ${kind}`;
@@ -60,13 +61,14 @@
       const footer = document.createElement("footer");
       footer.className = "fixture-footer";
       footer.dataset.a11ySlot = "bottom-controls";
+      if (kind === "unreachable") footer.style.height = "60px";
       footer.textContent = "하단 조작부";
       const dock = document.createElement("aside");
       dock.dataset.a11yQrEntryDock = "true";
       dock.className = "fixture-qr-dock";
       dock.textContent = "SDK QR 도크";
-      root.append(header, scroll, footer);
-      document.body.append(dock);
+      root.append(header, scroll);
+      document.body.append(footer, dock);
       const adapter = {
         getSnapshot: () => ({ screenId: `fixture.${kind}` }),
         getActions: () => [...root.querySelectorAll(".menu-item")].map((element, index) => ({
@@ -97,6 +99,18 @@
       const noSafeSpaceAtStart = root.dataset.a11yScrollGuidance === "no-safe-space";
       const hint = document.querySelector(".a11y-additional-menu-hint");
       const hintRect = hint?.getBoundingClientRect();
+      const normalOverlap = Boolean(hintRect && [...root.querySelectorAll(".menu-item")].some((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.left < hintRect.right && rect.right > hintRect.left &&
+          rect.top < hintRect.bottom && rect.bottom > hintRect.top;
+      }));
+      const passThroughAtOverlap = Boolean(hintRect && [...root.querySelectorAll(".menu-item")].some((item) => {
+        const rect = item.getBoundingClientRect();
+        const x = Math.max(rect.left, hintRect.left) + 2;
+        const y = Math.max(rect.top, hintRect.top) + 2;
+        return x < Math.min(rect.right, hintRect.right) &&
+          y < Math.min(rect.bottom, hintRect.bottom) && document.elementFromPoint(x, y)?.closest(".menu-item") === item;
+      }));
       const hintPointerEventsNone = !hint || getComputedStyle(hint).pointerEvents === "none";
       const last = root.querySelector(".menu-item:last-child");
       const scrollRect = instance.scroll.getBoundingClientRect();
@@ -105,6 +119,9 @@
         : scrollRect.top + instance.scroll.clientTop + instance.scroll.clientHeight;
       const ownerBottom = Math.min(scrollOwnerBottom, instance.footer.getBoundingClientRect().top);
       const anchoredToOwner = !hint || Boolean(hintRect && Math.abs(ownerBottom - hintRect.bottom - 12) <= 1);
+      const footerRect = instance.footer.getBoundingClientRect();
+      const noFooterOverlap = !hintRect || hintRect.bottom <= footerRect.top;
+      const footerGap = hintRect ? footerRect.top - hintRect.bottom : null;
       if (kind === "document-scroll") window.scrollTo(0, document.documentElement.scrollHeight);
       else instance.scroll.scrollTop = instance.scroll.scrollHeight;
       (kind === "document-scroll" ? window : instance.scroll).dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -147,7 +164,7 @@
       const dockRect = instance.dock.getBoundingClientRect().toJSON();
       const controlsRect = instance.footer.getBoundingClientRect().toJSON();
       instance.dock.remove();
-      return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, anchoredToOwner, ownerBottom, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
+       return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, anchoredToOwner, ownerBottom, normalOverlap, passThroughAtOverlap, noFooterOverlap, footerGap, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
     }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
@@ -364,7 +381,9 @@
       enlarged.sdk.destroy();
       const guidancePassed = (item) => item.startsVisible && !item.noSafeSpaceAtStart &&
         item.standardCopy && item.hidesAtEnd && item.returnsAfterScrollUp && item.lastReached &&
-        item.clickable && item.clicked && item.anchoredToOwner && item.hintPointerEventsNone &&
+        item.clickable && item.clicked && item.anchoredToOwner && item.normalOverlap &&
+        item.noFooterOverlap && item.footerGap >= 11 &&
+        item.hintPointerEventsNone &&
         item.scrollStable && item.contentStyleMutations.unchanged && item.clearsOnSessionEnd && item.clearsOnDestroy;
       result.passed = guidancePassed(result.fixtureA) && guidancePassed(result.fixtureB) &&
         result.fixtureC.startsHidden && result.fixtureD.hintHidden && result.fixtureD.diagnostic &&

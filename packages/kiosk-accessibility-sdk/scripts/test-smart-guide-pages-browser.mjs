@@ -110,8 +110,7 @@ try {
     }, "certificate.payment-method")`);
     let restoreBefore = null;
     if (restoreEasy) {
-      await evaluate(`document.querySelector("[data-a11y-guide-next]").click();
-        document.querySelector("[data-a11y-guide-collapse]").click()`);
+      await evaluate(`document.querySelector("[data-a11y-guide-next]").click()`);
       restoreBefore = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     }
     await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},10,${JSON.stringify(text)},"certificate.payment-method")`);
@@ -144,7 +143,7 @@ try {
         textClientHeight: panel.querySelector("[data-a11y-guide-text]").clientHeight,
         textLineHeight: getComputedStyle(panel.querySelector("[data-a11y-guide-text]")).lineHeight,
         close: rect(".a11y-guide-close"),
-        collapse: rect("[data-a11y-guide-collapse]"),
+        foldButtonAbsent: !panel.querySelector("[data-a11y-guide-collapse]"),
         title: rect("[data-a11y-guide-title]"),
         countdown: rect("[data-a11y-guide-countdown]"),
         workAreaHeight: document.querySelector(".a11y-bottom-viewport-scroll-area")?.getBoundingClientRect().height ?? null,
@@ -154,14 +153,13 @@ try {
       if (Math.abs(first.panelRect.top - 8) > 1 ||
           firstGeometry.headerHeight > 44.1 ||
           firstGeometry.close.width < 44 || firstGeometry.close.height < 44 ||
-          firstGeometry.collapse.width < 44 || firstGeometry.collapse.height < 44 ||
+          !firstGeometry.foldButtonAbsent ||
           firstGeometry.copyScrollHeight > firstGeometry.copyClientHeight + 1 ||
           firstGeometry.textScrollHeight > firstGeometry.textClientHeight + 1) {
         throw new Error(`360/320 Smart Guide geometry failed: ${JSON.stringify(firstGeometry)}`);
       }
       for (const [a, b] of [[firstGeometry.title, firstGeometry.countdown],
-        [firstGeometry.title, firstGeometry.close], [firstGeometry.title, firstGeometry.collapse],
-        [firstGeometry.countdown, firstGeometry.close]]) {
+        [firstGeometry.title, firstGeometry.close], [firstGeometry.countdown, firstGeometry.close]]) {
         if (Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1) {
           throw new Error(`Smart Guide header items overlap: ${JSON.stringify({ a, b, firstGeometry })}`);
         }
@@ -195,11 +193,11 @@ try {
       throw new Error(`Smart Guide display time was ${elapsed}ms, expected ${totalMs}ms.`);
     }
     const restored = restoreEasy ? await evaluate(`({
-      collapsed: document.querySelector(".a11y-guide-toast")?.classList.contains("a11y-guide-collapsed"),
+      foldButtonAbsent: !document.querySelector("[data-a11y-guide-collapse]"),
       page: document.querySelector("[data-a11y-guide-page]")?.textContent
     })`) : null;
-    if (restoreEasy && (restored.collapsed !== restoreBefore.collapsed || restored.page !== restoreBefore.page)) {
-      throw new Error(`Easy Language page/fold state did not restore: ${JSON.stringify({ before: restoreBefore, after: restored })}`);
+    if (restoreEasy && (!restored.foldButtonAbsent || restored.page !== restoreBefore.page)) {
+      throw new Error(`Easy Language page did not restore after Smart Guide: ${JSON.stringify({ before: restoreBefore, after: restored })}`);
     }
     return { slow, expectedPages, elapsed: Math.round(elapsed), transitionElapsedMs, firstText, secondText: state.text,
       firstGeometry, restored: restoreEasy ? { before: restoreBefore, after: restored } : null };
