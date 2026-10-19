@@ -97,7 +97,9 @@
           position: "fixed", zIndex: "10", left: "0", right: "0", bottom: "86px",
           top: "auto", width: "auto", height: "72px",
         });
-        Object.assign(dock.querySelector("button").style, { width: "100%", height: "100%" });
+       Object.assign(dock.querySelector("button").style, {
+         width: "calc(100% - 32px)", height: "52px", margin: "10.5px 16px",
+       });
       }
       return {
         scroll, footer, dock, dockController, dockRequired,
@@ -225,9 +227,51 @@
       const controlsRect = instance.footer.getBoundingClientRect().toJSON();
       return { startsVisible, noSafeSpaceAtStart, standardCopy, hidesAtEnd, returnsAfterScrollUp, lastReached, clickable, clicked, anchoredToOwner, ownerBottom, normalOverlap, passThroughAtOverlap, noFooterOverlap, footerGap, noDockOverlap, noQrButtonOverlap, dockGap, dockRequired: instance.dockRequired, dockLabelVisible, qrDockClickable, hintPointerEventsNone, hintRect: hintRect?.toJSON() ?? null, dockRect: dockRect?.toJSON() ?? null, dockButtonRect: dockButtonRect?.toJSON() ?? null, controlsRect, scrollStable, contentStyleMutations: { count: contentStyleMutations, unchanged: contentStyleMutations === 0 }, endSamples, clearsOnSessionEnd, clearsOnDestroy };
     }
+    async function checkStackedFixedControls() {
+      const instance = mount("own-scroll", 9);
+      root.querySelector(".fixture-header").style.display = "none";
+      Object.assign(instance.scroll.style, {
+        position: "fixed", top: "0", right: "0", bottom: "0", left: "0", height: "100vh",
+      });
+      await wait();
+      const hint = document.querySelector(".a11y-additional-menu-hint");
+      const hintRect = hint?.getBoundingClientRect();
+      const dockRect = instance.dock?.getBoundingClientRect() ?? null;
+      const button = instance.dock?.querySelector("button") ?? null;
+      const buttonRect = button?.getBoundingClientRect() ?? null;
+      const footerRect = instance.footer.getBoundingClientRect();
+      const area = (a, b) => {
+        if (!a || !b) return 0;
+        return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+          Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      };
+      const qrOpenBefore = qrOpenCount;
+      button?.click();
+      const report = {
+        hint: hintRect?.toJSON() ?? null,
+        qrDock: dockRect?.toJSON() ?? null,
+        qrButton: buttonRect?.toJSON() ?? null,
+        footer: footerRect.toJSON(),
+        qrDockIntersection: area(hintRect, dockRect),
+        qrButtonIntersection: area(hintRect, buttonRect),
+        footerIntersection: area(hintRect, footerRect),
+        dockGap: dockRect && hintRect ? dockRect.top - hintRect.bottom : null,
+        pointerEventsNone: Boolean(hint && getComputedStyle(hint).pointerEvents === "none"),
+        qrClickWorks: !instance.dockRequired || qrOpenCount === qrOpenBefore + 1,
+      };
+      report.passed = report.qrDockIntersection === 0 && report.qrButtonIntersection === 0 &&
+        report.footerIntersection === 0 && report.pointerEventsNone && report.qrClickWorks &&
+        (!instance.dockRequired || (report.dockGap >= 11 &&
+          Math.abs(report.qrDock.top - (innerHeight - 158)) <= 1 &&
+          Math.abs(report.footer.top - (innerHeight - 86)) <= 1));
+      instance.sdk.destroy();
+      instance.dockController?.destroy();
+      return report;
+    }
     try {
       result.fixtureA = await checkScrollable("own-scroll", 9);
       result.fixtureB = await checkScrollable("document-scroll", 15);
+      result.fixedControls = await checkStackedFixedControls();
       const fit = mount("fit", 4);
       result.fixtureC = { startsHidden: !(await hintVisible()) };
       fit.sdk.destroy();
@@ -450,6 +494,7 @@
         result.fixtureC.startsHidden && result.fixtureD.hintHidden && result.fixtureD.diagnostic &&
         result.fixtureE.hiddenBefore && (result.fixtureE.appearsAfterProfile || result.fixtureE.safeSpaceDiagnostic) &&
         (result.fixtureE.persistsAfterResize || result.fixtureE.safeSpaceDiagnostic) &&
+         result.fixedControls.passed &&
         result.sessionReset && result.newScreenReanalyzed &&
         result.primaryButton.beginsGuided && result.primaryButton.correctMessage &&
         result.primaryButton.reachableButtonHitTest && result.primaryButton.hidesWhenVisible &&

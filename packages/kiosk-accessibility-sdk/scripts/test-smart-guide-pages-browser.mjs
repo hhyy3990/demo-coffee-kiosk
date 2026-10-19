@@ -244,8 +244,13 @@ try {
   results.push(await run(true, longText, 2, 20_000, 10_000));
   const guideDelays = [];
   for (const seconds of [10, 15, 20]) {
+    const delayStep = `certificate.guide-delay-${seconds}`;
+    await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+      textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
+      viewportMode:null
+    }, ${JSON.stringify(delayStep)})`);
     const started = await evaluate(
-      `window.__sdkPackageSmoke.startGuide(false,${seconds},"다음 버튼을 눌러 진행하세요.","certificate.payment-method")`,
+      `window.__sdkPackageSmoke.startGuide(false,${seconds},"다음 버튼을 눌러 진행하세요.",${JSON.stringify(delayStep)})`,
     );
     await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이",
       seconds * 1000 + 1200);
@@ -261,10 +266,50 @@ try {
     screenWidth: 360, screenHeight: 667,
   });
   results.push(await run(false, longText, 2, 15_000, 7_500, true));
+  const dismissedStep = "certificate.manual-dismiss";
+  await evaluate(`window.__sdkPackageSmoke.setTestProfile({
+    textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
+    viewportMode:null
+  }, ${JSON.stringify(dismissedStep)})`);
+  await evaluate('document.querySelector("[data-a11y-guide-next]").click()');
+  const easyPageBeforeClose = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,"같은 단계에서 닫힘을 검증합니다.",${JSON.stringify(dismissedStep)})`);
+  await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이", 11_200);
+  const closeRect = await evaluate(`(() => {
+    const rect = document.querySelector(".a11y-guide-close").getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: closeRect.x, y: closeRect.y });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: closeRect.x, y: closeRect.y, button: "left", buttons: 1, clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: closeRect.x, y: closeRect.y, button: "left", buttons: 0, clickCount: 1 });
+  const restoredAfterClose = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+    item.title !== "스마트 길잡이", 1500);
+  if (restoredAfterClose.page !== easyPageBeforeClose.page) {
+    throw new Error(`Closing Smart Guide did not restore the current Easy Language page: ${JSON.stringify({ easyPageBeforeClose, restoredAfterClose })}`);
+  }
+  const sameStepChecks = [];
+  for (let elapsed = 0; elapsed < 30_000; elapsed += 5_000) {
+    await evaluate(`window.__sdkPackageSmoke.refreshGuide(
+      ${JSON.stringify(dismissedStep)}, "같은 단계에서 닫힘을 검증합니다."
+    )`);
+    await wait(5_000);
+    const current = await evaluate("window.__sdkPackageSmoke.readGuidance()");
+    sameStepChecks.push({ elapsed: elapsed + 5_000, smartGuideVisible: current.title === "스마트 길잡이" });
+    if (current.title === "스마트 길잡이") break;
+  }
+  if (sameStepChecks.some((item) => item.smartGuideVisible)) {
+    throw new Error(`Smart Guide reappeared after X on the same step: ${JSON.stringify(sameStepChecks)}`);
+  }
+  await evaluate(`window.__sdkPackageSmoke.moveToStep("certificate.next-step", false)`);
+  const nextStep = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
+    item.title === "새 단계 안내", 11_200);
+  await evaluate('document.querySelector(".a11y-guide-close").click()');
   console.log(JSON.stringify({
     result: "PASS", suppliedTextLength: [...longText].length, results,
     layoutCases: layoutMatrix.length, oversizedGuidePreservedBySuppression: tooLongFallback.title !== "스마트 길잡이",
     guideDelays,
+    manualDismissal: { restoredPage: restoredAfterClose.page, expectedPage: easyPageBeforeClose.page,
+      sameStepChecks, nextStepTitle: nextStep.title },
   }, null, 2));
 } finally {
   try { socket?.close(); } catch {}

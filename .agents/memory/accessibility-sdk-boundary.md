@@ -63,6 +63,12 @@ Smart Guide state uses a separate host-owned `stepId`, distinct from the scroll 
 
 **How to apply:** Give each meaningful host task step a stable, non-personal ID; update the message in place for value changes, and call `notifyScreenChange()` only when the actual screen/scroll owner changes.
 
+Manual Smart Guide X dismissal suppresses only the dismissed step and exact guide message. Repeated state updates or interactions must not reopen it; a genuinely different message, a new step, or a new session may show guidance again.
+
+**Why:** Closing a guide and immediately rescheduling the same state makes it reappear against the user's explicit choice, while suppressing an entire step would also block deliberately changed guidance.
+
+**How to apply:** Keep dismissal identity semantic (step ID, action, title, and text); cancel pending idle work on X, preserve the Easy Language page, and clear the suppression at a new step or session.
+
 The unified easy-language/Smart Guide panel renders only host-supplied explanations. Keep the host's explanation `stepId` aligned with the corresponding guide step when they describe the same task state; after a committed screen change, replace the old explanation with the new screen's copy.
 
 **Why:** Shared presentation can be reused across unrelated kiosks, but only the host knows what its screens mean. Mismatched or stale step IDs can clear useful explanations or show copy from the prior workflow step.

@@ -5,7 +5,7 @@ export const DEFAULT_CONTENT_SCROLL_MESSAGE =
   "아래에도 내용이 있어요";
 
 type ScrollOwner = HTMLElement | Document;
-type Hint = { kind: string; message: string; owner: ScrollOwner; obstacle?: HTMLElement };
+type Hint = { kind: string; message: string; owner: ScrollOwner; obstacles?: HTMLElement[] };
 
 function shown(el: HTMLElement): boolean {
   const s = getComputedStyle(el), r = el.getBoundingClientRect();
@@ -13,10 +13,10 @@ function shown(el: HTMLElement): boolean {
     Number(s.opacity) !== 0 && r.width > 0 && r.height > 0;
 }
 
-function fixedBottomObstacle(
+function fixedBottomObstacles(
   controls: readonly HTMLElement[] | undefined,
   owner: ScrollOwner,
-): HTMLElement | undefined {
+): HTMLElement[] {
   const viewportHeight = document.documentElement?.clientHeight || globalThis.innerHeight || 0;
   const ownerElement = owner as HTMLElement;
   const ownerBottom = owner === document || typeof ownerElement.getBoundingClientRect !== "function"
@@ -36,7 +36,7 @@ function fixedBottomObstacle(
     return rect.top < ownerBottom && rect.bottom > 0 && rect.top < viewportHeight;
   }).sort((a, b) =>
     a.getBoundingClientRect().top - b.getBoundingClientRect().top,
-  )[0];
+  ) ?? [];
 }
 
 function findVerticalOwner(
@@ -105,7 +105,7 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
   const qrDocks = typeof document.querySelectorAll === "function"
     ? [...document.querySelectorAll<HTMLElement>("[data-a11y-qr-entry-dock]")]
     : [];
-  const obstacle = fixedBottomObstacle(
+  const obstacles = fixedBottomObstacles(
     [...new Set([
       ...(regions.bottomControls ?? []),
       ...(regions.guidanceAvoidAreas ?? []),
@@ -127,8 +127,8 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
         ownerCanScrollBelow(owner)) {
       const slotObstacle = root.querySelector<HTMLElement>('[data-a11y-slot="above-bottom-controls"]');
       return { kind: "primary", message: DEFAULT_PRIMARY_ACTION_MESSAGE, owner: effectiveOwner,
-        ...(obstacle ? { obstacle } : {}),
-        ...(!obstacle && slotObstacle && shown(slotObstacle) ? { obstacle: slotObstacle } : {}) };
+        ...(obstacles.length ? { obstacles } : {}),
+        ...(!obstacles.length && slotObstacle && shown(slotObstacle) ? { obstacles: [slotObstacle] } : {}) };
     }
   }
 
@@ -138,8 +138,8 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
       kind: "vertical",
       message: DEFAULT_CONTENT_SCROLL_MESSAGE,
       owner: effectiveOwner,
-      ...(obstacle ? { obstacle } : {}),
-      ...(!obstacle && slotObstacle && shown(slotObstacle) ? { obstacle: slotObstacle } : {}),
+      ...(obstacles.length ? { obstacles } : {}),
+      ...(!obstacles.length && slotObstacle && shown(slotObstacle) ? { obstacles: [slotObstacle] } : {}),
     };
   }
   return null;
@@ -148,7 +148,7 @@ function currentHint(root: HTMLElement, adapter: AccessibilityAdapter): Hint | n
 function placeHint(
   hint: HTMLElement,
   owner: ScrollOwner,
-  obstacle?: HTMLElement,
+  obstacles: readonly HTMLElement[] = [],
 ): boolean {
   const visualViewport = window.visualViewport;
   const viewportWidth = visualViewport?.width || document.documentElement.clientWidth || innerWidth;
@@ -178,14 +178,21 @@ function placeHint(
   let rect = hint.getBoundingClientRect();
   hint.style.left = `${Math.max(viewportLeft + 12, viewportLeft + (vw - rect.width) / 2)}px`;
   rect = hint.getBoundingClientRect();
-  if (obstacle && shown(obstacle)) {
-    const obstacleRect = obstacle.getBoundingClientRect();
-    const overlapsObstacle = rect.left < obstacleRect.right && rect.right > obstacleRect.left &&
-      rect.top < obstacleRect.bottom && rect.bottom > obstacleRect.top;
-    if (overlapsObstacle) {
-      bottomInset = Math.max(bottomInset, viewportBottom - obstacleRect.top + 12);
-      hint.style.bottom = `${bottomInset}px`;
-    }
+  // A move above one fixed control can otherwise land inside another stacked
+  // control. Resolve the full collision chain before accepting the position.
+  for (let attempt = 0; attempt < obstacles.length; attempt += 1) {
+    const collidingTops = obstacles.filter((obstacle) => {
+      if (!shown(obstacle)) return false;
+      const box = obstacle.getBoundingClientRect();
+      return rect.left < box.right && rect.right > box.left &&
+        rect.top < box.bottom && rect.bottom > box.top;
+    }).map((obstacle) => obstacle.getBoundingClientRect().top);
+    if (collidingTops.length === 0) break;
+    const nextInset = Math.max(bottomInset, viewportBottom - Math.min(...collidingTops) + 12);
+    if (nextInset <= bottomInset) break;
+    bottomInset = nextInset;
+    hint.style.bottom = `${bottomInset}px`;
+    rect = hint.getBoundingClientRect();
   }
   const height = hint.getBoundingClientRect().height;
   return height > 0;
@@ -245,7 +252,7 @@ export function createScrollGuidance(root: HTMLElement, adapter: AccessibilityAd
     element.removeAttribute("aria-hidden");
     const copy = element.querySelector<HTMLElement>(".a11y-additional-menu-copy");
     if (copy && copy.textContent !== hint.message) copy.textContent = hint.message;
-    if (placeHint(element, hint.owner, hint.obstacle)) {
+    if (placeHint(element, hint.owner, hint.obstacles)) {
       element.dataset.hintKind = hint.kind;
       if (root.dataset) delete root.dataset.a11yScrollGuidance;
     } else {

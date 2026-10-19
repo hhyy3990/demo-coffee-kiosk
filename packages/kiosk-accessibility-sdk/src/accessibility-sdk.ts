@@ -448,6 +448,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     delaySeconds: 15,
     message: null,
   };
+  let dismissedGuideIdentity: string | null = null;
   let guideOverlay: HTMLElement | null = null;
   let guideValidationFrame = 0;
   let guidePositionFrame = 0;
@@ -793,8 +794,9 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
         onClose: () => {
           interactionCount += 1;
           options.onInteractionCount?.(interactionCount);
+          dismissedGuideIdentity = guideIdentity(guideState);
+          timer.cancel();
           finishSmartGuide();
-          scheduleGuide();
         },
         onPrevious: () => {
           if (easyLanguageIndex > 0) easyLanguageIndex -= 1;
@@ -1026,6 +1028,17 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     }
   }
 
+  function guideIdentity(state: GuideState): string {
+    const stepId = state.stepId ??
+      `${adapter.getSnapshot().screenId}:${state.message?.actionId ?? ""}`;
+    return JSON.stringify([
+      stepId,
+      state.message?.actionId ?? "",
+      state.message?.title ?? "",
+      state.message?.text ?? "",
+    ]);
+  }
+
   function finishSmartGuide(): void {
     smartGuideVisible = false;
     guideDeadline = 0;
@@ -1154,7 +1167,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       !currentProfile.smartGuide ||
       !guideState.enabled ||
       guideState.paused ||
-      !guideState.message?.actionId
+      !guideState.message?.actionId ||
+      dismissedGuideIdentity === guideIdentity(guideState)
     ) {
       return;
     }
@@ -1222,7 +1236,8 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       !currentProfile.smartGuide ||
       !guideState.enabled ||
       guideState.paused ||
-      !guideState.message?.actionId
+      !guideState.message?.actionId ||
+      dismissedGuideIdentity === guideIdentity(guideState)
     ) {
       return;
     }
@@ -1305,6 +1320,11 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       `${adapter.getSnapshot().screenId}:${previous.message?.actionId ?? ""}`;
     const nextStepId = state.stepId ??
       `${adapter.getSnapshot().screenId}:${state.message?.actionId ?? ""}`;
+    const nextIdentity = guideIdentity(state);
+    const dismissedBeforeUpdate = dismissedGuideIdentity;
+    if (dismissedGuideIdentity && dismissedGuideIdentity !== nextIdentity) {
+      dismissedGuideIdentity = null;
+    }
     const sameStep = previousStepId === nextStepId &&
       previous.enabled === state.enabled &&
       previous.paused === state.paused &&
@@ -1312,6 +1332,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     guideState = { ...state, message: state.message ? { ...state.message } : null };
     if (sameStep) {
       if (smartGuideVisible || currentEasyExplanation()) renderGuidancePanel();
+      if (dismissedBeforeUpdate && !dismissedGuideIdentity) scheduleGuide();
       return;
     }
     const keepMatchingEasyPanel = currentProfile.easyLanguage &&
@@ -1454,6 +1475,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       delaySeconds: 15,
       message: null,
     };
+    dismissedGuideIdentity = null;
     easyLanguageState = null;
     easyLanguageSource = [];
     easyLanguageIndex = 0;

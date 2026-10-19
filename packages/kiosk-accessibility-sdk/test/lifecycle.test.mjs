@@ -345,6 +345,36 @@ test("closing the Smart Guide directly removes it and cancels its auto-dismiss t
   }
 });
 
+test("manual Smart Guide dismissal suppresses repeated same-message updates but allows new guidance", () => {
+  const h = createSessionHarness();
+  try {
+    h.sdk.applyProfile({ ...DEFAULT_ACCESSIBILITY_PROFILE, smartGuide: true });
+    const state = (stepId, text) => h.sdk.setGuideState({
+      stepId,
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "확인", text, actionId: "continue" },
+    });
+    state("fixture.confirm", "계속 버튼을 눌러 주세요.");
+    h.timerCallbacks.get([...h.timerCallbacks.keys()].at(-1))?.();
+    h.children[0].querySelector(".a11y-guide-close").dispatch("click", { stopPropagation() {} });
+    const timersAfterClose = h.timerCallbacks.size;
+    state("fixture.confirm", "계속 버튼을 눌러 주세요.");
+    state("fixture.confirm", "계속 버튼을 눌러 주세요.");
+    assert.equal(h.timerCallbacks.size, timersAfterClose);
+    assert.equal(h.children.length, 0);
+
+    state("fixture.confirm", "수량이 변경되어 다시 확인이 필요합니다.");
+    const changedCopyTimer = [...h.timerCallbacks.keys()].at(-1);
+    assert.notEqual(changedCopyTimer, [...h.timerCallbacks.keys()][timersAfterClose - 1]);
+    state("fixture.payment", "결제 방법을 선택해 주세요.");
+    assert.notEqual([...h.timerCallbacks.keys()].at(-1), changedCopyTimer);
+  } finally {
+    h.restore();
+  }
+});
+
 test("a visible Smart Guide closes after 10 seconds, clears emphasis, and does not reappear for same-step edits", () => {
   const h = createSessionHarness();
   try {
@@ -498,7 +528,7 @@ test("Smart Guide shares the expanded easy-language panel and restores its page 
   }
 });
 
-test("Smart Guide X immediately restores the same Easy Language page and replaces its dismissal timer", () => {
+test("Smart Guide X restores Easy Language and suppresses same-step retriggers", () => {
   const h = createSessionHarness();
   try {
     h.sdk.applyProfile({
@@ -538,6 +568,25 @@ test("Smart Guide X immediately restores the same Easy Language page and replace
     assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
     assert.equal(panel.querySelector("[data-a11y-guide-collapse]"), null);
     assert.notEqual(panel.querySelector("[data-a11y-guide-title]").textContent, "다음 단계");
+    const timersAfterClose = h.scheduledDelays.size;
+    h.sdk.setGuideState({
+      stepId: "test.confirm",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "다음 단계", text: "확인 버튼을 눌러 주세요.", actionId: "continue" },
+    });
+    assert.equal(h.scheduledDelays.size, timersAfterClose);
+    assert.equal(panel.querySelector("[data-a11y-guide-page]").textContent, "2/3");
+
+    h.sdk.notifyScreenChange("test.payment");
+    h.sdk.setGuideState({
+      stepId: "test.payment",
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "결제 방법", text: "결제 방법을 선택해 주세요.", actionId: "continue" },
+    });
     assert.equal([...h.scheduledDelays.entries()].at(-1)?.[1], 10_000);
   } finally {
     h.restore();

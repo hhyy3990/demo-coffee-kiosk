@@ -689,6 +689,15 @@ window.__sdkPackageSmoke = {
     });
     return performance.now();
   },
+  refreshGuide(stepId, text = "계속 버튼을 눌러 진행하세요.") {
+    sdk.setGuideState({
+      stepId,
+      enabled: true,
+      paused: false,
+      delaySeconds: 10,
+      message: { title: "스마트 길잡이", text, actionId: "host.review.continue" },
+    });
+  },
   setViewport(percent) {
     return sdk.setViewportMode(percent ? { mode: "bottom", heightPercent: percent } : null);
   },
@@ -733,7 +742,7 @@ window.__sdkPackageSmoke = {
     });
     return { ...selected, viewportMode };
   },
-  moveToStep(step) {
+  moveToStep(step, paused = true) {
     sdk.notifyScreenChange(step);
     sdk.setEasyLanguageState({
       stepId: step,
@@ -742,7 +751,7 @@ window.__sdkPackageSmoke = {
     sdk.setGuideState({
       stepId: step,
       enabled: true,
-      paused: true,
+      paused,
       delaySeconds: 10,
       message: { title: "새 단계 안내", text: "새 화면 내용을 확인하세요.", actionId: "host.review.continue" },
     });
