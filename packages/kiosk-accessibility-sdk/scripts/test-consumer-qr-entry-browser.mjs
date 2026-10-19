@@ -812,11 +812,32 @@ try {
     easyLanguage: true, smartGuide: false, viewportMode: null,
   })})`);
   await wait(350);
+  await evaluate("document.querySelector('[data-a11y-guide-next]')?.click()");
+  await wait(100);
+  const easyLanguageControls = await evaluate(`(() => {
+    const previous = document.querySelector("[data-a11y-guide-previous]");
+    const next = document.querySelector("[data-a11y-guide-next]");
+    return {
+      page: document.querySelector("[data-a11y-guide-page]")?.textContent ?? "",
+      previousDisabled: previous?.disabled ?? true,
+      nextDisabled: next?.disabled ?? true,
+      previousName: previous?.getAttribute("aria-label") || previous?.textContent.trim() || "",
+      nextName: next?.getAttribute("aria-label") || next?.textContent.trim() || "",
+      previousTabIndex: previous?.tabIndex ?? -1,
+      nextTabIndex: next?.tabIndex ?? -1,
+    };
+  })()`);
+  if (!easyLanguageControls.page.startsWith("2/") ||
+    easyLanguageControls.previousDisabled || easyLanguageControls.nextDisabled ||
+    easyLanguageControls.previousName !== "이전" || easyLanguageControls.nextName !== "다음" ||
+    easyLanguageControls.previousTabIndex !== 0 || easyLanguageControls.nextTabIndex !== 0) {
+    throw new Error(`Easy Language pager is not in an enabled keyboard-test state: ${JSON.stringify(easyLanguageControls)}`);
+  }
   await evaluate("document.querySelector('[data-a11y-guide-previous]').focus()");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   const keyboardForward = await evaluate(`({
-    nextFocused: document.activeElement?.dataset?.a11yGuideNext === "true",
+    nextFocused: document.activeElement === document.querySelector("[data-a11y-guide-next]"),
     outline: getComputedStyle(document.activeElement).outlineStyle,
   })`);
   await send("Input.dispatchKeyEvent", {
@@ -826,12 +847,53 @@ try {
     type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8,
   });
   const keyboardBackward = await evaluate(`({
-    collapseFocused: document.activeElement?.dataset?.a11yGuideCollapse === "true",
+    previousFocused: document.activeElement === document.querySelector("[data-a11y-guide-previous]"),
     outline: getComputedStyle(document.activeElement).outlineStyle,
   })`);
   if (!keyboardForward.nextFocused || keyboardForward.outline === "none" ||
-    !keyboardBackward.collapseFocused || keyboardBackward.outline === "none") {
+    !keyboardBackward.previousFocused || keyboardBackward.outline === "none") {
     throw new Error(`Guide controls are not keyboard reachable: ${JSON.stringify({ keyboardForward, keyboardBackward })}`);
+  }
+  await evaluate(`window.__sdkPackageSmoke.setTestProfile(${JSON.stringify({
+    textSize: "extraLarge", buttonSize: "large", contrast: "high",
+    easyLanguage: false, smartGuide: true, viewportMode: null,
+  })})`);
+  await evaluate('window.__sdkPackageSmoke.startGuide(false, 0, "입력한 내용을 확인한 뒤 계속 버튼을 누르세요.")');
+  let activeSmartGuide;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    activeSmartGuide = await evaluate(`(() => {
+      const panel = document.querySelector(".a11y-guide-toast");
+      const close = panel?.querySelector(".a11y-guide-close");
+      const next = panel?.querySelector("[data-a11y-guide-next]");
+      return {
+        title: panel?.querySelector("[data-a11y-guide-title]")?.textContent ?? "",
+        closeHidden: close?.hidden ?? true,
+        closeDisabled: close?.disabled ?? true,
+        closeName: close?.getAttribute("aria-label") ?? "",
+        closeTag: close?.tagName ?? "",
+        closeTabIndex: close?.tabIndex ?? -1,
+        nextHidden: next?.hidden ?? true,
+        pagerHidden: panel?.querySelector("[data-a11y-guide-pager]")?.hidden ?? true,
+      };
+    })()`);
+    if (activeSmartGuide.title === "스마트 길잡이") break;
+    await wait(50);
+  }
+  if (activeSmartGuide?.title !== "스마트 길잡이" || activeSmartGuide.closeHidden ||
+    activeSmartGuide.closeDisabled || activeSmartGuide.closeName !== "안내 닫기" ||
+    activeSmartGuide.closeTag !== "BUTTON" || activeSmartGuide.closeTabIndex !== 0 ||
+    !activeSmartGuide.nextHidden || !activeSmartGuide.pagerHidden) {
+    throw new Error(`Smart Guide keyboard controls are not in the expected active state: ${JSON.stringify(activeSmartGuide)}`);
+  }
+  await evaluate("document.querySelector('#host-continue').focus()");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  const smartGuideCloseFocus = await evaluate(`({
+    closeFocused: document.activeElement === document.querySelector(".a11y-guide-close"),
+    outline: getComputedStyle(document.activeElement).outlineStyle,
+  })`);
+  if (!smartGuideCloseFocus.closeFocused || smartGuideCloseFocus.outline === "none") {
+    throw new Error(`Smart Guide close button is not reachable by Tab: ${JSON.stringify(smartGuideCloseFocus)}`);
   }
   await send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
