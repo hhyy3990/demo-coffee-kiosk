@@ -976,7 +976,7 @@ try {
            await wait(50);
          }
          const panelProbe = await evaluate(
-            `window.__sdkPackageSmoke.runPanelStabilityProbe(${JSON.stringify(percent)}, ${JSON.stringify(width === 360 && height === 667 && percent === 80)})`,
+             `window.__sdkPackageSmoke.runPanelStabilityProbe(${JSON.stringify(percent)}, ${JSON.stringify(width === 320 && height === 844 && percent === null)})`,
          );
          const visiblePanels = panelProbe.samples.filter((sample) => sample.visible);
          const drift = Math.max(...visiblePanels.map((sample) => sample.top)) -
@@ -990,21 +990,36 @@ try {
            Number(sample.page.split("/")[0] || 0));
          const invalidBounds = panelProbe.samples.filter((sample) =>
            !sample.visible || sample.top < 0 || sample.bottom > height);
-         const stability = { width, height, percent, drift, undersizedButtons,
-           invalidBounds, samples: panelProbe.samples, dock: panelProbe.dock,
-           footer: panelProbe.footer, hint: panelProbe.hint,
+          const longPageNumbersAreSequential = panelProbe.collectedLongPageNumbers.every(
+            (page, index) => page === index + 2,
+          );
+          const stability = { width, height, percent, drift, undersizedButtons,
+            invalidBounds, samples: panelProbe.samples, dock: panelProbe.dock,
+            footer: panelProbe.footer, hint: panelProbe.hint,
             allLongTextPreserved: !panelProbe.deepAudit ||
               panelProbe.collectedLongText === panelProbe.originalLongText,
-           longTextLengths: panelProbe.longTextLengths,
-           textDifference: panelProbe.textDifference,
-           longPages: panelProbe.pageCount };
+            longTextLengths: panelProbe.longTextLengths,
+            longPageCharCounts: panelProbe.longPageCharCounts,
+            longPageNumbers: panelProbe.collectedLongPageNumbers,
+            pageCountsStable: panelProbe.pageCountsStable,
+            reachedAfterLongCopy: panelProbe.reachedAfterLongCopy,
+            longPageCopyOverflow: panelProbe.longPageCopyOverflow,
+            longPageButtonOverlap: panelProbe.longPageButtonOverlap,
+            textDifference: panelProbe.textDifference,
+            longPages: panelProbe.pageCount };
          if (drift > 1 || undersizedButtons.length || invalidBounds.length ||
            visiblePanels.length !== panelProbe.samples.length ||
            easyTransitionSamples.some((sample) => sample.collapsed) ||
            pageNumbers[0] !== 1 || pageNumbers[1] !== 2 || pageNumbers[2] !== 1 ||
-           pageNumbers[3] !== 2 || pageNumbers[4] !== 2 || pageNumbers[5] !== 2 ||
-           panelProbe.samples[6].page !== "" || pageNumbers[7] !== 2 ||
-            (panelProbe.deepAudit && panelProbe.collectedLongText !== panelProbe.originalLongText) ||
+             pageNumbers[3] !== 2 || pageNumbers[4] !== 2 ||
+             panelProbe.samples[5].page !== "" || pageNumbers[6] !== 2 ||
+            (panelProbe.deepAudit && (
+              panelProbe.collectedLongText !== panelProbe.originalLongText ||
+              !panelProbe.pageCountsStable || !panelProbe.reachedAfterLongCopy ||
+              !longPageNumbersAreSequential ||
+              panelProbe.longPageCopyOverflow.some(Boolean) ||
+              panelProbe.longPageButtonOverlap.some(Boolean)
+            )) ||
            panelProbe.samples.some((sample) => sample.scrollable || sample.overflow !== "hidden") ||
            panelProbe.dock.bottom > panelProbe.footer.top + 1 ||
            (panelProbe.hint.visible && panelProbe.hint.position !== "fixed")) {

@@ -141,6 +141,12 @@ When fitting Easy Language pages, reserve the rendered copy container's integer 
 
 **How to apply:** Compare the exact text with measured wrapper scroll/client heights and inspect rendered lines within that wrapper. Keep page fitting and header/pager geometry stable across page changes.
 
+For long-copy preservation checks, traverse every page and concatenate the displayed fragments before concluding text was lost; a probe that intentionally stops early reports only a partial sample.
+
+**Why:** A 666-character fixture across 21 pages appeared to contain only 73 characters when the consumer probe stopped after its initial sample pages.
+
+**How to apply:** Enable exhaustive paging at the target viewport, assert stable page totals and exact source equality, then inspect each page for clipping and control overlap.
+
 Scroll-guidance owner and bottom-control measurement must tolerate lightweight non-browser test DOMs without `Document`, `documentElement`, or layout methods.
 
 **Why:** The lifecycle harness intentionally uses partial DOM shims; browser-only globals or geometry assumptions can make every SDK session initialization fail before its behavior is tested.

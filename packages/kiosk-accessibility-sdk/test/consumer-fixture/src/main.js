@@ -321,6 +321,8 @@ window.__sdkPackageSmoke = {
       await frame();
       const panel = root.querySelector(".a11y-guide-toast");
       const rect = panel?.getBoundingClientRect();
+      const copy = panel?.querySelector(".a11y-guide-copy");
+      const copyRect = copy?.getBoundingClientRect();
       const buttonRects = ["[data-a11y-guide-previous]", "[data-a11y-guide-next]"].map((selector) => {
         const button = panel?.querySelector(selector);
         const box = button?.getBoundingClientRect();
@@ -331,7 +333,10 @@ window.__sdkPackageSmoke = {
             getComputedStyle(ancestor).visibility === "hidden";
           ancestor = ancestor.parentElement;
         }
-        return { selector, hidden,
+        return { selector, hidden, disabled: button?.disabled ?? true,
+          tabIndex: button?.tabIndex ?? -1,
+          left: box?.left ?? 0, top: box?.top ?? 0,
+          right: box?.right ?? 0, bottom: box?.bottom ?? 0,
           width: box?.width ?? 0, height: box?.height ?? 0 };
       });
       const text = panel?.querySelector("[data-a11y-guide-text]");
@@ -347,6 +352,10 @@ window.__sdkPackageSmoke = {
         visible: Boolean(panel && getComputedStyle(panel).visibility === "visible"),
         overflow: panel ? getComputedStyle(panel).overflow : "",
         scrollable: Boolean(panel && ["auto", "scroll"].includes(getComputedStyle(panel).overflowY)),
+        copyClientHeight: copy?.clientHeight ?? 0,
+        copyScrollHeight: copy?.scrollHeight ?? 0,
+        copyBounds: copyRect ? { left: copyRect.left, top: copyRect.top,
+          right: copyRect.right, bottom: copyRect.bottom } : null,
         collapsed: false,
         foldButtonAbsent: !panel?.querySelector("[data-a11y-guide-collapse]"),
         bodyScrollable: Boolean(panel && panel.scrollHeight > panel.clientHeight),
@@ -359,25 +368,52 @@ window.__sdkPackageSmoke = {
     samples.push(await sample("다음→페이지 2"));
     const originalLongText = explanations[1].text;
     const collectedLongText = [samples[1].text];
+    const collectedLongPageSamples = [samples[1]];
     const pageCount = Number(samples[1].page.split("/")[1] || 1);
+    const collectedLongPageNumbers = [Number(samples[1].page.split("/")[0] || 0)];
+    const observedPageCounts = [pageCount];
+    let reachedAfterLongCopy = false;
     if (pageCount > 200) throw new Error(`Long-copy pagination generated ${pageCount} pages.`);
     let cursor = samples[1];
     let longPageIndex = 2;
     while (cursor.title === explanations[1].title) {
+      if (longPageIndex > pageCount) {
+        throw new Error(`Long-copy pagination did not leave its ${pageCount}-page range.`);
+      }
       root.querySelector("[data-a11y-guide-next]")?.click();
       cursor = await sample(`긴 안내 페이지 ${longPageIndex + 1}`);
-      if (cursor.title === explanations[1].title) collectedLongText.push(cursor.text);
+      observedPageCounts.push(Number(cursor.page.split("/")[1] || 1));
+      if (cursor.title === explanations[1].title) {
+        collectedLongText.push(cursor.text);
+        collectedLongPageSamples.push(cursor);
+      }
+      if (cursor.title === explanations[1].title) {
+        collectedLongPageNumbers.push(Number(cursor.page.split("/")[0] || 0));
+      }
       longPageIndex += 1;
       if (!deepAudit) break;
     }
+    reachedAfterLongCopy = cursor.title !== explanations[1].title;
     while (Number(cursor.page.split("/")[0] || 0) > 2) {
+      const pageBeforePrevious = Number(cursor.page.split("/")[0]);
       root.querySelector("[data-a11y-guide-previous]")?.click();
       cursor = await sample("긴 안내 복귀");
+      if (Number(cursor.page.split("/")[0] || 0) !== pageBeforePrevious - 1) {
+        throw new Error(`Previous did not move from page ${pageBeforePrevious} to the prior page.`);
+      }
     }
     root.querySelector("[data-a11y-guide-previous]")?.click();
-    samples.push(await sample("이전→페이지 1"));
+    const firstPageAgain = await sample("이전→페이지 1");
+    if (!firstPageAgain.page.startsWith("1/")) {
+      throw new Error(`Previous did not return to page 1: ${firstPageAgain.page}`);
+    }
+    samples.push(firstPageAgain);
     root.querySelector("[data-a11y-guide-next]")?.click();
-    samples.push(await sample("다음→페이지 2 재방문"));
+    const secondPageAgain = await sample("다음→페이지 2 재방문");
+    if (!secondPageAgain.page.startsWith("2/")) {
+      throw new Error(`Next did not return to page 2: ${secondPageAgain.page}`);
+    }
+    samples.push(secondPageAgain);
     const alwaysExpanded = await sample("접기·펼치기 제거");
     if (!alwaysExpanded.foldButtonAbsent || alwaysExpanded.collapsed) {
       throw new Error("Guidance fold controls must not be present.");
@@ -411,6 +447,26 @@ window.__sdkPackageSmoke = {
       heightPercent: heightPercent ?? null,
       samples,
       pageCount, originalLongText, collectedLongText: collectedText, deepAudit,
+      collectedLongPageNumbers,
+      longPageCharCounts: collectedLongText.map((text) => text.length),
+      longPageCopyOverflow: collectedLongPageSamples.map((sample) =>
+        sample.copyScrollHeight > sample.copyClientHeight + 1),
+      longPageButtonOverlap: collectedLongPageSamples.map((sample) =>
+        sample.buttons.some((button) => !button.hidden && sample.copyBounds &&
+          Math.min(button.right, sample.copyBounds.right) -
+            Math.max(button.left, sample.copyBounds.left) > 1 &&
+          Math.min(button.bottom, sample.copyBounds.bottom) -
+            Math.max(button.top, sample.copyBounds.top) > 1)),
+      longPageGeometry: collectedLongPageSamples.map((sample) => ({
+        page: sample.page,
+        characters: sample.text.length,
+        copyBounds: sample.copyBounds,
+        copyClientHeight: sample.copyClientHeight,
+        copyScrollHeight: sample.copyScrollHeight,
+        buttons: sample.buttons.filter((button) => !button.hidden),
+      })),
+      reachedAfterLongCopy,
+      pageCountsStable: observedPageCounts.every((count) => count === pageCount),
       firstTextDifference,
       textDifference: {
         index: firstTextDifference,
