@@ -678,12 +678,13 @@ window.__sdkPackageSmoke = {
     slow = false,
     delaySeconds = 10,
     text = "계속 버튼을 눌러 진행하세요.",
+    stepId = guideStep,
   ) {
     const current = validateAccessibilityProfile({ ...profile, slowGuidance: slow });
     sdk.applyProfile(current);
-    sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
+    sdk.setEasyLanguageState({ stepId, explanations: easyExplanations });
     sdk.setGuideState({
-      stepId: guideStep,
+      stepId,
       enabled: true,
       paused: false,
       delaySeconds,

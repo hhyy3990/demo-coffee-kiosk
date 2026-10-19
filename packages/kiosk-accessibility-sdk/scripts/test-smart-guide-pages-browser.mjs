@@ -16,6 +16,8 @@ const vite = spawn(process.execPath, [
 ], { cwd: consumerRoot, stdio: "ignore" });
 const browser = spawn(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
   "--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+  "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+  "--disable-backgrounding-occluded-windows",
   `--remote-debugging-port=${debugPort}`, `--user-data-dir=${userData}`, "about:blank",
 ], { stdio: "ignore", detached: true });
 
@@ -76,7 +78,16 @@ try {
       if (predicate(value)) return value;
       await wait(50);
     } while (Date.now() - started < timeoutMs);
-    throw new Error(`Timed out waiting for browser state: ${JSON.stringify(value)}`);
+    const diagnostic = await evaluate(`({
+      profile: window.__sdkPackageSmoke?.read?.().profile ?? null,
+      visibility: document.visibilityState,
+      hasFocus: document.hasFocus(),
+      targetPresent: Boolean(document.querySelector("#host-continue")),
+      targetDisabled: document.querySelector("#host-continue")?.disabled ?? null,
+      activeOverlay: Boolean(document.querySelector(".fixture-modal:not([hidden])")),
+      smartPanel: Boolean(document.querySelector(".a11y-guide-toast.a11y-guide-smart"))
+    })`);
+    throw new Error(`Timed out waiting for browser state: ${JSON.stringify({ value, diagnostic, warnings: warningMessages })}`);
   };
   await send("Page.enable");
   await send("Runtime.enable");
@@ -85,6 +96,7 @@ try {
     screenWidth: 320, screenHeight: 844,
   });
   await send("Page.navigate", { url: baseUrl });
+  await send("Page.bringToFront");
   await poll("Boolean(window.__sdkPackageSmoke?.startGuide)", Boolean);
 
   const longText = "증명서 종류, 발급 부수, 표시 항목과 수수료를 확인해 주세요. 내용이 맞으면 결제 방법을 눌러 가상 결제를 진행하세요.";
@@ -94,7 +106,7 @@ try {
   const run = async (slow, text, expectedPages, totalMs, halfMs = 0, restoreEasy = false) => {
     await evaluate(`window.__sdkPackageSmoke.setTestProfile({
       textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
-      viewportMode:{mode:"bottom",heightPercent:80}
+      viewportMode:null
     })`);
     let restoreBefore = null;
     if (restoreEasy) {
@@ -102,7 +114,7 @@ try {
         document.querySelector("[data-a11y-guide-collapse]").click()`);
       restoreBefore = await evaluate("window.__sdkPackageSmoke.readGuidance()");
     }
-    await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},10,${JSON.stringify(text)})`);
+    await evaluate(`window.__sdkPackageSmoke.startGuide(${slow},10,${JSON.stringify(text)},"certificate.payment-method")`);
     let state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
       item.title === "스마트 길잡이", 11_200);
     await wait(350);
@@ -197,9 +209,9 @@ try {
   });
   await evaluate(`window.__sdkPackageSmoke.setTestProfile({
     textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
-    viewportMode:{mode:"bottom",heightPercent:80}
+    viewportMode:null
   })`);
-  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText)})`);
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText)},"certificate.payment-method")`);
   await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이", 11_200);
   await wait(350);
   const layoutState = await evaluate("window.__sdkPackageSmoke.readGuidance()");
@@ -216,9 +228,9 @@ try {
   });
   await evaluate(`window.__sdkPackageSmoke.setTestProfile({
     textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
-    viewportMode:{mode:"bottom",heightPercent:80}
+    viewportMode:null
   })`);
-  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText.repeat(6))})`);
+  await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText.repeat(6))},"certificate.payment-method")`);
   await wait(10_500);
   const tooLongFallback = await evaluate("window.__sdkPackageSmoke.readGuidance()");
   if (!warningMessages.some((message) => /requires \d+ pages; maximum is 2/u.test(message))) {
@@ -233,7 +245,7 @@ try {
   const guideDelays = [];
   for (const seconds of [10, 15, 20]) {
     const started = await evaluate(
-      `window.__sdkPackageSmoke.startGuide(false,${seconds},"다음 버튼을 눌러 진행하세요.")`,
+      `window.__sdkPackageSmoke.startGuide(false,${seconds},"다음 버튼을 눌러 진행하세요.","certificate.payment-method")`,
     );
     await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이",
       seconds * 1000 + 1200);
