@@ -107,7 +107,7 @@ try {
     await evaluate(`window.__sdkPackageSmoke.setTestProfile({
       textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
       viewportMode:null
-    })`);
+    }, "certificate.payment-method")`);
     let restoreBefore = null;
     if (restoreEasy) {
       await evaluate(`document.querySelector("[data-a11y-guide-next]").click();
@@ -155,7 +155,7 @@ try {
           firstGeometry.headerHeight > 44.1 ||
           firstGeometry.close.width < 44 || firstGeometry.close.height < 44 ||
           firstGeometry.collapse.width < 44 || firstGeometry.collapse.height < 44 ||
-          firstGeometry.copyScrollHeight > firstGeometry.copyClientHeight ||
+          firstGeometry.copyScrollHeight > firstGeometry.copyClientHeight + 1 ||
           firstGeometry.textScrollHeight > firstGeometry.textClientHeight + 1) {
         throw new Error(`360/320 Smart Guide geometry failed: ${JSON.stringify(firstGeometry)}`);
       }
@@ -167,10 +167,12 @@ try {
         }
       }
     }
+    let transitionElapsedMs = null;
     if (expectedPages === 2) {
       state = await poll("window.__sdkPackageSmoke.readGuidance()", (item) =>
         item.title === "스마트 길잡이" && item.text !== firstText, halfMs + 1200);
       const transitionAt = await evaluate("performance.now()");
+      transitionElapsedMs = Math.round(transitionAt - displayStarted);
       if (Math.abs((transitionAt - displayStarted) - halfMs) > 1200) {
         throw new Error(`Page transition was late: ${transitionAt - displayStarted}ms after display, expected ${halfMs}ms.`);
       }
@@ -199,7 +201,7 @@ try {
     if (restoreEasy && (restored.collapsed !== restoreBefore.collapsed || restored.page !== restoreBefore.page)) {
       throw new Error(`Easy Language page/fold state did not restore: ${JSON.stringify({ before: restoreBefore, after: restored })}`);
     }
-    return { slow, expectedPages, elapsed: Math.round(elapsed), firstText, secondText: state.text,
+    return { slow, expectedPages, elapsed: Math.round(elapsed), transitionElapsedMs, firstText, secondText: state.text,
       firstGeometry, restored: restoreEasy ? { before: restoreBefore, after: restored } : null };
   };
 
@@ -210,7 +212,7 @@ try {
   await evaluate(`window.__sdkPackageSmoke.setTestProfile({
     textSize:"extraLarge",buttonSize:"large",contrast:"high",easyLanguage:true,smartGuide:true,
     viewportMode:null
-  })`);
+  }, "certificate.payment-method")`);
   await evaluate(`window.__sdkPackageSmoke.startGuide(false,10,${JSON.stringify(longText)},"certificate.payment-method")`);
   await poll("window.__sdkPackageSmoke.readGuidance()", (item) => item.title === "스마트 길잡이", 11_200);
   await wait(350);

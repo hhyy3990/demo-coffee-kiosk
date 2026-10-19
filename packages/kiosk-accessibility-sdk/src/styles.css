@@ -433,6 +433,9 @@
 .kiosk .a11y-guide-toast.a11y-guide-tight:not(.a11y-guide-smart) .a11y-guide-title {
   line-height: 1;
 }
+.kiosk .a11y-guide-toast.a11y-guide-tight.a11y-guide-smart .a11y-guide-copy {
+  line-height: 1.25;
+}
 .kiosk .a11y-guide-toast.a11y-guide-smart.a11y-guide-tight .a11y-guide-header {
   box-sizing: border-box;
   height: 44px;

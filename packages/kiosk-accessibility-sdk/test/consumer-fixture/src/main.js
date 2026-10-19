@@ -695,12 +695,12 @@ window.__sdkPackageSmoke = {
   setViewport(percent) {
     return sdk.setViewportMode(percent ? { mode: "bottom", heightPercent: percent } : null);
   },
-  setTestProfile(overrides = {}) {
+  setTestProfile(overrides = {}, stepId = guideStep) {
     profile = validateAccessibilityProfile({ ...profile, ...overrides });
     sdk.applyProfile(profile);
-    sdk.setEasyLanguageState({ stepId: guideStep, explanations: easyExplanations });
+    sdk.setEasyLanguageState({ stepId, explanations: easyExplanations });
     sdk.setGuideState({
-      stepId: guideStep,
+      stepId,
       enabled: profile.smartGuide,
       paused: true,
       delaySeconds: 10,

@@ -405,6 +405,7 @@
         const pillRect = pill?.getBoundingClientRect();
         const scrollRect = scrollArea.getBoundingClientRect();
         const workBottom = scrollRect.top + scrollArea.clientTop + scrollArea.clientHeight;
+        const hintAnchorBottom = Math.min(workBottom, footer.getBoundingClientRect().top);
         guideStates.push({
           label,
           scrollTop: scrollArea.scrollTop,
@@ -414,7 +415,7 @@
           message: pill?.querySelector(".a11y-additional-menu-copy")?.textContent ?? null,
           pillRect: pillRect ? { top: pillRect.top, bottom: pillRect.bottom } : null,
           workBottom,
-          bottomGap: pillRect ? workBottom - pillRect.bottom : null,
+          bottomGap: pillRect ? hintAnchorBottom - pillRect.bottom : null,
         });
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
