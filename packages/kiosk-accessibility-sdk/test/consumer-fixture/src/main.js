@@ -80,6 +80,7 @@ let profile = validateAccessibilityProfile({
   buttonSize: "large",
   contrast: "high",
   easyLanguage: true,
+  scrollGuidance: true,
   bottomControls: true,
   smartGuide: true,
   guideDelaySeconds: 10,

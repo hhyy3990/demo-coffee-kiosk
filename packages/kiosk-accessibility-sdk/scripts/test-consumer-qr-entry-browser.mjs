@@ -104,6 +104,22 @@ try {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const cases = [];
   const fontCorrectionCases = [];
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+    screenWidth: 390, screenHeight: 844,
+  });
+  await send("Page.navigate", { url: `${baseUrl}/qr-entry.html?structure=inner&percent=none` });
+  let policyFixtureLoaded = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    policyFixtureLoaded = await evaluate("Boolean(window.qrConsumerTest?.verifyEasyLanguageScrollGuidancePolicy)");
+    if (policyFixtureLoaded) break;
+    await wait(50);
+  }
+  if (!policyFixtureLoaded) throw new Error("Easy Language scroll-guidance fixture did not load.");
+  const scrollGuidancePolicyResult = await evaluate("window.qrConsumerTest.verifyEasyLanguageScrollGuidancePolicy()");
+  if (!scrollGuidancePolicyResult.pass) {
+    throw new Error(`Easy Language overrode the QR scroll-guidance policy: ${JSON.stringify(scrollGuidancePolicyResult)}`);
+  }
   const viewports = [
     [320, 844], [360, 667], [390, 844],
     [1080, 1920], [1440, 900], [1920, 1080],
@@ -1068,6 +1084,7 @@ try {
     sameStepInteractionResult,
     fontCorrectionCases,
     guidanceLayoutCases: guidanceLayoutMatrix.length,
+    scrollGuidancePolicyResult,
     panelStabilityCases,
     viewportReflowCases,
     guidanceLayoutMatrix,

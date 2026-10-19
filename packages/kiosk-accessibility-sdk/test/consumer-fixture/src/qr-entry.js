@@ -118,7 +118,7 @@ const mockQrProfile = async (schemaVersion, heightPercent, scrollGuidance = true
       stepByStepGuidance: false,
       conciseGuidance: false,
       slowGuidance: false,
-      ...(schemaVersion === 5 ? { scrollGuidance } : {}),
+      ...(schemaVersion === 5 && scrollGuidance !== null ? { scrollGuidance } : {}),
     }
     : {
       textSize: "extraLarge",
@@ -301,6 +301,104 @@ window.qrConsumerTest = {
       qrDockAbsent: !document.querySelector("[data-a11y-qr-entry-dock]"),
       controlsStillReachable: result.fixedControlsVisible,
       hintPassesDockClick: result.hintPassesDockClick,
+    };
+  },
+  async verifyEasyLanguageScrollGuidancePolicy() {
+    if (!sdk) return { pass: false, reason: "SDK unavailable" };
+    const sample = async (profile, stepId = "scroll-policy-test") => {
+      const easyProfile = {
+        ...profile,
+        easyLanguage: true,
+        smartGuide: true,
+        viewportMode: { mode: "bottom", heightPercent: 80 },
+      };
+      sdk.applyProfile(easyProfile);
+      sdk.notifyScreenChange(stepId);
+      sdk.setEasyLanguageState({
+        stepId,
+        explanations: [
+          { title: "안내 1", text: "첫 번째 쉬운 말 안내입니다." },
+          { title: "안내 2", text: "다음 쉬운 말 안내입니다." },
+        ],
+      });
+      sdk.setGuideState({
+        stepId,
+        enabled: true,
+        paused: true,
+        delaySeconds: 10,
+        message: { title: "다음 단계", text: "계속해 주세요.", actionId: "host.review.continue" },
+      });
+      await frame();
+      const hint = document.querySelector(".a11y-additional-menu-hint");
+      return {
+        scrollGuidance: sdk.profile.scrollGuidance,
+        hintCount: document.querySelectorAll(".a11y-additional-menu-hint").length,
+        hintVisible: isHintVisible(),
+        rootMarker: root.dataset.a11yScrollGuidance ?? null,
+        easyLanguageVisible: Boolean(document.querySelector(".a11y-guide-toast")),
+        hint,
+      };
+    };
+    const off = (state) => state.scrollGuidance === false && state.hintCount === 0;
+    const noQr = await sample({ ...DEFAULT_ACCESSIBILITY_PROFILE, scrollGuidance: false });
+    const v5On = await sample(await mockQrProfile(5, 80, true));
+    const v5Off = await sample(await mockQrProfile(5, 80, false));
+    const next = document.querySelector("[data-a11y-guide-next]");
+    next?.click();
+    await frame();
+    const pageMoveOff = off({
+      ...v5Off,
+      scrollGuidance: sdk.profile.scrollGuidance,
+      hintCount: document.querySelectorAll(".a11y-additional-menu-hint").length,
+    });
+    const nextStep = await sample(
+      await mockQrProfile(5, 80, false),
+      "scroll-policy-next-step",
+    );
+    const missingV5 = await sample(await mockQrProfile(5, 80, null));
+    const legacy = [];
+    for (let version = 1; version <= 4; version += 1) {
+      legacy.push(await sample(await mockQrProfile(version, 80), `scroll-policy-v${version}`));
+    }
+    sdk.setGuideState({
+      stepId: "scroll-policy-next-step",
+      enabled: true,
+      paused: false,
+      delaySeconds: 0,
+      message: { title: "다음 단계 안내", text: "도움말을 확인해 주세요.", actionId: "host.review.continue" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const smartGuideOff = off({
+      scrollGuidance: sdk.profile.scrollGuidance,
+      hintCount: document.querySelectorAll(".a11y-additional-menu-hint").length,
+    });
+    document.querySelector(".a11y-guide-close")?.click();
+    await frame();
+    const smartGuideCloseOff = document.querySelectorAll(".a11y-additional-menu-hint").length === 0;
+    const v5Reenabled = await sample(await mockQrProfile(5, 80, true));
+    const onThenV4 = await sample(await mockQrProfile(4, 80));
+    sdk.endSession();
+    await frame();
+    const sessionResetOff = sdk.profile.scrollGuidance === false &&
+      document.querySelectorAll(".a11y-additional-menu-hint").length === 0;
+    return {
+      noQr,
+      v5On,
+      v5Off,
+      pageMoveOff,
+      nextStepOff: off(nextStep),
+      missingV5Off: off(missingV5),
+      legacyOff: legacy.every(off),
+      smartGuideOff,
+      smartGuideCloseOff,
+      v5Reenabled,
+      onThenV4Off: off(onThenV4),
+      sessionResetOff,
+      pass: off(noQr) && v5On.scrollGuidance === true && v5On.hintCount === 1 &&
+        off(v5Off) && pageMoveOff && off(nextStep) && off(missingV5) &&
+        legacy.every(off) && smartGuideOff && smartGuideCloseOff &&
+        v5Reenabled.scrollGuidance === true && v5Reenabled.hintCount === 1 &&
+        off(onThenV4) && sessionResetOff,
     };
   },
   async verifyQrProfileReplacement() {

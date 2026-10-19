@@ -508,6 +508,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
   let guideDismissTimer: ReturnType<typeof setTimeout> | null = null;
   const layoutEnhancer = createLayoutEnhancer(root, adapter, () => currentProfile);
   const menuHint = createScrollGuidance(root, adapter);
+  const syncMenuHintToProfile = () => menuHint.setEnabled(currentProfile.scrollGuidance);
   const bottomViewport = createBottomViewportController(root, adapter);
   const screenChange = createScreenChangeController(root, adapter, () => bottomViewport.refresh());
   const completion = createCompletionController((state) => { completionActive = state.active; });
@@ -788,7 +789,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       removeGuide();
       return;
     }
-          menuHint.setEnabled(true);
+          syncMenuHintToProfile();
     if (!guideOverlay) {
       guideOverlay = createGuideOverlay(root, {
         onClose: () => {
@@ -1023,7 +1024,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     highlightedAction?.classList.remove("a11y-guide-emphasis");
     highlightedAction = null;
     if (hadGuide) {
-      menuHint.setEnabled(true);
+      syncMenuHintToProfile();
       menuHint.refresh();
     }
   }
@@ -1096,7 +1097,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       overlay.style.visibility = "hidden";
       overlay.setAttribute("aria-hidden", "true");
       overlay.dataset.a11yPositionSuppressed = "true";
-      menuHint.setEnabled(true);
+      syncMenuHintToProfile();
     });
   }
 
@@ -1142,12 +1143,12 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
       guideOverlay.style.visibility = "hidden";
       guideOverlay.setAttribute("aria-hidden", "true");
       guideOverlay.dataset.a11yPositionSuppressed = "true";
-      menuHint.setEnabled(true);
+      syncMenuHintToProfile();
       return;
     }
     guideOverlay.setAttribute("aria-hidden", "false");
     delete guideOverlay.dataset.a11yPositionSuppressed;
-    menuHint.setEnabled(true);
+    syncMenuHintToProfile();
     if (guideOverlay) scheduleGuideHitTest(target, action);
   }
 
@@ -1177,7 +1178,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     const target = action?.element ?? null;
     if (!action || !target || !root.contains(target)) return;
     if (smartGuideVisible) finishSmartGuide();
-    menuHint.setEnabled(true);
+    syncMenuHintToProfile();
     smartGuideVisible = true;
     smartGuidePages = [guideState.message.text];
     smartGuidePageIndex = 0;
@@ -1271,7 +1272,7 @@ export function createAccessibilitySdk(options: AccessibilitySdkOptions): Access
     sessionEnded = false;
     const previousVoiceGuidance = currentProfile.voiceGuidance;
     currentProfile = validateAccessibilityProfile(input);
-    menuHint.setEnabled(currentProfile.scrollGuidance);
+    syncMenuHintToProfile();
     const nextClasses = new Set(accessibilityClasses(currentProfile));
     for (const className of MANAGED_CLASSES) {
       root.classList.toggle(className, nextClasses.has(className));

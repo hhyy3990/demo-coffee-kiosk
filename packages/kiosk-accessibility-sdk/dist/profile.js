@@ -1,5 +1,5 @@
 export const ACCESSIBILITY_PROFILE_SCHEMA_VERSION = 5;
-export const ACCESSIBILITY_SDK_VERSION = "0.5.30";
+export const ACCESSIBILITY_SDK_VERSION = "0.5.31";
 export const PROFILE_LANGUAGES = Object.freeze(["ko", "zh", "vi", "en", "th", "uz", "ja"]);
 export const DEFAULT_ACCESSIBILITY_PROFILE = Object.freeze({
     textSize: "standard",

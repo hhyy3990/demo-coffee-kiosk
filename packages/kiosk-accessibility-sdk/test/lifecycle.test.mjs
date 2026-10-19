@@ -474,6 +474,68 @@ test("easy-language guidance is paged, always expanded, and has no automatic tim
   }
 });
 
+test("Easy Language rendering keeps profile-disabled scroll guidance off", () => {
+  const h = createSessionHarness();
+  const attached = new Set();
+  const detached = new Set();
+  try {
+    h.root.addEventListener = (type, listener, capture) => {
+      if (type === "scroll" && capture === true) attached.add(listener);
+    };
+    h.root.removeEventListener = (type, listener, capture) => {
+      if (type === "scroll" && capture === true) detached.add(listener);
+    };
+    h.sdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: true,
+      smartGuide: true,
+      scrollGuidance: false,
+    });
+    h.sdk.setEasyLanguageState({
+      stepId: "test.confirm",
+      explanations: [
+        { title: "첫 안내", text: "첫 번째 설명입니다." },
+        { title: "다음 안내", text: "다음 설명입니다." },
+      ],
+    });
+    assert.equal(attached.size, 0);
+    const panel = h.children[0];
+    panel.querySelector("[data-a11y-guide-next]").dispatch("click", { stopPropagation() {} });
+    h.sdk.setGuideState({
+      stepId: "test.confirm",
+      enabled: true,
+      paused: true,
+      delaySeconds: 10,
+      message: { title: "안내", text: "계속해 주세요.", actionId: "continue" },
+    });
+    assert.equal(attached.size, 0);
+
+    h.sdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: true,
+      scrollGuidance: true,
+    });
+    assert.equal(attached.size, 1);
+    h.sdk.applyProfile({
+      ...DEFAULT_ACCESSIBILITY_PROFILE,
+      easyLanguage: true,
+      scrollGuidance: false,
+    });
+    assert.equal(detached.size, 1);
+    h.sdk.setEasyLanguageState({
+      stepId: "test.confirm",
+      explanations: [{ title: "새 안내", text: "설명이 바뀌어도 꺼진 상태를 유지합니다." }],
+    });
+    assert.equal(attached.size, 1);
+    assert.equal(detached.size, 1);
+    h.sdk.endSession();
+    assert.equal(attached.size, 1);
+    assert.equal(detached.size, 1);
+  } finally {
+    h.restore();
+  }
+});
+
 test("Smart Guide shares the expanded easy-language panel and restores its page when dismissed", () => {
   const h = createSessionHarness();
   try {

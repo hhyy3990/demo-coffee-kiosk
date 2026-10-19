@@ -91,6 +91,7 @@ try {
       hintVisible: Boolean(hint && hintStyle?.visibility !== "hidden" &&
         hintStyle?.display !== "none" && hint.getAttribute("aria-hidden") !== "true" &&
         rect?.width && rect.height),
+      hintCount: document.querySelectorAll(".a11y-additional-menu-hint").length,
       hintRect: rect ? { top: rect.top, bottom: rect.bottom, height: rect.height } : null,
       workBottom,
       hintBottomGap: rect ? workBottom - rect.bottom : null,
@@ -179,18 +180,16 @@ try {
     await wheel(-160);
     const returned = await readHomeScroll();
     const owner = returned.actualOwner;
-    const stablePosition = [middle, bottom, returned].every((sample) =>
-      Math.abs((sample.hintRect?.top ?? NaN) - (initial.hintRect?.top ?? NaN)) <= 1,
-    );
-    const stableAnchor = [initial, middle, bottom, returned].every((sample) =>
-      Math.abs((sample.hintBottomGap ?? NaN) - 12) <= 1,
-    );
-    if (!initial.hintVisible || !middle.hintVisible || !bottom.actualOwner ||
+    const scrollWorked = Boolean(middle.actualOwner && bottom.actualOwner && returned.actualOwner) &&
+      middle.actualOwner.scrollTop > initial.actualOwner.scrollTop &&
+      bottom.actualOwner.scrollTop >= bottom.actualOwner.scrollHeight - bottom.actualOwner.clientHeight - 1 &&
+      returned.actualOwner.scrollTop < bottom.actualOwner.scrollTop;
+    if (initial.hintCount !== 0 || middle.hintCount !== 0 ||
+        bottom.hintCount !== 0 || returned.hintCount !== 0 || !bottom.actualOwner ||
         bottom.actualOwner.scrollTop < bottom.actualOwner.scrollHeight - bottom.actualOwner.clientHeight - 1 ||
-        bottom.hintVisible || !returned.hintVisible || !stablePosition || !stableAnchor ||
-        !initial.hintHitTargets?.visuallyOnTop || !initial.hintHitTargets?.clickPassesThrough) {
-      throw new Error(`Welcome scroll hint did not stay visible, hide only at the end, and return on scroll-up: ${
-        JSON.stringify({ initial, middle, bottom, returned, stablePosition })
+        !scrollWorked) {
+      throw new Error(`Scroll guidance was not off without a QR opt-in, or host scrolling failed: ${
+        JSON.stringify({ initial, middle, bottom, returned, scrollWorked })
       }`);
     }
     await evaluate(`document.querySelector('[data-a11y-slot="scroll-content"]').scrollTop = 0`);
@@ -200,12 +199,8 @@ try {
       middleScrollTop: middle.actualOwner?.scrollTop,
       bottomScrollTop: bottom.actualOwner?.scrollTop,
       returnedScrollTop: owner?.scrollTop,
-      hiddenAtBottom: !bottom.hintVisible,
-      returnedAfterScrollUp: returned.hintVisible,
-      fixedHintPosition: stablePosition,
-      anchorGap12px: stableAnchor,
-      visibleAboveDock: initial.hintHitTargets.visuallyOnTop,
-      clickPassesThrough: initial.hintHitTargets.clickPassesThrough,
+      hintRemainedOff: true,
+      hostScrollWorked: true,
     };
   };
   const readMenuHintPlacement = () => evaluate(`(() => {
@@ -228,6 +223,7 @@ try {
       ownerScrollTop: owner?.scrollTop ?? -1,
       windowScrollY: window.scrollY,
       documentScrollTop: document.scrollingElement?.scrollTop ?? -1,
+      hintCount: document.querySelectorAll(".a11y-additional-menu-hint").length,
       hintVisible: Boolean(hint && hint.getAttribute("aria-hidden") !== "true" &&
         getComputedStyle(hint).display !== "none" && getComputedStyle(hint).visibility !== "hidden"),
       hintTop: hintRect?.top ?? null,
@@ -257,6 +253,13 @@ try {
       }`);
     }
     return state;
+  };
+  const assertMenuHintOff = async (label) => {
+    const state = await readMenuHintPlacement();
+    if (state.hintVisible || state.hintCount !== 0) {
+      throw new Error(`${label}: scroll guidance appeared without an enabled QR profile: ${JSON.stringify(state)}`);
+    }
+    return { ...state, label, hintCount: 0 };
   };
   const read = () => evaluate(`(() => {
     const panel = document.querySelector(".a11y-guide-toast");
@@ -539,11 +542,8 @@ try {
   const startRange = startAfterProfile.actualOwner
     ? startAfterProfile.actualOwner.scrollHeight - startAfterProfile.actualOwner.clientHeight
     : 0;
-  if (startRange > 1 && (!startAfterProfile.hintVisible ||
-      !startAfterProfile.hintHitTargets?.visuallyOnTop ||
-      !startAfterProfile.hintHitTargets?.clickPassesThrough ||
-      Math.abs(startAfterProfile.hintBottomGap - 12) > 1)) {
-    throw new Error(`Scrollable welcome screen has no SDK hint: ${JSON.stringify(startAfterProfile)}`);
+  if (startRange > 1 && (startAfterProfile.hintCount !== 0 || startAfterProfile.hintVisible)) {
+    throw new Error(`Scrollable welcome screen enabled guidance without a QR opt-in: ${JSON.stringify(startAfterProfile)}`);
   }
   if (!firstScreen.exists || !firstScreen.visible ||
       firstScreen.title !== "쉬운 말 안내가 켜져 있어요." ||
@@ -588,11 +588,8 @@ try {
     }
   }
   const welcomeAfterGuide = await readHomeScroll();
-  if (startRange > 1 && (!welcomeAfterGuide.hintVisible ||
-      !welcomeAfterGuide.hintHitTargets?.visuallyOnTop ||
-      !welcomeAfterGuide.hintHitTargets?.clickPassesThrough ||
-      Math.abs(welcomeAfterGuide.hintBottomGap - 12) > 1)) {
-    throw new Error(`Smart Guide hid the welcome scroll hint: ${JSON.stringify(welcomeAfterGuide)}`);
+  if (startRange > 1 && (welcomeAfterGuide.hintCount !== 0 || welcomeAfterGuide.hintVisible)) {
+    throw new Error(`Smart Guide enabled scroll guidance without a QR opt-in: ${JSON.stringify(welcomeAfterGuide)}`);
   }
   console.log(JSON.stringify({ label: "welcome-after-smart-delay", guideVisible: smartWelcome.visible,
     countdown: smartWelcome.countdown, scroll: welcomeAfterGuide }));
@@ -600,7 +597,7 @@ try {
   console.log(JSON.stringify({ label: "welcome-scroll-hint-cycle", ...welcomeHintCycle }));
   await click("#start-store");
   const emptyMenuHint = viewportWidth <= 600
-    ? await assertMenuHintPlacement("empty-cart-menu-hint", false)
+    ? await assertMenuHintOff("empty-cart-menu-hint-without-qr")
     : null;
   const menuNavBefore = await evaluate(`(() => {
     const shell = document.querySelector('[data-a11y-slot="scroll-content"]');
@@ -651,7 +648,7 @@ try {
   await click("#item-add");
   await wait(500);
   const cartBarHint = viewportWidth <= 600
-    ? await assertMenuHintPlacement("cart-bar-menu-hint", true)
+    ? await assertMenuHintOff("cart-bar-menu-hint-without-qr")
     : null;
   if (viewportWidth <= 600) {
     const beforeMenuLayer = await evaluate(`(() => {
@@ -677,19 +674,14 @@ try {
         orderButtonHit: hit === button || button.contains(hit) };
     })()`);
     await wait(180);
-    const cartBarHintAfterScroll = await assertMenuHintPlacement(
-      "cart-bar-menu-hint-after-scroll", true, cartBarHint,
-    );
+    const cartBarHintAfterScroll = await assertMenuHintOff("cart-bar-menu-hint-after-scroll-without-qr");
     if (beforeMenuLayer.navPosition === "sticky" || beforeMenuLayer.navZ !== "1" ||
       beforeMenuLayer.cartPosition !== "sticky" || Number(beforeMenuLayer.cartZ) <= Number(beforeMenuLayer.navZ) ||
       !layeredMenu.orderButtonHit) {
       throw new Error(`Category rail/order bar stacking regressed: ${JSON.stringify({ beforeMenuLayer, layeredMenu })}`);
     }
-    if (Math.abs(
-      (cartBarHintAfterScroll.hintTop - cartBarHint.hintTop) -
-      (cartBarHintAfterScroll.cartTop - cartBarHint.cartTop),
-    ) > 1) {
-      throw new Error("Scroll moved the menu hint independently of the sticky cart bar.");
+    if (cartBarHintAfterScroll.ownerScrollTop <= cartBarHint.ownerScrollTop) {
+      throw new Error("The no-QR order flow stopped scrolling the menu.");
     }
   }
   const menuScrollPoint = await evaluate(`(() => {
@@ -761,7 +753,7 @@ try {
   await click(".demo-entry-button");
   await click("#start-store");
   const emptyMenuHintAfterReset = viewportWidth <= 600
-    ? await assertMenuHintPlacement("empty-cart-menu-hint-after-reset", false, emptyMenuHint)
+    ? await assertMenuHintOff("empty-cart-menu-hint-after-reset-without-qr")
     : null;
   console.log(JSON.stringify({
     result: "PASS",
@@ -774,8 +766,8 @@ try {
     restoredStartNotice: Boolean(restoredStartNotice),
     welcomeScrollOwner: startAfterProfile.actualOwner,
     defaultStartViewport,
-    welcomeHintVisibleBeforeAndAfterSmartGuide: startRange <= 1 ||
-      (startAfterProfile.hintVisible && welcomeAfterGuide.hintVisible),
+    scrollGuidanceOffWithoutQrBeforeAndAfterSmartGuide: startRange <= 1 ||
+      (startAfterProfile.hintCount === 0 && welcomeAfterGuide.hintCount === 0),
     welcomeHintCycle,
     emptyMenuHint,
     cartBarHint,
