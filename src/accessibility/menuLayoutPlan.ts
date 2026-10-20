@@ -1,22 +1,44 @@
 export type MenuViewportClass = "compact" | "regular";
 export type MenuTextScale = "standard" | "large" | "extraLarge";
 export type MenuButtonScale = "standard" | "large";
+export type MenuColumnCount = 1 | 2;
+
+export type MenuLayoutOperation =
+  | {
+      type: "setGroupColumns";
+      targetId: "menu.product-list";
+      columns: MenuColumnCount;
+    }
+  | {
+      type: "setGroupFlow";
+      targetId: "menu.product-card";
+      direction: "row";
+      gapPx: number;
+    }
+  | {
+      type: "setChildBasis";
+      targetId: "menu.product-image";
+      basisPercent: number;
+      minPx: number;
+    };
 
 export interface MenuLayoutConstraints {
   textScale: MenuTextScale;
   buttonScale: MenuButtonScale;
   highContrast: boolean;
   viewportModePercent: 60 | 70 | 80 | null;
+  defaultColumns: MenuColumnCount;
+  allowedColumns: readonly MenuColumnCount[];
   minimumTouchTargetPx: 44;
   preserveTopGuidance: true;
   preserveFixedControls: true;
 }
 
 export interface MenuScreenModel {
-  schemaVersion: 1;
+  schemaVersion: 2;
   hostId: "democoffee";
   screenId: "cafe.menu";
-  structureVersion: "menu.v1";
+  structureVersion: "menu.v2";
   structureHash: string;
   constraintHash: string;
   viewportClass: MenuViewportClass;
@@ -25,50 +47,40 @@ export interface MenuScreenModel {
     role: string;
     childIds: readonly string[];
     preserveOrder: boolean;
+    mutableProperties: readonly string[];
   }[];
   requiredIds: readonly string[];
-  allowedOperations: readonly string[];
+  protectedProperties: readonly string[];
+  allowedOperations: readonly ("setGroupColumns" | "setGroupFlow" | "setChildBasis")[];
   constraints: MenuLayoutConstraints;
 }
 
 export interface MenuLayoutPlan {
-  schemaVersion: 1;
+  schemaVersion: 2;
   screenId: "cafe.menu";
   structureHash: string;
   constraintHash: string;
   viewportClass: MenuViewportClass;
-  operations: readonly (
-    | {
-        type: "setGroupFlow";
-        targetId: "menu.product-card";
-        direction: "row";
-        gapPx: number;
-      }
-    | {
-        type: "setChildBasis";
-        targetId: "menu.product-image";
-        basisPercent: number;
-        minPx: number;
-      }
-  )[];
+  operations: readonly MenuLayoutOperation[];
 }
 
 export interface ValidatedMenuLayout {
   structureHash: string;
   constraintHash: string;
   viewportClass: MenuViewportClass;
-  gapPx: number;
-  imageBasisPercent: number;
-  imageMinimumPx: number;
+  columns: MenuColumnCount | null;
+  gapPx: number | null;
+  imageBasisPercent: number | null;
+  imageMinimumPx: number | null;
 }
 
 const STRUCTURE = [
-  "menu.v1",
-  "menu.product-card:repeated-item:menu.product-image,menu.product-information",
+  "menu.v2",
+  "menu.product-list:ordered-repeated-items:menu.product-card;mutable:columns;preserve:items,order",
+  "menu.product-card:repeated-item:menu.product-image,menu.product-information;mutable:flow,gap;preserve:child-order",
   "menu.product-information:menu.product-name,menu.product-price,menu.product-description,menu.product-action",
-  "preserve-item-order",
-  "protected:menu.category-navigation,menu.product-list,menu.fixed-controls",
-  "operations:setGroupFlow,setChildBasis",
+  "protected:menu.category-navigation,menu.fixed-controls,menu.product-content,menu.product-action.behavior",
+  "operations:setGroupColumns,setGroupFlow,setChildBasis",
 ].join("|");
 
 function hash(value: string): string {
@@ -93,37 +105,59 @@ export function createMenuScreenModel(
     buttonSize: MenuButtonScale;
     contrast: "standard" | "high";
     viewportMode: { heightPercent: 60 | 70 | 80 } | null;
+    easyLanguage?: boolean;
   },
 ): MenuScreenModel {
+  const viewportClass: MenuViewportClass = viewportWidth <= 380 ? "compact" : "regular";
+  const accessibilityForcesSingleColumn =
+    (viewportWidth <= 700 && (profile.textSize !== "standard" || profile.buttonSize === "large")) ||
+    (viewportWidth > 700 && viewportWidth <= 900 &&
+      (profile.textSize === "extraLarge" || profile.buttonSize === "large"));
+  const defaultColumns: MenuColumnCount =
+    viewportClass === "compact" || accessibilityForcesSingleColumn ? 1 : 2;
+  const allowedColumns: readonly MenuColumnCount[] =
+    viewportClass === "compact" || accessibilityForcesSingleColumn ? [1] : [1, 2];
   const constraints: MenuLayoutConstraints = {
     textScale: profile.textSize,
     buttonScale: profile.buttonSize,
     highContrast: profile.contrast === "high",
-    viewportModePercent: profile.viewportMode?.heightPercent ?? null,
+    viewportModePercent: profile.viewportMode?.heightPercent ?? (profile.easyLanguage ? 80 : null),
+    defaultColumns,
+    allowedColumns,
     minimumTouchTargetPx: 44,
     preserveTopGuidance: true,
     preserveFixedControls: true,
   };
+  const structureHash = hash(STRUCTURE);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     hostId: "democoffee",
     screenId: "cafe.menu",
-    structureVersion: "menu.v1",
-    structureHash: hash(STRUCTURE),
+    structureVersion: "menu.v2",
+    structureHash,
     constraintHash: hash(JSON.stringify(constraints)),
-    viewportClass: viewportWidth <= 380 ? "compact" : "regular",
+    viewportClass,
     groups: [
+      {
+        id: "menu.product-list",
+        role: "ordered-menu-list",
+        childIds: ["menu.product-card"],
+        preserveOrder: true,
+        mutableProperties: ["columns"],
+      },
       {
         id: "menu.product-card",
         role: "repeated-menu-item",
         childIds: ["menu.product-image", "menu.product-information"],
         preserveOrder: true,
+        mutableProperties: ["flow", "gap"],
       },
       {
         id: "menu.product-information",
         role: "product-information",
         childIds: ["menu.product-name", "menu.product-price", "menu.product-description", "menu.product-action"],
         preserveOrder: true,
+        mutableProperties: [],
       },
     ],
     requiredIds: [
@@ -132,32 +166,57 @@ export function createMenuScreenModel(
       "menu.fixed-controls",
       "menu.product-action",
     ],
-    allowedOperations: ["setGroupFlow", "setChildBasis"],
+    protectedProperties: [
+      "menu.product-list.items",
+      "menu.product-list.order",
+      "menu.category-navigation",
+      "menu.fixed-controls",
+      "menu.product-content",
+      "menu.product-action.behavior",
+    ],
+    allowedOperations: ["setGroupColumns", "setGroupFlow", "setChildBasis"],
     constraints,
   };
 }
 
-export function createMockMenuLayoutPlan(model: MenuScreenModel): MenuLayoutPlan {
+export interface MockMenuLayoutOptions {
+  columns?: MenuColumnCount | null;
+  cardLayout?: boolean;
+}
+
+export function createMockMenuLayoutPlan(
+  model: MenuScreenModel,
+  options: MockMenuLayoutOptions = {},
+): MenuLayoutPlan {
+  const columns = options.columns === undefined ? 1 : options.columns;
+  const cardLayout = options.cardLayout ?? true;
+  const operations: MenuLayoutOperation[] = [];
+  if (columns !== null) operations.push({
+    type: "setGroupColumns",
+    targetId: "menu.product-list",
+    columns,
+  });
+  if (cardLayout) operations.push(
+    {
+      type: "setGroupFlow",
+      targetId: "menu.product-card",
+      direction: "row",
+      gapPx: 12,
+    },
+    {
+      type: "setChildBasis",
+      targetId: "menu.product-image",
+      basisPercent: 25,
+      minPx: 76,
+    },
+  );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     screenId: model.screenId,
     structureHash: model.structureHash,
     constraintHash: model.constraintHash,
     viewportClass: model.viewportClass,
-    operations: [
-      {
-        type: "setGroupFlow",
-        targetId: "menu.product-card",
-        direction: "row",
-        gapPx: 12,
-      },
-      {
-        type: "setChildBasis",
-        targetId: "menu.product-image",
-        basisPercent: 25,
-        minPx: 76,
-      },
-    ],
+    operations,
   };
 }
 
@@ -170,45 +229,81 @@ export function validateMenuLayoutPlan(
   if (!exactKeys(plan, [
     "schemaVersion", "screenId", "structureHash", "constraintHash", "viewportClass", "operations",
   ])) return null;
-  if (plan.schemaVersion !== 1 ||
+  if (plan.schemaVersion !== 2 ||
       plan.screenId !== model.screenId ||
       plan.structureHash !== model.structureHash ||
       plan.constraintHash !== model.constraintHash ||
       plan.viewportClass !== model.viewportClass ||
       !Array.isArray(plan.operations) ||
-      plan.operations.length !== 2) return null;
+      plan.operations.length < 1 ||
+      plan.operations.length > 3) return null;
 
-  const [flow, basis] = plan.operations;
-  if (!flow || typeof flow !== "object" || Array.isArray(flow) ||
-      !basis || typeof basis !== "object" || Array.isArray(basis)) return null;
-  const flowOperation = flow as Record<string, unknown>;
-  const basisOperation = basis as Record<string, unknown>;
+  const parsed: {
+    columns: MenuColumnCount | null;
+    gapPx: number | null;
+    imageBasisPercent: number | null;
+    imageMinimumPx: number | null;
+    operationOrder: number[];
+  } = {
+    columns: null,
+    gapPx: null,
+    imageBasisPercent: null,
+    imageMinimumPx: null,
+    operationOrder: [],
+  };
+  const order = { setGroupColumns: 0, setGroupFlow: 1, setChildBasis: 2 } as const;
+  for (const operation of plan.operations) {
+    if (!operation || typeof operation !== "object" || Array.isArray(operation)) return null;
+    const item = operation as Record<string, unknown>;
+    if (item.type === "setGroupColumns") {
+      if (!exactKeys(item, ["type", "targetId", "columns"]) ||
+          item.targetId !== "menu.product-list" ||
+          (item.columns !== 1 && item.columns !== 2) ||
+          !model.constraints.allowedColumns.includes(item.columns)) return null;
+      parsed.columns = item.columns;
+      parsed.operationOrder.push(order.setGroupColumns);
+    } else if (item.type === "setGroupFlow") {
+      if (!exactKeys(item, ["type", "targetId", "direction", "gapPx"]) ||
+          item.targetId !== "menu.product-card" ||
+          item.direction !== "row" ||
+          typeof item.gapPx !== "number" ||
+          !Number.isFinite(item.gapPx) ||
+          item.gapPx < 8 || item.gapPx > 20) return null;
+      parsed.gapPx = item.gapPx;
+      parsed.operationOrder.push(order.setGroupFlow);
+    } else if (item.type === "setChildBasis") {
+      if (!exactKeys(item, ["type", "targetId", "basisPercent", "minPx"]) ||
+          item.targetId !== "menu.product-image" ||
+          typeof item.basisPercent !== "number" ||
+          !Number.isFinite(item.basisPercent) ||
+          item.basisPercent < 20 || item.basisPercent > 30 ||
+          typeof item.minPx !== "number" ||
+          !Number.isFinite(item.minPx) ||
+          item.minPx < 72 || item.minPx > 96) return null;
+      parsed.imageBasisPercent = item.basisPercent;
+      parsed.imageMinimumPx = item.minPx;
+      parsed.operationOrder.push(order.setChildBasis);
+    } else {
+      return null;
+    }
+  }
 
-  if (!exactKeys(flowOperation, ["type", "targetId", "direction", "gapPx"]) ||
-      flowOperation.type !== "setGroupFlow" ||
-      flowOperation.targetId !== "menu.product-card" ||
-      flowOperation.direction !== "row" ||
-      typeof flowOperation.gapPx !== "number" ||
-      !Number.isFinite(flowOperation.gapPx) ||
-      flowOperation.gapPx < 8 || flowOperation.gapPx > 20) return null;
-
-  if (!exactKeys(basisOperation, ["type", "targetId", "basisPercent", "minPx"]) ||
-      basisOperation.type !== "setChildBasis" ||
-      basisOperation.targetId !== "menu.product-image" ||
-      typeof basisOperation.basisPercent !== "number" ||
-      !Number.isFinite(basisOperation.basisPercent) ||
-      basisOperation.basisPercent < 20 || basisOperation.basisPercent > 30 ||
-      typeof basisOperation.minPx !== "number" ||
-      !Number.isFinite(basisOperation.minPx) ||
-      basisOperation.minPx < 72 || basisOperation.minPx > 96) return null;
+  if (new Set(parsed.operationOrder).size !== parsed.operationOrder.length ||
+      parsed.operationOrder.some((value, index, values) => index > 0 && value <= values[index - 1])) return null;
+  const hasFlow = parsed.gapPx !== null;
+  const hasBasis = parsed.imageBasisPercent !== null;
+  if (hasFlow !== hasBasis) return null;
+  const effectiveColumns = parsed.columns ?? model.constraints.defaultColumns;
+  if (hasFlow && effectiveColumns !== 1) return null;
 
   return {
     structureHash: model.structureHash,
     constraintHash: model.constraintHash,
     viewportClass: model.viewportClass,
-    gapPx: flowOperation.gapPx,
-    imageBasisPercent: basisOperation.basisPercent,
-    imageMinimumPx: basisOperation.minPx,
+    columns: parsed.columns,
+    gapPx: parsed.gapPx,
+    imageBasisPercent: parsed.imageBasisPercent,
+    imageMinimumPx: parsed.imageMinimumPx,
   };
 }
 
