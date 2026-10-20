@@ -1,0 +1,241 @@
+# 데모커피 — Replit Development 이중 인증 지원 및 안전한 연결 시험 준비
+
+현재 프로젝트는 **데모커피 Replit**입니다.
+
+이번 작업의 목표는 기존 AI 서버 중계 기능에 **Replit Development External Access Token 전달 기능**을 추가하는 것입니다.
+
+중앙 AI API와 OpenAI는 아직 호출하지 않습니다. 실제 토큰 생성·입력도 이번 작업 범위가 아닙니다.
+
+## 1. 현재 상태
+
+데모커피:
+
+- SDK 안정 버전 `@naebangsik/kiosk-accessibility-sdk@0.5.31`
+- AI 메뉴 화면 계약 `menu.v2`
+- 서버 중계 경로 `POST /api/ai-layout/plan`
+- 중계 구현 `server/ai-layout-relay.mjs`
+- 중계 Mock 테스트 `server/ai-layout-relay.test.mjs`
+- React 실제 AI 자동 호출 비활성화
+- 중계 기본 비활성화
+- 테스트 87개 통과
+
+중앙 ‘내 방식 QR’:
+
+- `POST /api/ai-layout/plan` 구현
+- 데모커피 v2 정책 등록
+- 앱 서버 인증 `Authorization: Bearer <AI_LAYOUT_SERVICE_TOKEN>`
+- 중앙 Development URL은 Replit 외부 접근 인증이 필요할 수 있음
+- Production AI API Publish 여부는 확인되지 않음
+
+기존 QR 프로필 중계와 SDK 접근성 기능은 변경하지 마세요.
+
+## 2. 공식 이중 인증 방식
+
+Replit 공식 문서에서 Development External Access Token의 URL 매개변수 전달을 지원한다고 확인했습니다.
+
+참고:
+https://docs.replit.com/features/deployment-customization/external-access-tokens
+
+이번에 지원할 전달 방식:
+
+**Replit 프로젝트 접근 인증**
+
+`project-protection-bypass` URL 검색 매개변수에 Development External Access Token을 전달합니다.
+
+**중앙 앱 자체 인증**
+
+`Authorization: Bearer <AI_LAYOUT_SERVICE_TOKEN>` 헤더로 전달합니다.
+
+두 토큰은 서로 다른 값이며 용도가 다릅니다.
+
+다음은 금지합니다.
+
+- 두 토큰을 하나로 합치기
+- 중복 Authorization 헤더 전송
+- 브라우저에 토큰 전달
+- `VITE_` 환경변수에 토큰 저장
+- 실제 토큰 하드코딩
+- 로그·오류 응답에 토큰 노출
+- 중앙 인증 우회
+
+## 3. 환경변수 설계
+
+기존 변수:
+
+`AI_LAYOUT_CENTRAL_URL`
+
+`AI_LAYOUT_SERVICE_TOKEN`
+
+`AI_LAYOUT_RELAY_ENABLED`
+
+신규 서버 전용 변수:
+
+`AI_LAYOUT_REPLIT_EXTERNAL_TOKEN`
+
+중앙 URL은 HTTPS Development `.replit.dev` 주소만 허용합니다.
+
+실제 URL이나 토큰은 소스코드에 하드코딩하지 마세요.
+
+**External Token은 중앙 서버가 아닌 데모커피 서버에만 저장하는 인증정보입니다.**
+
+중앙 서버의 `AI_LAYOUT_SERVICE_TOKEN`과 데모커피 서버의 `AI_LAYOUT_SERVICE_TOKEN`은 서로 일치해야 하지만, Replit External Access Token은 별도 값입니다.
+
+이번 단계에서 Secrets를 직접 변경하지 마세요.
+
+## 4. URL 매개변수 안전 처리
+
+중계 요청을 보낼 때 서버 내부에서만 URL을 구성하세요.
+
+- 중앙 URL 설정값에 임의 쿼리 문자열이 있으면 거부
+- 기존 임의 쿼리 매개변수 허용 금지
+- 서버가 생성한 `project-protection-bypass`만 추가
+- `URL` / `URLSearchParams` 등 표준 API 사용
+- 토큰을 문자열 연결 방식으로 수동 결합하지 않음
+- 중앙 대상 호스트 검증 유지
+- 외부 요청은 HTTPS만 사용
+- 브라우저가 대상 URL을 지정할 수 없도록 유지
+
+특히 **Replit External Access Token이 포함된 최종 URL은 어떤 로그에도 남기지 마세요.**
+
+오류 상황에서도 전체 요청 URL을 출력하거나 예외 객체를 그대로 기록하지 마세요.
+
+## 5. 비밀값 노출 방지
+
+다음 경우를 테스트하세요.
+
+- 정상 요청 구성 시 토큰이 브라우저 응답에 없음
+- 중앙 오류 시 토큰이 오류 메시지에 없음
+- 타임아웃 시 토큰이 로그에 없음
+- 네트워크 예외 시 토큰이 로그에 없음
+- 잘못된 설정 시 토큰이 출력되지 않음
+- Mock fetch가 받은 URL을 테스트 출력에 노출하지 않음
+
+실제 Replit 토큰이나 앱 토큰을 사용하지 마세요.
+
+테스트에서는 명확히 가짜인 값을 사용하세요.
+
+URL 매개변수 인증은 헤더 방식보다 로그 노출 위험이 크므로, 실제 운영용 기본 인증 방식으로 확장하지 마세요.
+
+이 기능은 **Development 서버 연결 시험을 위한 기능**으로 한정하세요.
+
+## 6. 중계 활성화 조건
+
+기존 중계 기능은 현재 기본 비활성화돼 있습니다.
+
+다음 조건이 충족되기 전에는 외부 요청이 발생하지 않아야 합니다.
+
+- 개발 환경임
+- `AI_LAYOUT_RELAY_ENABLED=true`
+- 유효한 `AI_LAYOUT_CENTRAL_URL`
+- `AI_LAYOUT_SERVICE_TOKEN` 존재
+- `AI_LAYOUT_REPLIT_EXTERNAL_TOKEN` 존재
+- 호스트 화면 모델 유효
+
+실제 Development URL이 외부 인증 없이 접근 가능한 환경이라도, 이번에는 External Token의 생략 허용 여부를 임의로 확대하지 마세요.
+
+Production에서는 기존과 같이 중계가 비활성화돼 있어야 합니다.
+
+## 7. OpenAI 없는 연결 검증 준비
+
+이번에는 **실제 네트워크 요청을 하지 말고** Mock으로만 확인하세요.
+
+Mock 검증:
+
+1. Replit External Token이 URL 매개변수에만 포함됨
+2. 앱 서비스 토큰은 Authorization 헤더에만 포함됨
+3. 각 토큰 값은 서로 섞이지 않음
+4. 토큰 미설정 시 요청 차단
+5. Development URL이 아니면 요청 차단
+6. Production URL 사용 시 차단
+7. 쿼리 문자열이 이미 있는 URL은 차단
+8. 인증 오류와 중앙 오류의 일반화
+9. 타임아웃·연결 실패 시 안전한 응답
+10. 기존 중복 요청 및 캐시 동작 유지
+11. 모든 로그·응답에서 토큰 비노출
+
+실제 중앙 `/api/health` 호출조차 이번 단계에서는 하지 마세요.
+
+추후 승인 후에만 별도의 서버 측 진단으로 네트워크를 확인하도록 준비하세요.
+
+## 8. 기존 기능 보호
+
+다음은 변경하지 마세요.
+
+- 공통 SDK v0.5.31
+- QR v1~v5
+- 큰 글씨·큰 버튼·고대비
+- 쉬운 말 안내
+- 스마트 길잡이
+- 하단 조작모드
+- 스크롤 안내
+- QR 도크·footer
+- 메뉴·옵션·장바구니·가상 결제
+- 메뉴 레이아웃 v2 계약 및 세 연산
+- 기존 중앙 QR 프로젝트
+
+React에서 실제 AI 계획 자동 요청을 활성화하지 마세요.
+
+일반 사용자에게 새 버튼이나 설정을 추가하지 마세요.
+
+## 9. 테스트
+
+기존 중계 테스트를 확장해 Mock 이중 인증 전달을 검증하세요.
+
+- 토큰 전달 형식
+- URL 검증
+- 활성화 조건
+- 비밀값 비노출
+- 정상·오류 응답
+- 중복 요청 및 캐시
+- 기존 QR 프로필 조회 영향 없음
+- 기존 AI 메뉴 Mock 변환 영향 없음
+
+필요한 테스트만 수행하고, 이미 통과한 전체 브라우저 테스트를 불필요하게 반복하지 마세요.
+
+타입 검사·빌드·서버 구문 검사 및 관련 테스트를 수행하세요.
+
+## 10. 변경 범위
+
+허용:
+
+- `server/ai-layout-relay.mjs`의 Development 인증 지원
+- `server.mjs`의 최소 환경 설정 연결
+- `server/ai-layout-relay.test.mjs` 테스트 확장
+- 필요한 설정 문서
+
+금지:
+
+- 중앙 QR 프로젝트 수정
+- 실제 중앙 서버 요청
+- OpenAI 호출
+- Secrets 생성·변경
+- SDK 수정 또는 새 패키징
+- QR 프로필 스키마 변경
+- DB 변경
+- Production Publish
+- React 자동 AI 호출 활성화
+- 새로운 공개 Mock API
+- 임의 추가 기능
+
+## 11. 최종 보고
+
+다음 항목을 보고하세요.
+
+1. External Access Token 전달 구현 방식
+2. 서비스 Bearer 헤더와의 분리 여부
+3. 서버 환경변수 이름
+4. 모든 활성화 조건
+5. URL·토큰 로그 노출 방지 방식
+6. Mock 인증 테스트 결과
+7. 기존 QR·AI 중계 회귀 결과
+8. 타입 검사·테스트·빌드 결과
+9. 변경 파일
+10. 실제 네트워크 호출 여부
+11. 실제 OpenAI 호출 여부
+12. Secrets·SDK·DB·Production·Publish 미변경 확인
+13. 이후 실제 연결 시험을 위해 필요한 사용자 설정
+14. 남아 있는 보안·호환성 위험
+
+**성공 기준은 두 토큰을 공식 지원 방식으로 안전하게 분리해 전달할 수 있고, 실제 외부 호출 없이 Mock 테스트까지 통과하는 것입니다.**
+
+작업이 끝나면 결과를 보고하고 사용자 승인을 기다리세요.

@@ -76,16 +76,28 @@ function modelForRequest(input) {
   return expected;
 }
 
-function centralPlanUrl(value) {
-  if (typeof value !== "string" || value.length > 512) return null;
+function isValidServerToken(value) {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 2048 &&
+    !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function centralPlanUrl(value, externalToken) {
+  if (typeof value !== "string" ||
+      value.length > 512 ||
+      !isValidServerToken(externalToken)) return null;
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" ||
         !url.hostname.endsWith(".replit.dev") ||
         url.hostname === "naebangsikqr.replit.app" ||
+        (url.port !== "" && url.port !== "443") ||
         url.username || url.password ||
         url.pathname !== "/" || url.search || url.hash) return null;
-    return `${url.origin}/api/ai-layout/plan`;
+    const endpoint = new URL("/api/ai-layout/plan", url.origin);
+    endpoint.searchParams.set("project-protection-bypass", externalToken);
+    return endpoint.toString();
   } catch {
     return null;
   }
@@ -158,15 +170,13 @@ export function registerAiLayoutRoute(
       const model = modelForRequest(req.body);
       if (!model) return publicError(res, 400, ERRORS.invalidRequest);
 
-      const centralUrl = centralPlanUrl(env.AI_LAYOUT_CENTRAL_URL);
+      const externalToken = env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN;
+      const centralUrl = centralPlanUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken);
       const serviceToken = env.AI_LAYOUT_SERVICE_TOKEN;
-      if (env.NODE_ENV === "production" ||
+      if (env.NODE_ENV !== "development" ||
           env.AI_LAYOUT_RELAY_ENABLED !== "true" ||
           !centralUrl ||
-          typeof serviceToken !== "string" ||
-          serviceToken.length < 1 ||
-          serviceToken.length > 2048 ||
-          /[\r\n]/.test(serviceToken) ||
+          !isValidServerToken(serviceToken) ||
           typeof fetchImpl !== "function") {
         return publicError(res, 503, ERRORS.disabled);
       }

@@ -21,8 +21,8 @@ For DemoCoffee menu plans, only the list column count and the card's image/infor
 
 **How to apply:** Represent every permitted visual change as an allow-listed operation, bind semantic IDs to the host React elements, and reject plans that violate viewport/profile constraints or introduce SDK layout diagnostics.
 
-The central AI development endpoint may require both Replit external-access authentication and the app's service Bearer token; their shared Authorization header has no confirmed forwarding method. Keep the DemoCoffee relay disabled until the supported authentication path is verified, and never substitute the central production URL.
+For approved DemoCoffee Development relay tests, pass Replit External Access Token only as the `project-protection-bypass` URL parameter and the central app service token only as `Authorization: Bearer`. Do not use URL-token auth as a Production pattern.
 
-**Why:** The supplied central handoff explicitly marks cross-project access and the dual-Bearer collision unresolved, and forbids real relay calls until settled.
+**Why:** The supplied Replit Development guide identifies the supported split-auth mechanism while limiting this higher-risk URL-token method to Development connection tests.
 
-**How to apply:** Require explicit relay enablement, a development-only URL and server-side secret, and an approved external-auth method before any outbound request.
+**How to apply:** Keep both values server-side, build the query with URL/URLSearchParams, reject configured URLs that already contain a query, never log the resulting URL, and require explicit relay enablement plus a `.replit.dev` HTTPS destination.

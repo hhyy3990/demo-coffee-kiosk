@@ -20,6 +20,7 @@ function enabledEnv(overrides = {}) {
     AI_LAYOUT_RELAY_ENABLED: "true",
     AI_LAYOUT_CENTRAL_URL: "https://mock-qr.replit.dev",
     AI_LAYOUT_SERVICE_TOKEN: "test-service-token",
+    AI_LAYOUT_REPLIT_EXTERNAL_TOKEN: "test-external-access-token",
     ...overrides,
   };
 }
@@ -49,16 +50,27 @@ test("returns a validated plan from an injected in-process upstream mock", async
   let calls = 0;
   await withRelay(async (url, init) => {
     calls += 1;
-    assert.equal(url, "https://mock-qr.replit.dev/api/ai-layout/plan");
+    const target = new URL(url);
+    assert.equal(target.origin, "https://mock-qr.replit.dev");
+    assert.equal(target.pathname, "/api/ai-layout/plan");
+    assert.deepEqual([...target.searchParams.keys()], ["project-protection-bypass"]);
+    assert.equal(
+      target.searchParams.get("project-protection-bypass") === "test-external-access-token",
+      true,
+    );
     assert.equal(init.method, "POST");
-    assert.equal(init.headers.Authorization, "Bearer test-service-token");
+    assert.equal(init.headers.Authorization === "Bearer test-service-token", true);
+    assert.equal(init.headers.Authorization.includes("test-external-access-token"), false);
     assert.equal(init.redirect, "error");
     assert.deepEqual(JSON.parse(init.body), model);
     return Response.json(validPlan);
   }, enabledEnv(), async (origin) => {
     const response = await postModel(origin);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), validPlan);
+    const publicBody = await response.text();
+    assert.equal(publicBody.includes("test-external-access-token"), false);
+    assert.equal(publicBody.includes("test-service-token"), false);
+    assert.deepEqual(JSON.parse(publicBody), validPlan);
   });
   assert.equal(calls, 1);
 });
@@ -103,7 +115,11 @@ test("does not call upstream when the relay is disabled or credentials are missi
     enabledEnv({ AI_LAYOUT_RELAY_ENABLED: "false" }),
     enabledEnv({ AI_LAYOUT_SERVICE_TOKEN: "" }),
     enabledEnv({ AI_LAYOUT_SERVICE_TOKEN: undefined }),
+    enabledEnv({ AI_LAYOUT_REPLIT_EXTERNAL_TOKEN: "" }),
+    enabledEnv({ AI_LAYOUT_REPLIT_EXTERNAL_TOKEN: undefined }),
     enabledEnv({ NODE_ENV: "production" }),
+    enabledEnv({ NODE_ENV: "test" }),
+    enabledEnv({ NODE_ENV: undefined }),
   ]) {
     await t.test(JSON.stringify({
       enabled: env.AI_LAYOUT_RELAY_ENABLED,
@@ -118,23 +134,68 @@ test("does not call upstream when the relay is disabled or credentials are missi
   assert.equal(calls, 0);
 });
 
-test("rejects untrusted or production relay URLs without fetching", async () => {
+test("rejects untrusted, production, credentialed, or query-bearing relay URLs without fetching", async () => {
   let calls = 0;
-  await withRelay(async () => {
-    calls += 1;
-    return Response.json(validPlan);
-  }, enabledEnv({ AI_LAYOUT_CENTRAL_URL: "https://naebangsikqr.replit.app" }), async (origin) => {
-    const response = await postModel(origin);
-    assert.equal(response.status, 503);
-  });
-  await withRelay(async () => {
-    calls += 1;
-    return Response.json(validPlan);
-  }, enabledEnv({ AI_LAYOUT_CENTRAL_URL: "https://example.com" }), async (origin) => {
-    const response = await postModel(origin);
-    assert.equal(response.status, 503);
-  });
+  const invalidUrls = [
+    "https://naebangsikqr.replit.app",
+    "https://example.com",
+    "https://mock-qr.replit.dev/?existing=parameter",
+    "https://mock-qr.replit.dev/#fragment",
+    "https://user:pass@mock-qr.replit.dev",
+    "https://mock-qr.replit.dev:444",
+    "http://mock-qr.replit.dev",
+  ];
+  for (const invalidUrl of invalidUrls) {
+    await withRelay(async () => {
+      calls += 1;
+      return Response.json(validPlan);
+    }, enabledEnv({ AI_LAYOUT_CENTRAL_URL: invalidUrl }), async (origin) => {
+      const response = await postModel(origin);
+      assert.equal(response.status, 503);
+    });
+  }
   assert.equal(calls, 0);
+});
+
+test("keeps both fake credentials out of public errors and application logs", async (t) => {
+  const externalToken = "fake-external-token-for-leak-test";
+  const serviceToken = "fake-service-token-for-leak-test";
+  const leakedSecrets = [externalToken, serviceToken];
+  const capturedLogs = [];
+  const originalMethods = new Map();
+  for (const method of ["debug", "info", "log", "warn", "error"]) {
+    originalMethods.set(method, console[method]);
+    console[method] = (...args) => capturedLogs.push(args.map(String).join(" "));
+  }
+
+  try {
+    const errors = [
+      { error: new Error(`network failure ${externalToken} ${serviceToken}`), status: 502 },
+      { error: Object.assign(
+        new Error(`timeout ${externalToken} ${serviceToken}`),
+        { name: "TimeoutError" },
+      ), status: 504 },
+    ];
+    for (const { error, status } of errors) {
+      await withRelay(async () => {
+        throw error;
+      }, enabledEnv({
+        AI_LAYOUT_REPLIT_EXTERNAL_TOKEN: externalToken,
+        AI_LAYOUT_SERVICE_TOKEN: serviceToken,
+      }), async (origin) => {
+        const response = await postModel(origin);
+        const publicBody = await response.text();
+        assert.equal(response.status, status);
+        assert.equal(publicBody.includes(externalToken), false);
+        assert.equal(publicBody.includes(serviceToken), false);
+      });
+    }
+  } finally {
+    for (const [method, original] of originalMethods) console[method] = original;
+  }
+
+  const allLogs = capturedLogs.join("\n");
+  for (const secret of leakedSecrets) assert.equal(allLogs.includes(secret), false);
 });
 
 test("normalizes upstream HTTP failures and never forwards upstream body text", async (t) => {
