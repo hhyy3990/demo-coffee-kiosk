@@ -20,3 +20,9 @@ For DemoCoffee menu plans, only the list column count and the card's image/infor
 **Why:** The user explicitly approved column count as a narrowly scoped exception to list protection and prohibited changes to menu content or ordering.
 
 **How to apply:** Represent every permitted visual change as an allow-listed operation, bind semantic IDs to the host React elements, and reject plans that violate viewport/profile constraints or introduce SDK layout diagnostics.
+
+The central AI development endpoint may require both Replit external-access authentication and the app's service Bearer token; their shared Authorization header has no confirmed forwarding method. Keep the DemoCoffee relay disabled until the supported authentication path is verified, and never substitute the central production URL.
+
+**Why:** The supplied central handoff explicitly marks cross-project access and the dual-Bearer collision unresolved, and forbids real relay calls until settled.
+
+**How to apply:** Require explicit relay enablement, a development-only URL and server-side secret, and an approved external-auth method before any outbound request.

@@ -1,5 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import { registerAiLayoutRoute } from "./server/ai-layout-relay.mjs";
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
@@ -7,9 +8,8 @@ const upstreamBase = "https://naebangsikqr.replit.app";
 const profileTokenPattern = /^[A-Za-z0-9._~+\/=-]{20,128}$/;
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "8kb" }));
 
-app.post("/api/qr-profile", async (req, res) => {
+app.post("/api/qr-profile", express.json({ limit: "8kb" }), async (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
   if (!profileTokenPattern.test(token)) {
     return res.status(400).json({ error: "사용할 수 없는 QR이에요." });
@@ -39,6 +39,8 @@ app.post("/api/qr-profile", async (req, res) => {
     });
   }
 });
+
+registerAiLayoutRoute(app);
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static("dist", { maxAge: "1h" }));

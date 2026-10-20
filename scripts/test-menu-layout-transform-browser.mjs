@@ -32,8 +32,16 @@ try {
 
   let nextId = 0;
   const pending = new Map();
+  const aiLayoutRequests = [];
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
+    if (message.method === "Network.requestWillBeSent") {
+      try {
+        if (new URL(message.params.request.url).pathname === "/api/ai-layout/plan") {
+          aiLayoutRequests.push(message.params.request.url);
+        }
+      } catch {}
+    }
     if (message.method === "Runtime.consoleAPICalled") {
       const text = (message.params?.args ?? [])
         .map((argument) => argument.value ?? argument.description ?? "")
@@ -58,6 +66,7 @@ try {
     return response.result?.value;
   };
   await send("Runtime.enable");
+  await send("Network.enable");
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const waitFor = async (expression, label, attempts = 100) => {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -320,6 +329,9 @@ try {
       getComputedStyle(hint).visibility === "hidden";
   })()`);
   if (!hiddenAtScrollEnd) throw new Error("Scroll hint remained visible at the end of the transformed menu.");
+  if (aiLayoutRequests.length !== 0) {
+    throw new Error(`The browser unexpectedly called the AI relay: ${JSON.stringify(aiLayoutRequests)}`);
+  }
   console.log(JSON.stringify({ label: "large-profile-guidance", width: 360, height: 667, accessible, guidanceState, dismissed, hiddenAtScrollEnd }));
   console.log(JSON.stringify({ result: "PASS" }));
 } finally {
