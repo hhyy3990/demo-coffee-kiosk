@@ -22,38 +22,141 @@ test("safe menu model contains only explicit layout structure and constraints", 
   const model = context();
   assert.equal(model.hostId, "democoffee");
   assert.equal(model.screenId, "cafe.menu");
+  assert.equal(model.schemaVersion, 2);
+  assert.equal(model.structureVersion, "menu.v2");
   assert.equal(model.viewportClass, "regular");
+  assert.equal(model.structureHash, context(360).structureHash);
+  assert.notEqual(model.constraintHash, context(360).constraintHash);
+  assert.equal(model.constraints.defaultColumns, 2);
+  assert.deepEqual(context(360).constraints.allowedColumns, [1]);
   assert.equal(model.constraints.minimumTouchTargetPx, 44);
-  assert.deepEqual(model.allowedOperations, ["setGroupFlow", "setChildBasis"]);
+  assert.deepEqual(model.allowedOperations, ["setGroupColumns", "setGroupFlow", "setChildBasis"]);
+  assert.deepEqual(model.constraints.allowedColumns, [1, 2]);
+  assert.equal(model.groups[0].id, "menu.product-list");
+  assert.deepEqual(model.groups[0].mutableProperties, ["columns"]);
+  assert.deepEqual(model.protectedProperties, [
+    "menu.product-list.items",
+    "menu.product-list.order",
+    "menu.category-navigation",
+    "menu.fixed-controls",
+    "menu.product-content",
+    "menu.product-action.behavior",
+  ]);
   assert.equal(JSON.stringify(model).includes("Americano"), false);
   assert.equal(JSON.stringify(model).includes("price"), true); // semantic role only
   assert.equal(JSON.stringify(model).includes("quantity"), false);
   assert.equal(JSON.stringify(model).includes("token"), false);
 });
 
-test("mock plan is validated and projects only bounded layout properties", () => {
+test("column-only and card-only plans validate independently", () => {
   const model = context();
-  const plan = createMockMenuLayoutPlan(model);
-  assert.deepEqual(validateMenuLayoutPlan(plan, model), {
+  assert.deepEqual(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(model, { columns: 1, cardLayout: false }), model,
+  ), {
     structureHash: model.structureHash,
     constraintHash: model.constraintHash,
     viewportClass: "regular",
+    columns: 1,
+    gapPx: null,
+    imageBasisPercent: null,
+    imageMinimumPx: null,
+  });
+
+  const compactModel = context(360);
+  assert.deepEqual(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(compactModel, { columns: null, cardLayout: true }), compactModel,
+  ), {
+    structureHash: compactModel.structureHash,
+    constraintHash: compactModel.constraintHash,
+    viewportClass: "compact",
+    columns: null,
     gapPx: 12,
     imageBasisPercent: 25,
     imageMinimumPx: 76,
   });
 });
 
-test("rejects a plan with an unknown field or operation target", () => {
+test("full plan explicitly chooses one column and retains card layout operations", () => {
+  const model = context();
+  const plan = createMockMenuLayoutPlan(model);
+  assert.deepEqual(plan.operations.map((operation) => operation.type), [
+    "setGroupColumns", "setGroupFlow", "setChildBasis",
+  ]);
+  assert.deepEqual(validateMenuLayoutPlan(plan, model), {
+    structureHash: model.structureHash,
+    constraintHash: model.constraintHash,
+    viewportClass: "regular",
+    columns: 1,
+    gapPx: 12,
+    imageBasisPercent: 25,
+    imageMinimumPx: 76,
+  });
+});
+
+test("rejects unknown fields, targets, and operations", () => {
   const model = context();
   const plan = createMockMenuLayoutPlan(model);
   assert.equal(validateMenuLayoutPlan({ ...plan, html: "<div>" }, model), null);
   const badTarget = structuredClone(plan);
   badTarget.operations[0].targetId = "menu.payment";
   assert.equal(validateMenuLayoutPlan(badTarget, model), null);
+  const badOperation = structuredClone(plan);
+  badOperation.operations[0].type = "setGridColumns";
+  assert.equal(validateMenuLayoutPlan(badOperation, model), null);
 });
 
-test("rejects stale screen structure, viewport, and QR constraints", () => {
+test("rejects unsafe columns, column/card conflicts, and oversized profiles", () => {
+  const compact = context(360);
+  assert.equal(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(compact, { columns: 2, cardLayout: false }), compact,
+  ), null);
+
+  const standard = context();
+  assert.equal(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(standard, { columns: 2, cardLayout: true }), standard,
+  ), null);
+
+  const largeText = context(390, { ...profile, textSize: "large" });
+  assert.deepEqual(largeText.constraints.allowedColumns, [1]);
+  assert.equal(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(largeText, { columns: 2, cardLayout: false }), largeText,
+  ), null);
+
+  const largeButtons = context(390, { ...profile, buttonSize: "large" });
+  assert.deepEqual(largeButtons.constraints.allowedColumns, [1]);
+  assert.equal(validateMenuLayoutPlan(
+    createMockMenuLayoutPlan(largeButtons, { columns: 2, cardLayout: false }), largeButtons,
+  ), null);
+});
+
+test("rejects duplicate, out-of-order, incomplete, and out-of-range operations", () => {
+  const model = context();
+  const duplicate = createMockMenuLayoutPlan(model);
+  duplicate.operations = [...duplicate.operations, duplicate.operations[0]];
+  assert.equal(validateMenuLayoutPlan(duplicate, model), null);
+
+  const outOfOrder = createMockMenuLayoutPlan(model);
+  outOfOrder.operations = [outOfOrder.operations[0], outOfOrder.operations[2], outOfOrder.operations[1]];
+  assert.equal(validateMenuLayoutPlan(outOfOrder, model), null);
+
+  const incompleteCard = createMockMenuLayoutPlan(model);
+  incompleteCard.operations.pop();
+  assert.equal(validateMenuLayoutPlan(incompleteCard, model), null);
+
+  const unsupportedColumns = createMockMenuLayoutPlan(model);
+  unsupportedColumns.operations[0].columns = 3;
+  assert.equal(validateMenuLayoutPlan(unsupportedColumns, model), null);
+
+  const unsafeGap = createMockMenuLayoutPlan(model);
+  unsafeGap.operations[1].gapPx = 100;
+  assert.equal(validateMenuLayoutPlan(unsafeGap, model), null);
+
+  const oversizedImage = createMockMenuLayoutPlan(model);
+  oversizedImage.operations[2].basisPercent = 90;
+  assert.equal(validateMenuLayoutPlan(oversizedImage, model), null);
+});
+
+test("rejects stale structure, viewport, profile, and easy-language constraints", () => {
   const plan = createMockMenuLayoutPlan(context());
   assert.equal(validateMenuLayoutPlan(plan, context(360)), null);
   assert.equal(validateMenuLayoutPlan(plan, context(390, {
@@ -61,29 +164,13 @@ test("rejects stale screen structure, viewport, and QR constraints", () => {
     textSize: "extraLarge",
     viewportMode: { mode: "bottom", heightPercent: 70 },
   })), null);
+  const easyLanguage = context(390, { ...profile, easyLanguage: true });
+  assert.equal(easyLanguage.constraints.viewportModePercent, 80);
+  assert.equal(validateMenuLayoutPlan(plan, easyLanguage), null);
   assert.equal(validateMenuLayoutPlan({
     ...plan,
     structureHash: "stale",
   }, context()), null);
-});
-
-test("rejects operations that can hide content or exceed safe bounds", () => {
-  const model = context();
-  const wrongDirection = createMockMenuLayoutPlan(model);
-  wrongDirection.operations[0].direction = "column";
-  assert.equal(validateMenuLayoutPlan(wrongDirection, model), null);
-
-  const unsafeGap = createMockMenuLayoutPlan(model);
-  unsafeGap.operations[0].gapPx = 100;
-  assert.equal(validateMenuLayoutPlan(unsafeGap, model), null);
-
-  const oversizedImage = createMockMenuLayoutPlan(model);
-  oversizedImage.operations[1].basisPercent = 90;
-  assert.equal(validateMenuLayoutPlan(oversizedImage, model), null);
-
-  const removedOperation = createMockMenuLayoutPlan(model);
-  removedOperation.operations.pop();
-  assert.equal(validateMenuLayoutPlan(removedOperation, model), null);
 });
 
 test("plan gate invalidates results from previous screen, profile, or viewport generations", () => {

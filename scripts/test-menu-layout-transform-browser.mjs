@@ -34,6 +34,12 @@ try {
   const pending = new Map();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
+    if (message.method === "Runtime.consoleAPICalled") {
+      const text = (message.params?.args ?? [])
+        .map((argument) => argument.value ?? argument.description ?? "")
+        .join(" ");
+      if (text.includes("menu layout rejected")) console.log(text);
+    }
     const entry = pending.get(message.id);
     if (!entry) return;
     pending.delete(message.id);
@@ -51,6 +57,7 @@ try {
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.text);
     return response.result?.value;
   };
+  await send("Runtime.enable");
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const waitFor = async (expression, label, attempts = 100) => {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -84,10 +91,25 @@ try {
     const image = first?.querySelector(".product-art")?.getBoundingClientRect();
     const info = first?.querySelector(".product-meta")?.getBoundingClientRect();
     const card = first?.getBoundingClientRect();
+    const semanticIds = {
+      category: document.querySelector(".category-nav")?.dataset.menuLayoutId,
+      list: grid?.dataset.menuLayoutId,
+      card: first?.dataset.menuLayoutId,
+      action: button?.dataset.menuLayoutId,
+      image: first?.querySelector(".product-art")?.dataset.menuLayoutId,
+      information: first?.querySelector(".product-meta")?.dataset.menuLayoutId,
+      name: first?.querySelector('[data-menu-layout-id="menu.product-name"]')?.dataset.menuLayoutId,
+      price: first?.querySelector(".price")?.dataset.menuLayoutId,
+      description: first?.querySelector(".optional-detail")?.dataset.menuLayoutId,
+      fixedControls: document.querySelector(".bottom-actions")?.dataset.menuLayoutId,
+    };
     const visibleText = [...(grid?.querySelectorAll(".product-korean, .price") ?? [])];
     return {
       stage: document.querySelector(".section-heading h2")?.textContent?.trim() ?? null,
-      layout: grid?.dataset.aiLayout ?? "default",
+      semanticIds,
+      columns: grid?.dataset.aiColumns ?? "default",
+      cardFlow: grid?.dataset.aiCardFlow ?? "default",
+      computedColumns: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 0,
       cardCount: cards.length,
       itemIndexes: cards.map((item) => item.dataset.menuIndex),
       ariaLabels: cards.map((item) => item.querySelector("button")?.getAttribute("aria-label")),
@@ -124,20 +146,38 @@ try {
   for (const [width, height] of sizes) {
     await openMenu(width, height);
     const baseline = await readMenu();
-    if (baseline.layout !== "default") throw new Error(`Unexpected baseline layout at ${width}px.`);
+    if (baseline.columns !== "default" || baseline.cardFlow !== "default") {
+      throw new Error(`Unexpected baseline layout at ${width}px.`);
+    }
     if (baseline.cardCount < 1 || baseline.horizontalOverflow || baseline.textClipping) {
       throw new Error(`Baseline menu has an accessibility issue at ${width}px: ${JSON.stringify(baseline)}`);
     }
 
     await openMenu(width, height, "?mockAiLayout=menu-row");
     const transformed = await readMenu();
-    if (transformed.layout !== "media-leading") {
+    if (transformed.columns !== "1" || transformed.cardFlow !== "row" ||
+        transformed.computedColumns !== 1) {
       throw new Error(`Validated mock plan was not applied at ${width}px.`);
     }
     if (transformed.cardCount !== baseline.cardCount ||
         JSON.stringify(transformed.itemIndexes) !== JSON.stringify(baseline.itemIndexes) ||
         JSON.stringify(transformed.ariaLabels) !== JSON.stringify(baseline.ariaLabels)) {
       throw new Error(`The plan changed menu items or their order at ${width}px.`);
+    }
+    const expectedSemanticIds = {
+      category: "menu.category-navigation",
+      list: "menu.product-list",
+      card: "menu.product-card",
+      action: "menu.product-action",
+      image: "menu.product-image",
+      information: "menu.product-information",
+      name: "menu.product-name",
+      price: "menu.product-price",
+      description: "menu.product-description",
+      fixedControls: "menu.fixed-controls",
+    };
+    if (JSON.stringify(transformed.semanticIds) !== JSON.stringify(expectedSemanticIds)) {
+      throw new Error(`Semantic IDs are not bound to the intended React elements: ${JSON.stringify(transformed.semanticIds)}`);
     }
     if (transformed.imageRect.right > transformed.infoRect.left + 1 ||
         transformed.horizontalOverflow || transformed.textClipping) {
@@ -154,7 +194,7 @@ try {
     // Existing menu click, option selection, cart, and payment flow stay host-owned.
     await click("#menu-product-0");
     await waitFor("Boolean(document.querySelector('#item-add'))", "menu options");
-    if (await evaluate("Boolean(document.querySelector('[data-ai-layout]'))")) {
+    if (await evaluate("Boolean(document.querySelector('[data-ai-columns], [data-ai-card-flow]'))")) {
       throw new Error("The menu plan remained active after leaving the menu screen.");
     }
     const optionButton = await evaluate(`(() => [...document.querySelectorAll(".pill-option")]
@@ -163,7 +203,7 @@ try {
     await click(".option-group .pill-option:nth-child(2)");
     await click("#item-add");
     await waitFor("Boolean(document.querySelector('#menu-order-confirm'))", "menu after adding an item");
-    if (await evaluate("Boolean(document.querySelector('[data-ai-layout]'))")) {
+    if (await evaluate("Boolean(document.querySelector('[data-ai-columns], [data-ai-card-flow]'))")) {
       throw new Error("Returning to the menu re-applied a stale mock plan.");
     }
     await click("#menu-order-confirm");
@@ -176,10 +216,45 @@ try {
     await waitFor("Boolean(document.querySelector('#start-store'))", "session reset");
   }
 
+  // Column count and card-internal flow are independently selectable.
+  await openMenu(390, 844, "?mockAiLayout=columns-only");
+  const columnsOnly = await readMenu();
+  if (columnsOnly.columns !== "1" || columnsOnly.computedColumns !== 1 ||
+      columnsOnly.cardFlow !== "default" ||
+      columnsOnly.imageRect.bottom > columnsOnly.infoRect.top + 1) {
+    throw new Error(`Column-only plan also changed card internals or failed to reflow: ${JSON.stringify(columnsOnly)}`);
+  }
+
+  await openMenu(360, 667, "?mockAiLayout=card-only");
+  const cardOnly = await readMenu();
+  if (cardOnly.columns !== "default" || cardOnly.cardFlow !== "row" ||
+      cardOnly.computedColumns !== 1 ||
+      cardOnly.imageRect.right > cardOnly.infoRect.left + 1 ||
+      cardOnly.imageRect.width >= 90 ||
+      cardOnly.infoRect.left - cardOnly.imageRect.right < 11) {
+    throw new Error(`Card-only plan changed list columns or failed to reflow: ${JSON.stringify(cardOnly)}`);
+  }
+
+  await openMenu(360, 667, "?mockAiLayout=columns-2");
+  const rejectedCompactColumns = await readMenu();
+  if (rejectedCompactColumns.columns !== "default" ||
+      rejectedCompactColumns.computedColumns !== 1 ||
+      rejectedCompactColumns.cardFlow !== "default") {
+    throw new Error(`Unsafe two-column compact plan was not rejected: ${JSON.stringify(rejectedCompactColumns)}`);
+  }
+
+  await openMenu(390, 844, "?mockAiLayout=columns-2");
+  const twoColumns = await readMenu();
+  if (twoColumns.columns !== "2" || twoColumns.computedColumns !== 2 ||
+      twoColumns.cardFlow !== "default") {
+    throw new Error(`Safe two-column plan failed or changed card internals: ${JSON.stringify(twoColumns)}`);
+  }
+
   // Large text, large controls, contrast, and automatic bottom viewport stay host-profile-owned.
   await openMenu(360, 667, "?mockAiLayout=menu-row&bottom-sdk=80&poc-profile=large-text-buttons-contrast-simple-guide10-scroll");
   const accessible = await readMenu();
-  if (accessible.layout !== "media-leading" || accessible.horizontalOverflow || accessible.textClipping) {
+  if (accessible.columns !== "1" || accessible.cardFlow !== "row" ||
+      accessible.horizontalOverflow || accessible.textClipping) {
     throw new Error(`Mock layout conflicts with the accessibility profile: ${JSON.stringify(accessible)}`);
   }
   if (await evaluate("!document.querySelector('.kiosk')?.classList.contains('a11y-text-large')")) {

@@ -79,6 +79,7 @@ const STRUCTURE = [
   "menu.product-list:ordered-repeated-items:menu.product-card;mutable:columns;preserve:items,order",
   "menu.product-card:repeated-item:menu.product-image,menu.product-information;mutable:flow,gap;preserve:child-order",
   "menu.product-information:menu.product-name,menu.product-price,menu.product-description,menu.product-action",
+  "dom-binding:data-menu-layout-id",
   "protected:menu.category-navigation,menu.fixed-controls,menu.product-content,menu.product-action.behavior",
   "operations:setGroupColumns,setGroupFlow,setChildBasis",
 ].join("|");

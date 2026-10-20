@@ -140,6 +140,7 @@ export default function App() {
   if (!menuPlanGateRef.current) menuPlanGateRef.current = createMenuPlanGate();
   const previousLayoutStageRef = useRef<Stage>("start");
   const mockPlanConsumedRef = useRef(false);
+  const menuLayoutDiagnosticBaselineRef = useRef<Set<string> | null>(null);
 
   const say = useCallback((text: string) => {
     accessibilitySdkRef.current?.speak(text);
@@ -258,7 +259,7 @@ export default function App() {
       sdk?.setViewportMode({ mode: "bottom", heightPercent: rawPercent });
     }
     const profile = params.get("poc-profile");
-    if (profile && profile !== "standard") {
+    if (stage === "start" && profile && profile !== "standard") {
       setPreferences((current) => ({
         ...current,
         textSize: profile.includes("extra") ? "extraLarge" : profile.includes("large-text") ? "large" : current.textSize,
@@ -325,17 +326,34 @@ export default function App() {
 
     if (!stageChanged) return;
     const params = new URLSearchParams(window.location.search);
-    if (!import.meta.env.DEV || params.get("mockAiLayout") !== "menu-row" || mockPlanConsumedRef.current) {
+    const mockMode = params.get("mockAiLayout");
+    const mockOptions = mockMode === "menu-row"
+      ? { columns: 1 as const, cardLayout: true }
+      : mockMode === "columns-only"
+        ? { columns: 1 as const, cardLayout: false }
+        : mockMode === "columns-2"
+          ? { columns: 2 as const, cardLayout: false }
+          : mockMode === "card-only"
+            ? { columns: null, cardLayout: true }
+            : null;
+    if (!import.meta.env.DEV || !mockOptions || mockPlanConsumedRef.current) {
       setMenuLayoutPlan(null);
       return;
     }
 
     // Test-only injection: no visible control, network request, or production path.
-    mockPlanConsumedRef.current = true;
-    const model = createMenuScreenModel(window.innerWidth, preferences);
-    const ticket = gate.capture(model);
-    const validated = validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
-    if (validated && gate.canApply(ticket, model)) setMenuLayoutPlan(validated);
+    const frame = requestAnimationFrame(() => {
+      mockPlanConsumedRef.current = true;
+      const model = createMenuScreenModel(window.innerWidth, preferences);
+      const ticket = gate.capture(model);
+      const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
+      menuLayoutDiagnosticBaselineRef.current = new Set(baselineIssues.map((issue) =>
+        `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`,
+      ));
+      const validated = validateMenuLayoutPlan(createMockMenuLayoutPlan(model, mockOptions), model);
+      if (validated && gate.canApply(ticket, model)) setMenuLayoutPlan(validated);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [stage]);
 
   useEffect(() => {
@@ -362,6 +380,35 @@ export default function App() {
       setMenuLayoutPlan(null);
     }
   }, [menuLayoutPlan, preferences, stage]);
+
+  useEffect(() => {
+    if (stage !== "menu" || !menuLayoutPlan) return;
+    menuPlanGateRef.current?.invalidate();
+    setMenuLayoutPlan(null);
+  }, [preferences]);
+
+  useLayoutEffect(() => {
+    if (stage !== "menu") {
+      menuLayoutDiagnosticBaselineRef.current = null;
+      return;
+    }
+    if (!menuLayoutPlan) return;
+    const issues = accessibilitySdkRef.current?.inspectLayout() ?? [];
+    const signature = (issue: (typeof issues)[number]) =>
+      `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`;
+    const baseline = menuLayoutDiagnosticBaselineRef.current;
+    if (!baseline) {
+      menuPlanGateRef.current?.invalidate();
+      setMenuLayoutPlan(null);
+      return;
+    }
+    const newIssues = issues.filter((issue) => !baseline.has(signature(issue)));
+    if (newIssues.length > 0) {
+      if (import.meta.env.DEV) console.info("[menu layout rejected by diagnostics]", JSON.stringify(newIssues));
+      menuPlanGateRef.current?.invalidate();
+      setMenuLayoutPlan(null);
+    }
+  }, [category, currentProducts.length, menuLayoutPlan, preferences, stage]);
 
   useLayoutEffect(() => {
     accessibilitySdkRef.current?.setGuideState({
@@ -771,7 +818,7 @@ export default function App() {
                   >
                     <ChevronLeft size={21} aria-hidden="true" />
                   </button>
-                  <nav className="category-nav" id="category-nav-list" ref={categoryNavRef} aria-label="메뉴 분류">
+                  <nav className="category-nav" id="category-nav-list" data-menu-layout-id="menu.category-navigation" ref={categoryNavRef} aria-label="메뉴 분류">
                     {CATEGORY_INFO.map(({ id, label, icon: Icon }) => (
                       <button key={id} type="button" className={`category-button ${category === id ? "active" : ""}`} onClick={() => {
                         setCategory(id);
@@ -798,13 +845,15 @@ export default function App() {
                 <section className="menu-products" aria-label={categoryNames[category]}>
                   <div
                     className="product-grid"
+                    data-menu-layout-id="menu.product-list"
                     ref={productGridRef}
                     data-menu-count={currentProducts.length}
-                    data-ai-layout={menuLayoutPlan ? "media-leading" : undefined}
+                    data-ai-columns={menuLayoutPlan?.columns ?? undefined}
+                    data-ai-card-flow={menuLayoutPlan?.gapPx !== null && menuLayoutPlan?.gapPx !== undefined ? "row" : undefined}
                     style={menuLayoutPlan ? {
-                      "--menu-ai-card-gap": `${menuLayoutPlan.gapPx}px`,
-                      "--menu-ai-image-basis": `${menuLayoutPlan.imageBasisPercent}%`,
-                      "--menu-ai-image-min": `${menuLayoutPlan.imageMinimumPx}px`,
+                      ...(menuLayoutPlan.gapPx !== null ? { "--menu-ai-card-gap": `${menuLayoutPlan.gapPx}px` } : {}),
+                      ...(menuLayoutPlan.imageBasisPercent !== null ? { "--menu-ai-image-basis": `${menuLayoutPlan.imageBasisPercent}%` } : {}),
+                      ...(menuLayoutPlan.imageMinimumPx !== null ? { "--menu-ai-image-min": `${menuLayoutPlan.imageMinimumPx}px` } : {}),
                     } as CSSProperties : undefined}
                   >
                     {currentProducts.map((product, index) => {
@@ -812,15 +861,16 @@ export default function App() {
                       return (
                         <article
                           className="product-card"
+                          data-menu-layout-id="menu.product-card"
                           data-a11y-highlight-container
                           data-menu-index={index}
                           key={product.id}
                         >
-                          <button type="button" id={`menu-product-${index}`} data-a11y-action-id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
-                            <div className={`product-art ${product.art}`} aria-hidden="true"><Icon size={58} /></div>
-                            <div className="product-meta">
-                              <div className="product-name-row"><div><h3>{product.name}</h3><div className="product-korean" data-a11y-text data-a11y-id={`cafe.product.${product.id}.name`}>{product.koreanName}</div></div><span className="price" data-a11y-text data-a11y-id={`cafe.product.${product.id}.price`}>{won(product.price)}</span></div>
-                              <div className="product-korean optional-detail" data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>
+                          <button type="button" id={`menu-product-${index}`} data-menu-layout-id="menu.product-action" data-a11y-action-id={`menu-product-${index}`} onClick={() => { setMenuFocusIndex(index); openOptions(product); }} aria-label={`${product.koreanName}, ${won(product.price)} 옵션 선택`}>
+                            <div className={`product-art ${product.art}`} data-menu-layout-id="menu.product-image" aria-hidden="true"><Icon size={58} /></div>
+                            <div className="product-meta" data-menu-layout-id="menu.product-information">
+                              <div className="product-name-row"><div data-menu-layout-id="menu.product-name"><h3>{product.name}</h3><div className="product-korean" data-a11y-text data-a11y-id={`cafe.product.${product.id}.name`}>{product.koreanName}</div></div><span className="price" data-menu-layout-id="menu.product-price" data-a11y-text data-a11y-id={`cafe.product.${product.id}.price`}>{won(product.price)}</span></div>
+                              <div className="product-korean optional-detail" data-menu-layout-id="menu.product-description" data-a11y-text data-a11y-id={`cafe.product.${product.id}.note`}>{product.note}</div>
                               <div className="product-bottom"><span className="product-tag">{product.optionsSupported ? "옵션 선택 가능" : "바로 담기"}</span><span className="add-round" aria-hidden="true"><Plus size={20} /></span></div>
                             </div>
                           </button>
@@ -831,12 +881,12 @@ export default function App() {
                 </section>
               </div>
               {cart.length > 0 && (
-                <div className="cart-bar" data-a11y-slot="above-bottom-controls">
+                <div className="cart-bar" data-menu-layout-id="menu.fixed-controls" data-a11y-slot="above-bottom-controls">
                   <div><div><ShoppingBag size={17} style={{ verticalAlign: "middle", marginRight: 7 }} />{linesCount}개 담았어요</div><div className="secondary-note">현재 주문 금액 {won(total)}</div></div>
                   <button type="button" id="menu-order-confirm" data-a11y-action-id="menu-order-confirm" data-a11y-primary="true" className="primary-button" onClick={() => setStage("cart")}>주문 확인 <ArrowRight size={18} /></button>
                 </div>
               )}
-              <div className="bottom-actions" data-a11y-slot="bottom-controls"><button type="button" className="back-button" data-a11y-primary="true" onClick={returnToStart}><ArrowLeft size={17} /> 처음으로</button></div>
+              <div className="bottom-actions" data-menu-layout-id="menu.fixed-controls" data-a11y-slot="bottom-controls"><button type="button" className="back-button" data-a11y-primary="true" onClick={returnToStart}><ArrowLeft size={17} /> 처음으로</button></div>
             </>
           )}
 

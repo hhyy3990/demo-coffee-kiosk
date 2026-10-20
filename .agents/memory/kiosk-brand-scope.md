@@ -14,3 +14,9 @@ For this project, DemoCoffee may use a development/test-injected mock screen-lay
 **Why:** The user approved a DemoCoffee-only mock layout transformation while explicitly deferring central policy registration and real AI connection to a later approval.
 
 **How to apply:** Keep mock injection development/test-only, render validated layout plans through the host React tree, preserve host business behavior and SDK accessibility state, and wait for separate approval before central-server, real-AI, SDK, or publishing work.
+
+For DemoCoffee menu plans, only the list column count and the card's image/information flow, image basis, and gap may change. Preserve product membership, order, category navigation, names, prices, descriptions, selection behavior, and fixed/accessibility controls.
+
+**Why:** The user explicitly approved column count as a narrowly scoped exception to list protection and prohibited changes to menu content or ordering.
+
+**How to apply:** Represent every permitted visual change as an allow-listed operation, bind semantic IDs to the host React elements, and reject plans that violate viewport/profile constraints or introduce SDK layout diagnostics.
