@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Accessibility, ArrowLeft, ArrowRight, CakeSlice, Check, ChevronLeft, ChevronRight, Clock3, Coffee,
   Cookie, CreditCard, Croissant, Gift, GlassWater, HandHelping, Minus, PackageCheck, Plus,
@@ -23,6 +23,13 @@ import {
   type CafeAdapterState,
   type CafeStage,
 } from "./accessibility/cafeAdapter";
+import {
+  createMenuPlanGate,
+  createMenuScreenModel,
+  createMockMenuLayoutPlan,
+  validateMenuLayoutPlan,
+  type ValidatedMenuLayout,
+} from "./accessibility/menuLayoutPlan";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
@@ -128,6 +135,11 @@ export default function App() {
   const categoryNavRef = useRef<HTMLElement>(null);
   const [canScrollCategoryBack, setCanScrollCategoryBack] = useState(false);
   const [canScrollCategoryForward, setCanScrollCategoryForward] = useState(false);
+  const [menuLayoutPlan, setMenuLayoutPlan] = useState<ValidatedMenuLayout | null>(null);
+  const menuPlanGateRef = useRef<ReturnType<typeof createMenuPlanGate> | null>(null);
+  if (!menuPlanGateRef.current) menuPlanGateRef.current = createMenuPlanGate();
+  const previousLayoutStageRef = useRef<Stage>("start");
+  const mockPlanConsumedRef = useRef(false);
 
   const say = useCallback((text: string) => {
     accessibilitySdkRef.current?.speak(text);
@@ -297,6 +309,58 @@ export default function App() {
   useLayoutEffect(() => {
     accessibilitySdkRef.current?.notifyScreenChange(stage);
   }, [stage]);
+
+  useEffect(() => {
+    const previousStage = previousLayoutStageRef.current;
+    const stageChanged = previousStage !== stage;
+    previousLayoutStageRef.current = stage;
+    const gate = menuPlanGateRef.current!;
+
+    if (stageChanged) gate.invalidate();
+    if (stage !== "menu") {
+      setMenuLayoutPlan(null);
+      return;
+    }
+
+    if (!stageChanged) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!import.meta.env.DEV || params.get("mockAiLayout") !== "menu-row" || mockPlanConsumedRef.current) {
+      setMenuLayoutPlan(null);
+      return;
+    }
+
+    // Test-only injection: no visible control, network request, or production path.
+    mockPlanConsumedRef.current = true;
+    const model = createMenuScreenModel(window.innerWidth, preferences);
+    const ticket = gate.capture(model);
+    const validated = validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
+    if (validated && gate.canApply(ticket, model)) setMenuLayoutPlan(validated);
+  }, [stage]);
+
+  useEffect(() => {
+    if (stage !== "menu" || !menuLayoutPlan) return;
+    const gate = menuPlanGateRef.current!;
+    const discardStalePlan = () => {
+      const model = createMenuScreenModel(window.innerWidth, preferences);
+      if (menuLayoutPlan.constraintHash !== model.constraintHash ||
+          menuLayoutPlan.viewportClass !== model.viewportClass) {
+        gate.invalidate();
+        setMenuLayoutPlan(null);
+      }
+    };
+    window.addEventListener("resize", discardStalePlan, { passive: true });
+    discardStalePlan();
+    return () => window.removeEventListener("resize", discardStalePlan);
+  }, [menuLayoutPlan, preferences, stage]);
+
+  useEffect(() => {
+    if (stage !== "menu" || !menuLayoutPlan) return;
+    const model = createMenuScreenModel(window.innerWidth, preferences);
+    if (menuLayoutPlan.constraintHash !== model.constraintHash) {
+      menuPlanGateRef.current?.invalidate();
+      setMenuLayoutPlan(null);
+    }
+  }, [menuLayoutPlan, preferences, stage]);
 
   useLayoutEffect(() => {
     accessibilitySdkRef.current?.setGuideState({
@@ -735,6 +799,12 @@ export default function App() {
                     className="product-grid"
                     ref={productGridRef}
                     data-menu-count={currentProducts.length}
+                    data-ai-layout={menuLayoutPlan ? "media-leading" : undefined}
+                    style={menuLayoutPlan ? {
+                      "--menu-ai-card-gap": `${menuLayoutPlan.gapPx}px`,
+                      "--menu-ai-image-basis": `${menuLayoutPlan.imageBasisPercent}%`,
+                      "--menu-ai-image-min": `${menuLayoutPlan.imageMinimumPx}px`,
+                    } as CSSProperties : undefined}
                   >
                     {currentProducts.map((product, index) => {
                       const Icon = product.icon;
