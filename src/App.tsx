@@ -269,6 +269,7 @@ export default function App() {
         smartGuide: profile.includes("guide"),
         guideDelaySeconds: profile.includes("guide10") ? 10 : current.guideDelaySeconds,
         voiceGuidance: profile.includes("voice"),
+        scrollGuidance: profile.includes("scroll"),
       }));
     }
     return () => {

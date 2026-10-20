@@ -9,9 +9,10 @@
     "sdk:build": "npm run build --prefix packages/kiosk-accessibility-sdk",
     "sdk:pack": "npm --prefix packages/kiosk-accessibility-sdk run pack:artifact",
     "sdk:verify-consumer": "npm run sdk:pack && node packages/kiosk-accessibility-sdk/scripts/verify-consumer.mjs",
+    "test:menu-layout-browser": "node scripts/test-menu-layout-transform-browser.mjs",
     "start": "NODE_ENV=production node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs",
+    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs src/menuLayoutPlan.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs",
     "test:smart-guide": "node --experimental-strip-types --test src/smartGuide.test.mjs packages/kiosk-accessibility-sdk/test/guide.test.mjs"
   },
   "keywords": [

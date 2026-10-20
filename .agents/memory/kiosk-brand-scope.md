@@ -9,8 +9,8 @@ Use “데모커피 / DEMO COFFEE” as the fictional café identity. The attach
 
 **How to apply:** Use generic coffee imagery, icons, and copy in kiosk screens and mockups. Keep photo references limited to layout and interaction patterns.
 
-For this project, keep work within DemoCoffee and its shared accessibility SDK. Do not modify another kiosk, the central QR service, production databases, or add AI; do not publish.
+For this project, DemoCoffee may use a development/test-injected mock screen-layout plan in the host only. Do not call the central AI server, use a real AI provider, modify the central QR service or SDK, or publish without separate explicit approval.
 
-**Why:** The user set these boundaries for DemoCoffee accessibility work.
+**Why:** The user approved a DemoCoffee-only mock layout transformation while explicitly deferring central policy registration and real AI connection to a later approval.
 
-**How to apply:** Fix reusable accessibility behavior in the SDK, DemoCoffee-specific copy/layout in this host, and leave publishing for a separate user request.
+**How to apply:** Keep mock injection development/test-only, render validated layout plans through the host React tree, preserve host business behavior and SDK accessibility state, and wait for separate approval before central-server, real-AI, SDK, or publishing work.
