@@ -24,7 +24,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "NODE_ENV=development AI_LAYOUT_RELAY_ENABLED=true AI_LAYOUT_RELAY_ONE_SHOT=true npm run dev"
+args = "npm run dev"
 waitForPort = 5000
 
 [[ports]]
