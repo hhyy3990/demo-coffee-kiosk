@@ -6,6 +6,9 @@ const app = express();
 const port = Number(process.env.PORT) || 5000;
 const upstreamBase = "https://naebangsikqr.replit.app";
 const profileTokenPattern = /^[A-Za-z0-9._~+\/=-]{20,128}$/;
+const qrProductionAccessToken = process.env.NODE_ENV === "production"
+  ? ""
+  : process.env.QR_PROFILE_PRODUCTION_ACCESS_TOKEN?.trim() ?? "";
 
 app.disable("x-powered-by");
 
@@ -18,11 +21,21 @@ app.post("/api/qr-profile", express.json({ limit: "8kb" }), async (req, res) => 
   try {
     const upstream = await fetch(`${upstreamBase}/api/profiles/resolve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(qrProductionAccessToken
+          ? { Authorization: `Bearer ${qrProductionAccessToken}` }
+          : {}),
+      },
       body: JSON.stringify({ token }),
       signal: AbortSignal.timeout(12000),
       cache: "no-store",
+      redirect: "manual",
     });
+
+    if (upstream.status >= 300 && upstream.status < 400) {
+      return res.status(502).json({ error: "중앙 QR 서비스에 연결할 수 없어요." });
+    }
 
     const body = await upstream.json().catch(() => null);
     if (!body || typeof body !== "object") {
