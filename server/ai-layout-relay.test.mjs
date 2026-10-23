@@ -272,3 +272,22 @@ test("coalesces duplicate requests and reuses a validated result for 30 seconds"
   });
   assert.equal(calls, 1);
 });
+
+test("one-shot development mode permits only one upstream attempt, including after failure", async () => {
+  let calls = 0;
+  const unavailable = () => new Response("unavailable", { status: 503 });
+  await withRelay(async () => {
+    calls += 1;
+    return unavailable();
+  }, enabledEnv({ AI_LAYOUT_RELAY_ONE_SHOT: "true" }), async (origin) => {
+    const first = await postModel(origin);
+    assert.equal(first.status, 502);
+    assert.deepEqual(await first.json(), { error: "화면 구성 서비스를 사용할 수 없어요." });
+
+    const compactModel = createMenuScreenModel(360, profile);
+    const second = await postModel(origin, compactModel);
+    assert.equal(second.status, 429);
+    assert.deepEqual(await second.json(), { error: "개발용 화면 구성 시험은 이미 사용했어요." });
+  });
+  assert.equal(calls, 1);
+});

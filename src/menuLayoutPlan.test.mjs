@@ -6,6 +6,7 @@ import {
   createMockMenuLayoutPlan,
   validateMenuLayoutPlan,
 } from "./accessibility/menuLayoutPlan.ts";
+import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan.ts";
 
 const profile = {
   textSize: "standard",
@@ -17,6 +18,41 @@ const profile = {
 function context(width = 390, currentProfile = profile) {
   return createMenuScreenModel(width, currentProfile);
 }
+
+test("manual AI plan request sends one safe model and accepts only a validated response", async () => {
+  const model = context();
+  const expectedPlan = createMockMenuLayoutPlan(model, { columns: 1, cardLayout: false });
+  let calls = 0;
+  const validated = await requestMenuLayoutPlan(model, async (url, init) => {
+    calls += 1;
+    assert.equal(url, "/api/ai-layout/plan");
+    assert.equal(init.method, "POST");
+    assert.equal(init.credentials, "same-origin");
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.redirect, "error");
+    assert.deepEqual(JSON.parse(init.body), model);
+    return Response.json(expectedPlan);
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(validated, validateMenuLayoutPlan(expectedPlan, model));
+});
+
+test("manual AI plan request rejects HTTP failures and invalid plans without retrying", async () => {
+  const model = context();
+  const invalidPlan = { ...createMockMenuLayoutPlan(model), extra: "not allowed" };
+  for (const response of [
+    new Response(JSON.stringify({ error: "unavailable" }), { status: 503 }),
+    Response.json(invalidPlan),
+  ]) {
+    let calls = 0;
+    const result = await requestMenuLayoutPlan(model, async () => {
+      calls += 1;
+      return response;
+    });
+    assert.equal(result, null);
+    assert.equal(calls, 1);
+  }
+});
 
 test("safe menu model contains only explicit layout structure and constraints", () => {
   const model = context();

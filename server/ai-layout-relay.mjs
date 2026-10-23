@@ -16,6 +16,7 @@ const ERRORS = {
   disabled: "화면 구성 계획 API가 아직 설정되지 않았어요.",
   upstream: "화면 구성 서비스를 사용할 수 없어요.",
   timeout: "화면 구성 서비스 응답이 늦어요.",
+  oneShotConsumed: "개발용 화면 구성 시험은 이미 사용했어요.",
 };
 
 function isRecord(value) {
@@ -162,6 +163,7 @@ export function registerAiLayoutRoute(
 ) {
   const resultCache = new Map();
   const inFlight = new Map();
+  let oneShotRequestConsumed = false;
 
   app.post(
     "/api/ai-layout/plan",
@@ -194,6 +196,10 @@ export function registerAiLayoutRoute(
 
       let requestPromise = inFlight.get(cacheKey);
       if (!requestPromise) {
+        if (env.AI_LAYOUT_RELAY_ONE_SHOT === "true" && oneShotRequestConsumed) {
+          return publicError(res, 429, ERRORS.oneShotConsumed);
+        }
+        if (env.AI_LAYOUT_RELAY_ONE_SHOT === "true") oneShotRequestConsumed = true;
         requestPromise = (async () => {
           const response = await fetchImpl(centralUrl, {
             method: "POST",

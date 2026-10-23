@@ -329,6 +329,51 @@ try {
       getComputedStyle(hint).visibility === "hidden";
   })()`);
   if (!hiddenAtScrollEnd) throw new Error("Scroll hint remained visible at the end of the transformed menu.");
+
+  // Exercise the development-only manual request path with a browser-local Mock.
+  await openMenu(390, 844, "?mockCentralQrProfileForAiTest=1");
+  await waitFor("Boolean(document.querySelector('.profile-strip'))", "Mock central QR profile");
+  await evaluate(`(() => {
+    window.__nativeFetchForAiTest = window.fetch;
+    const nativeFetch = window.fetch.bind(window);
+    window.__aiLayoutMockCallCount = 0;
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === "string" ? input : input.url, location.href);
+      if (url.pathname !== "/api/ai-layout/plan") return nativeFetch(input, init);
+      window.__aiLayoutMockCallCount += 1;
+      const model = JSON.parse(init.body);
+      return Response.json({
+        schemaVersion: 2,
+        screenId: model.screenId,
+        structureHash: model.structureHash,
+        constraintHash: model.constraintHash,
+        viewportClass: model.viewportClass,
+        operations: [{ type: "setGroupColumns", targetId: "menu.product-list", columns: 1 }]
+      });
+    };
+  })()`);
+  await waitFor("typeof window.__demoCoffeeRunAiMenuLayoutTestOnce === 'function'", "manual development test trigger");
+  const mockResult = await evaluate("window.__demoCoffeeRunAiMenuLayoutTestOnce()");
+  await waitFor("document.querySelector('.product-grid')?.dataset.aiColumns === '1'", "Mock AI plan application");
+  const mockRequestState = await evaluate(`({
+    result: ${JSON.stringify(mockResult)},
+    calls: window.__aiLayoutMockCallCount,
+    columns: document.querySelector(".product-grid")?.dataset.aiColumns ?? null
+  })`);
+  if (mockRequestState.result?.ok !== true || mockRequestState.calls !== 1 || mockRequestState.columns !== "1") {
+    throw new Error(`Mock AI request did not validate and apply once: ${JSON.stringify(mockRequestState)}`);
+  }
+  const duplicateTrigger = await evaluate("window.__demoCoffeeRunAiMenuLayoutTestOnce()");
+  const duplicateCalls = await evaluate("window.__aiLayoutMockCallCount");
+  if (duplicateTrigger?.reason !== "already-attempted" || duplicateCalls !== 1) {
+    throw new Error("The manual AI trigger allowed a duplicate request.");
+  }
+  await evaluate(`(() => {
+    window.fetch = window.__nativeFetchForAiTest;
+    delete window.__nativeFetchForAiTest;
+    delete window.__aiLayoutMockCallCount;
+  })()`);
+
   if (aiLayoutRequests.length !== 0) {
     throw new Error(`The browser unexpectedly called the AI relay: ${JSON.stringify(aiLayoutRequests)}`);
   }

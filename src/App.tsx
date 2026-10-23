@@ -30,6 +30,7 @@ import {
   validateMenuLayoutPlan,
   type ValidatedMenuLayout,
 } from "./accessibility/menuLayoutPlan";
+import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
@@ -140,6 +141,7 @@ export default function App() {
   if (!menuPlanGateRef.current) menuPlanGateRef.current = createMenuPlanGate();
   const previousLayoutStageRef = useRef<Stage>("start");
   const mockPlanConsumedRef = useRef(false);
+  const aiMenuPlanAttemptedRef = useRef(false);
   const menuLayoutDiagnosticBaselineRef = useRef<Set<string> | null>(null);
 
   const say = useCallback((text: string) => {
@@ -280,6 +282,19 @@ export default function App() {
   }, [activeProfile, cafeAdapter, stage]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV ||
+        new URLSearchParams(window.location.search).get("mockCentralQrProfileForAiTest") !== "1") return;
+    // Development-only profile fixture for the Mock request-to-React integration test.
+    setPreferences(validateAccessibilityProfile({
+      ...DEFAULT_PREFERENCES,
+      textSize: "large",
+      buttonSize: "large",
+      contrast: "high",
+    }));
+    setActiveProfile("central");
+  }, []);
+
+  useEffect(() => {
     const rail = categoryNavRef.current;
     if (!rail || stage !== "menu") {
       setCanScrollCategoryBack(false);
@@ -386,6 +401,52 @@ export default function App() {
     menuPlanGateRef.current?.invalidate();
     setMenuLayoutPlan(null);
   }, [preferences]);
+
+  const runAiMenuLayoutTestOnce = useCallback(async () => {
+    if (!import.meta.env.DEV) return { ok: false, reason: "development-only" };
+    if (activeProfile !== "central" || stage !== "menu") {
+      return { ok: false, reason: "apply-central-qr-profile-and-open-menu" };
+    }
+    if (aiMenuPlanAttemptedRef.current) return { ok: false, reason: "already-attempted" };
+
+    // Consume the client-side allowance before any asynchronous work; never retry.
+    aiMenuPlanAttemptedRef.current = true;
+    const model = createMenuScreenModel(window.innerWidth, preferences);
+    const gate = menuPlanGateRef.current!;
+    const ticket = gate.capture(model);
+    const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
+    menuLayoutDiagnosticBaselineRef.current = new Set(baselineIssues.map((issue) =>
+      `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`,
+    ));
+    setMenuLayoutPlan(null);
+
+    try {
+      const validated = await requestMenuLayoutPlan(model);
+      const currentModel = createMenuScreenModel(window.innerWidth, preferences);
+      if (!validated || !gate.canApply(ticket, currentModel)) {
+        return { ok: false, reason: "invalid-or-stale-plan" };
+      }
+      setMenuLayoutPlan(validated);
+      return {
+        ok: true,
+        columns: validated.columns,
+        cardLayout: validated.gapPx !== null,
+      };
+    } catch {
+      return { ok: false, reason: "request-failed" };
+    }
+  }, [activeProfile, preferences, stage]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const devWindow = window as Window & {
+      __demoCoffeeRunAiMenuLayoutTestOnce?: typeof runAiMenuLayoutTestOnce;
+    };
+    devWindow.__demoCoffeeRunAiMenuLayoutTestOnce = runAiMenuLayoutTestOnce;
+    return () => {
+      delete devWindow.__demoCoffeeRunAiMenuLayoutTestOnce;
+    };
+  }, [runAiMenuLayoutTestOnce]);
 
   useLayoutEffect(() => {
     if (stage !== "menu") {
