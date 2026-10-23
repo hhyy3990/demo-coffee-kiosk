@@ -421,16 +421,28 @@ export default function App() {
     setMenuLayoutPlan(null);
 
     try {
-      const validated = await requestMenuLayoutPlan(model);
+      const requestResult = await requestMenuLayoutPlan(model);
       const currentModel = createMenuScreenModel(window.innerWidth, preferences);
-      if (!validated || !gate.canApply(ticket, currentModel)) {
+      if (!requestResult.plan) {
+        console.info("[menu layout request rejected]", {
+          requestId: requestResult.requestId,
+          stage: requestResult.stage,
+          status: requestResult.status,
+        });
         return { ok: false, reason: "invalid-or-stale-plan" };
       }
-      setMenuLayoutPlan(validated);
+      if (!gate.canApply(ticket, currentModel)) {
+        console.info("[menu layout stale plan rejected]", {
+          requestId: requestResult.requestId,
+          stage: "browser_stale_plan_rejected",
+        });
+        return { ok: false, reason: "invalid-or-stale-plan" };
+      }
+      setMenuLayoutPlan(requestResult.plan);
       return {
         ok: true,
-        columns: validated.columns,
-        cardLayout: validated.gapPx !== null,
+        columns: requestResult.plan.columns,
+        cardLayout: requestResult.plan.gapPx !== null,
       };
     } catch {
       return { ok: false, reason: "request-failed" };

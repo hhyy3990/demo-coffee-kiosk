@@ -25,9 +25,9 @@ function enabledEnv(overrides = {}) {
   };
 }
 
-async function withRelay(fetchImpl, env, run) {
+async function withRelay(fetchImpl, env, run, relayOptions = {}) {
   const app = express();
-  registerAiLayoutRoute(app, { fetchImpl, env });
+  registerAiLayoutRoute(app, { fetchImpl, env, ...relayOptions });
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address();
@@ -290,4 +290,77 @@ test("one-shot development mode permits only one upstream attempt, including aft
     assert.deepEqual(await second.json(), { error: "개발용 화면 구성 시험은 이미 사용했어요." });
   });
   assert.equal(calls, 1);
+});
+
+test("logs central HTTP status and request ID without logging credentials or request data", async () => {
+  const logs = [];
+  await withRelay(async () => new Response(JSON.stringify({ error: "denied" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json", "X-Request-ID": "central-auth-req-1" },
+  }), enabledEnv(), async (origin) => {
+    const response = await postModel(origin);
+    assert.equal(response.status, 502);
+    assert.match(response.headers.get("x-request-id"), /^[0-9a-f-]{36}$/);
+    const event = JSON.parse(logs[0]);
+    assert.equal(event.stage, "central_http_error");
+    assert.equal(event.centralRequestId, "central-auth-req-1");
+    assert.equal(event.centralStatus, 401);
+    assert.equal(event.localStatus, 502);
+    assert.equal(event.planValidated, false);
+  }, { logger: (line) => logs.push(line) });
+
+  const serialized = logs.join("\n");
+  for (const sensitive of ["test-service-token", "test-external-access-token", JSON.stringify(model), "denied"]) {
+    assert.equal(serialized.includes(sensitive), false);
+  }
+});
+
+test("classifies central HTTP errors, malformed JSON, invalid plans, and timeouts in safe logs", async (t) => {
+  for (const status of [400, 401, 403, 429, 500, 502, 503]) {
+    await t.test(`central HTTP ${status}`, async () => {
+      const logs = [];
+      await withRelay(async () => new Response("{}", {
+        status,
+        headers: { "X-Request-ID": `central-${status}` },
+      }), enabledEnv(), async (origin) => {
+        assert.equal((await postModel(origin)).status, 502);
+        const event = JSON.parse(logs[0]);
+        assert.equal(event.stage, "central_http_error");
+        assert.equal(event.centralStatus, status);
+      }, { logger: (line) => logs.push(line) });
+    });
+  }
+
+  for (const [label, fetchImpl, expectedStage] of [
+    ["malformed JSON", async () => new Response("not-json", {
+      status: 200, headers: { "X-Request-ID": "central-json-1" },
+    }), "central_json_parse_error"],
+    ["invalid plan", async () => Response.json({ nope: true }, {
+      headers: { "X-Request-ID": "central-plan-1" },
+    }), "central_plan_validation_error"],
+    ["network failure", async () => { throw new Error("private network detail"); }, "central_connection_error"],
+  ]) {
+    await t.test(label, async () => {
+      const logs = [];
+      await withRelay(fetchImpl, enabledEnv(), async (origin) => {
+        assert.equal((await postModel(origin)).status, 502);
+        assert.equal(JSON.parse(logs[0]).stage, expectedStage);
+        assert.equal(logs.join("\n").includes("private network detail"), false);
+      }, { logger: (line) => logs.push(line) });
+    });
+  }
+
+  await t.test("timeout", async () => {
+    const logs = [];
+    const timeout = new Error("private timeout detail");
+    timeout.name = "TimeoutError";
+    await withRelay(async () => { throw timeout; }, enabledEnv(), async (origin) => {
+      assert.equal((await postModel(origin)).status, 504);
+      const event = JSON.parse(logs[0]);
+      assert.equal(event.stage, "central_timeout");
+      assert.equal(event.timedOut, true);
+      assert.equal(event.localStatus, 504);
+      assert.equal(logs.join("\n").includes("private timeout detail"), false);
+    }, { logger: (line) => logs.push(line) });
+  });
 });

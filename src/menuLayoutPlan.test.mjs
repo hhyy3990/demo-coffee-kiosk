@@ -23,7 +23,7 @@ test("manual AI plan request sends one safe model and accepts only a validated r
   const model = context();
   const expectedPlan = createMockMenuLayoutPlan(model, { columns: 1, cardLayout: false });
   let calls = 0;
-  const validated = await requestMenuLayoutPlan(model, async (url, init) => {
+  const result = await requestMenuLayoutPlan(model, async (url, init) => {
     calls += 1;
     assert.equal(url, "/api/ai-layout/plan");
     assert.equal(init.method, "POST");
@@ -31,25 +31,30 @@ test("manual AI plan request sends one safe model and accepts only a validated r
     assert.equal(init.cache, "no-store");
     assert.equal(init.redirect, "error");
     assert.deepEqual(JSON.parse(init.body), model);
-    return Response.json(expectedPlan);
+    return Response.json(expectedPlan, { headers: { "X-Request-ID": "relay-request-1" } });
   });
   assert.equal(calls, 1);
-  assert.deepEqual(validated, validateMenuLayoutPlan(expectedPlan, model));
+  assert.deepEqual(result.plan, validateMenuLayoutPlan(expectedPlan, model));
+  assert.equal(result.stage, "validated");
+  assert.equal(result.status, 200);
+  assert.equal(result.requestId, "relay-request-1");
 });
 
 test("manual AI plan request rejects HTTP failures and invalid plans without retrying", async () => {
   const model = context();
   const invalidPlan = { ...createMockMenuLayoutPlan(model), extra: "not allowed" };
-  for (const response of [
-    new Response(JSON.stringify({ error: "unavailable" }), { status: 503 }),
-    Response.json(invalidPlan),
+  for (const [response, stage] of [
+    [new Response(JSON.stringify({ error: "unavailable" }), { status: 503 }), "http_error"],
+    [Response.json(invalidPlan), "plan_validation_error"],
+    [new Response("not-json", { status: 200 }), "json_parse_error"],
   ]) {
     let calls = 0;
     const result = await requestMenuLayoutPlan(model, async () => {
       calls += 1;
       return response;
     });
-    assert.equal(result, null);
+    assert.equal(result.plan, null);
+    assert.equal(result.stage, stage);
     assert.equal(calls, 1);
   }
 });
