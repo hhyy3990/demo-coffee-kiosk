@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 const chromium = process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium";
 const appUrl = process.env.DEMOCOFFEE_URL || "http://127.0.0.1:5000";
+const envMockOnly = process.env.MENU_LAYOUT_ENV_MOCK_TEST === "1";
 const debugPort = 49320 + (process.pid % 300);
 const userData = await mkdtemp(join(tmpdir(), "democoffee-layout-diagnostics-"));
 const browser = spawn(chromium, [
@@ -116,12 +117,23 @@ try {
   assert.equal(noPlan.viewport, 390);
   assert.equal(noPlan.aiColumns, null);
   assert.equal(noPlan.computedColumnCount, 2);
-  const flagOffSkip = await evaluate(
-    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event => event.phase === 'auto_trigger_skipped' && event.reason === 'feature_flag_off')",
+  const automaticSkip = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).filter(event => event.phase === 'auto_trigger_skipped').map(event => ({ reason: event.reason, featureFlagEnabled: event.featureFlagEnabled }))",
   );
-  assert.equal(flagOffSkip, true, "Feature-flag-off reason should be diagnosable");
+  assert.ok(automaticSkip.length > 0, "Automatic trigger skip reason should be diagnosable");
+  if (envMockOnly) {
+    assert.ok(automaticSkip.some((event) =>
+      event.reason === "central_qr_profile_not_active" && event.featureFlagEnabled === true,
+    ));
+  } else {
+    assert.ok(automaticSkip.some((event) =>
+      event.reason === "feature_flag_off" || event.reason === "central_qr_profile_not_active",
+    ));
+  }
 
-  await openMenu("?mockCentralQrProfileForAiTest=1&mockAutoMenuLayout=1");
+  await openMenu(envMockOnly
+    ? "?mockCentralQrProfileForAiTest=1"
+    : "?mockCentralQrProfileForAiTest=1&mockAutoMenuLayout=1");
   await waitFor(
     'document.querySelector(".product-grid")?.dataset.aiCardFlow === "row"',
     "automatic QR-to-menu Mock plan",
@@ -145,6 +157,18 @@ try {
     "react_state_update_requested",
     "react_dom_committed",
   ]) assert.ok(autoPhases.includes(phase), `Missing automatic diagnostic phase: ${phase}`);
+  const autoModeDetails = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'auto_trigger_eligible')",
+  );
+  assert.ok(autoModeDetails);
+  if (envMockOnly) {
+    assert.equal(autoModeDetails.featureFlagEnabled, true);
+    assert.equal(autoModeDetails.mockOnly, true);
+    const modelValidation = await evaluate(
+      "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'model_contract_validated')",
+    );
+    assert.equal(modelValidation?.valid, true);
+  }
 
   await openMenu("?mockAiLayout=columns-2");
   await waitFor(
@@ -193,6 +217,7 @@ try {
   console.log(JSON.stringify({
     noPlan,
     automaticMock,
+    autoModeDetails,
     appliedTwoColumns,
     appliedOneColumn,
     restored,
