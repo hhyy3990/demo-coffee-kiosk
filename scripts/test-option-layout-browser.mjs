@@ -112,6 +112,7 @@ try {
     const query = queryParams.size ? `?${queryParams}` : "";
     await send("Page.navigate", { url: `${appUrl}/${query}` });
     await waitFor("Boolean(document.querySelector('#start-store'))", "welcome screen");
+    if (extraQuery.includes("mockCentralQrProfileForAiTest=")) await wait(150);
     await click("#start-store");
     await waitFor("Boolean(document.querySelector('.product-grid .product-card'))", "menu");
     await click('.product-card[data-menu-index="0"] button');
@@ -181,7 +182,7 @@ try {
     }
   }
 
-  await openOptions(390, 2, "poc-profile=large-text-buttons");
+  await openOptions(390, 2, "mockCentralQrProfileForAiTest=large");
   await waitFor(
     `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some((event) =>
       event.screenId === "cafe.product-options" &&
