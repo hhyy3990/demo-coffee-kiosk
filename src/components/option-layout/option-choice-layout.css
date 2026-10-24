@@ -1,0 +1,11 @@
+/*
+ * Modifiers deliberately apply only to this component's existing choice-pills
+ * surface. With columns=null, the original .choice-pills rules remain untouched.
+ */
+.choice-pills.option-choice-layout--single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.choice-pills.option-choice-layout--two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

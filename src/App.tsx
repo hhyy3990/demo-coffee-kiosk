@@ -37,6 +37,15 @@ import {
 import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan";
 import { persistMenuLayoutDiagnostic } from "./accessibility/menuLayoutDiagnostics";
 import MenuLayoutDiagnosticsPanel from "./components/MenuLayoutDiagnosticsPanel";
+import OptionChoiceLayout from "./components/option-layout/OptionChoiceLayout";
+import {
+  createMockOptionLayoutPlan,
+  createOptionScreenModel,
+  validateOptionLayoutPlan,
+  validateOptionScreenModel,
+  type OptionGroupId,
+  type ValidatedOptionLayout,
+} from "./accessibility/optionLayoutPlan";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
@@ -62,7 +71,10 @@ function logMenuLayoutDiagnostic(event: MenuLayoutDiagnostic) {
     __demoCoffeeMenuLayoutDiagnostics?: MenuLayoutDiagnostic[];
   };
   const history = diagnosticWindow.__demoCoffeeMenuLayoutDiagnostics ??= [];
-  const safeEvent = persistMenuLayoutDiagnostic(event);
+  const safeEvent = persistMenuLayoutDiagnostic({
+    ...event,
+    screenId: event.screenId ?? "cafe.menu",
+  });
   history.push(safeEvent);
   if (history.length > 50) history.splice(0, history.length - 50);
   window.dispatchEvent(new CustomEvent("demo-coffee:menu-layout-diagnostic", { detail: safeEvent }));
@@ -83,6 +95,28 @@ type Product = {
 };
 type OrderOptions = { temperature: string; size: "regular" | "large"; cup: "store" | "tumbler" };
 type CartLine = { key: string; product: Product; quantity: number; options: OrderOptions };
+const OPTION_LAYOUT_SCREEN_ID = "cafe.product-options";
+
+function optionGroupIdsForProduct(product: Product): OptionGroupId[] {
+  if (!product.optionsSupported) return [];
+  return [
+    ...(product.temperature ? ["temperature" as const] : []),
+    "size",
+    "cup",
+  ];
+}
+
+function createCurrentOptionScreenModel(
+  actualWidth: number,
+  preferences: Preferences,
+  product: Product,
+) {
+  return createOptionScreenModel(
+    modelViewportWidthFor(actualWidth),
+    preferences,
+    optionGroupIdsForProduct(product),
+  );
+}
 
 const DEFAULT_PREFERENCES: Preferences = { ...DEFAULT_ACCESSIBILITY_PROFILE };
 const PRODUCTS: Product[] = [
@@ -170,6 +204,9 @@ export default function App() {
   const [canScrollCategoryForward, setCanScrollCategoryForward] = useState(false);
   const [menuLayoutPlan, setMenuLayoutPlan] = useState<ValidatedMenuLayout | null>(null);
   const lastMenuLayoutDiagnosticRef = useRef<string | null>(null);
+  const [optionLayoutPlan, setOptionLayoutPlan] = useState<ValidatedOptionLayout | null>(null);
+  const lastOptionLayoutDiagnosticRef = useRef<string | null>(null);
+  const optionMockConsumedRef = useRef(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [viewportRevision, setViewportRevision] = useState(0);
   const menuPlanGateRef = useRef<ReturnType<typeof createMenuPlanGate> | null>(null);
@@ -368,6 +405,187 @@ export default function App() {
   useLayoutEffect(() => {
     accessibilitySdkRef.current?.notifyScreenChange(stage);
   }, [stage]);
+
+  useEffect(() => {
+    if (stage !== "options") {
+      if (optionLayoutPlan) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_cancelled",
+          screenId: OPTION_LAYOUT_SCREEN_ID,
+          reason: "screen_exit",
+          columns: optionLayoutPlan.columns,
+        });
+        setOptionLayoutPlan(null);
+      }
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const mockChoice = params.get("mockOptionLayout");
+    if (!import.meta.env.DEV || !mockChoice || optionMockConsumedRef.current) return;
+    optionMockConsumedRef.current = true;
+
+    const columns = mockChoice === "1" ? 1 : mockChoice === "2" ? 2 : null;
+    if (columns === null) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        reason: "invalid_mock_columns",
+      });
+      return;
+    }
+
+    const model = createCurrentOptionScreenModel(window.innerWidth, preferences, selectedProduct);
+    logMenuLayoutDiagnostic({
+      phase: "model_created",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      source: "development_mock",
+      viewportWidth,
+      viewportClass: model.viewportClass,
+      defaultColumns: model.constraints.defaultColumns,
+      allowedColumns: model.constraints.allowedColumns.join(","),
+      textScale: model.constraints.textScale,
+      buttonScale: model.constraints.buttonScale,
+    });
+    const validatedModel = validateOptionScreenModel(model);
+    logMenuLayoutDiagnostic({
+      phase: "model_contract_validated",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      source: "option.v1",
+      valid: validatedModel !== null,
+    });
+    if (!validatedModel) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        reason: "local_contract_invalid",
+      });
+      return;
+    }
+    if (validatedModel.groups.length === 0) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        reason: "no_option_groups",
+      });
+      return;
+    }
+
+    logMenuLayoutDiagnostic({
+      phase: "request_started",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      source: "development_mock",
+    });
+    const rawPlan = createMockOptionLayoutPlan(validatedModel, columns);
+    logMenuLayoutDiagnostic({
+      phase: "plan_received",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      source: "development_mock",
+    });
+    const plan = validateOptionLayoutPlan(rawPlan, validatedModel);
+    if (!plan) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        reason: validatedModel.constraints.allowedColumns.includes(columns)
+          ? "mock_validation_failed"
+          : "columns_not_allowed",
+        columns,
+      });
+      return;
+    }
+    logMenuLayoutDiagnostic({
+      phase: "plan_validated",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      source: "development_mock",
+      columns: plan.columns,
+    });
+    const frame = requestAnimationFrame(() => {
+      const currentModel = createCurrentOptionScreenModel(
+        window.innerWidth,
+        preferences,
+        selectedProduct,
+      );
+      if (currentModel.constraintHash !== plan.constraintHash ||
+          currentModel.structureHash !== plan.structureHash) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_rejected",
+          screenId: OPTION_LAYOUT_SCREEN_ID,
+          source: "development_mock",
+          reason: "model_changed_before_commit",
+          columns: plan.columns,
+        });
+        return;
+      }
+      logMenuLayoutDiagnostic({
+        phase: "react_state_update_requested",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        columns: plan.columns,
+      });
+      setOptionLayoutPlan(plan);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [preferences, selectedProduct, stage, viewportWidth]);
+
+  useEffect(() => {
+    if (stage !== "options" || !optionLayoutPlan) return;
+    const currentModel = createCurrentOptionScreenModel(
+      window.innerWidth,
+      preferences,
+      selectedProduct,
+    );
+    if (currentModel.constraintHash !== optionLayoutPlan.constraintHash ||
+        currentModel.structureHash !== optionLayoutPlan.structureHash) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_cancelled",
+        screenId: OPTION_LAYOUT_SCREEN_ID,
+        source: "development_mock",
+        reason: "model_changed",
+        columns: optionLayoutPlan.columns,
+      });
+      setOptionLayoutPlan(null);
+    }
+  }, [optionLayoutPlan, preferences, selectedProduct, stage, viewportWidth]);
+
+  useLayoutEffect(() => {
+    if (stage !== "options") {
+      lastOptionLayoutDiagnosticRef.current = null;
+      return;
+    }
+    const groups = Array.from(document.querySelectorAll<HTMLElement>(
+      '[data-option-ai-group]',
+    ));
+    const firstGroup = groups[0] ?? null;
+    const style = firstGroup ? window.getComputedStyle(firstGroup) : null;
+    const gridTemplateColumns = style?.gridTemplateColumns ?? "";
+    const computedColumnCount = gridTemplateColumns
+      ? gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length
+      : 0;
+    const signature = JSON.stringify({
+      plan: optionLayoutPlan?.columns ?? null,
+      groupCount: groups.length,
+      gridTemplateColumns,
+      computedColumnCount,
+    });
+    if (signature === lastOptionLayoutDiagnosticRef.current) return;
+    lastOptionLayoutDiagnosticRef.current = signature;
+    logMenuLayoutDiagnostic({
+      phase: "react_dom_committed",
+      screenId: OPTION_LAYOUT_SCREEN_ID,
+      viewportWidth: window.innerWidth,
+      viewportClass: window.innerWidth <= 380 ? "compact" : "regular",
+      planState: optionLayoutPlan ? "applied" : "none",
+      aiColumns: optionLayoutPlan?.columns,
+      computedColumnCount,
+      computedGridTemplateColumns: gridTemplateColumns,
+      optionGroupCount: groups.length,
+    });
+  }, [optionLayoutPlan, selectedProduct, stage]);
 
   useEffect(() => {
     const previousStage = previousLayoutStageRef.current;
@@ -1286,31 +1504,31 @@ export default function App() {
                 <div><button type="button" className="back-button" data-a11y-primary="true" onClick={() => setStage("menu")}><ArrowLeft size={17} /> 메뉴로 돌아가기</button><div className="eyebrow">MENU OPTIONS</div><h2 data-a11y-text data-a11y-id="cafe.options.title">{selectedProduct.koreanName}</h2><p className="lede" data-a11y-text data-a11y-id="cafe.options.description">{selectedProduct.note}</p></div>
                 <span className="steps"><span className="step-dot active" /><span className="step-dot" /><span className="step-dot" /></span>
               </div>
-              <div className="item-detail">
+              <div className="item-detail" data-option-layout-screen={OPTION_LAYOUT_SCREEN_ID}>
                 <div className={`item-large-art ${selectedProduct.art}`} aria-hidden="true">{(() => { const Icon = selectedProduct.icon; return <Icon />; })()}</div>
                 <div className="item-options">
                   {selectedProduct.optionsSupported && (
                     <>
                       {selectedProduct.temperature && <div className="option-group">
                         <div className="option-group-title"><span>온도</span><span className="required">하나 선택</span></div>
-                        <div className="choice-pills">
+                        <OptionChoiceLayout groupId="temperature" columns={optionLayoutPlan?.columns ?? null}>
                           {selectedProduct.temperature === "hot-iced" && <button type="button" className={`pill-option ${itemOptions.temperature === "hot" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, temperature: "hot" }))}>따뜻하게</button>}
                           <button type="button" className={`pill-option ${itemOptions.temperature === "iced" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, temperature: "iced" }))}>차갑게</button>
-                        </div>
+                        </OptionChoiceLayout>
                       </div>}
                       <div className="option-group">
                         <div className="option-group-title"><span>크기</span><span className="required">큰 사이즈 +700원</span></div>
-                        <div className="choice-pills">
+                        <OptionChoiceLayout groupId="size" columns={optionLayoutPlan?.columns ?? null}>
                           <button type="button" className={`pill-option ${itemOptions.size === "regular" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, size: "regular" }))}>보통</button>
                           <button type="button" className={`pill-option ${itemOptions.size === "large" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, size: "large" }))}>크게 <span>+700원</span></button>
-                        </div>
+                        </OptionChoiceLayout>
                       </div>
                       <div className="option-group">
                         <div className="option-group-title"><span>컵 선택</span><span className="required">하나 선택</span></div>
-                        <div className="choice-pills">
+                        <OptionChoiceLayout groupId="cup" columns={optionLayoutPlan?.columns ?? null}>
                           <button type="button" className={`pill-option ${itemOptions.cup === "store" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, cup: "store" }))}>매장 컵</button>
                           <button type="button" className={`pill-option ${itemOptions.cup === "tumbler" ? "selected" : ""}`} onClick={() => setItemOptions((o) => ({ ...o, cup: "tumbler" }))}>개인 텀블러</button>
-                        </div>
+                        </OptionChoiceLayout>
                       </div>
                     </>
                   )}
@@ -1535,7 +1753,11 @@ export default function App() {
           </section>
         </div>
       )}
-      {import.meta.env.DEV && <MenuLayoutDiagnosticsPanel />}
+      {import.meta.env.DEV && (
+        <MenuLayoutDiagnosticsPanel
+          screenId={stage === "options" ? OPTION_LAYOUT_SCREEN_ID : "cafe.menu"}
+        />
+      )}
     </div>
   );
 }

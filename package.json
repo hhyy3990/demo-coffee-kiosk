@@ -11,10 +11,11 @@
     "sdk:verify-consumer": "npm run sdk:pack && node packages/kiosk-accessibility-sdk/scripts/verify-consumer.mjs",
     "test:menu-layout-browser": "node scripts/test-menu-layout-transform-browser.mjs",
     "test:menu-layout-diagnostics-browser": "node scripts/test-menu-layout-diagnostics-browser.mjs",
+    "test:option-layout-browser": "node scripts/test-option-layout-browser.mjs",
     "health:development": "NODE_ENV=development node scripts/check-central-health.mjs",
     "start": "NODE_ENV=production node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs src/menuLayoutPlan.test.mjs src/accessibility/autoMenuLayout.test.mjs src/accessibility/menuLayoutDiagnostics.test.mjs server/ai-layout-relay.test.mjs server/central-health-diagnostics.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs",
+    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs src/menuLayoutPlan.test.mjs src/accessibility/optionLayoutPlan.test.mjs src/accessibility/autoMenuLayout.test.mjs src/accessibility/menuLayoutDiagnostics.test.mjs server/ai-layout-relay.test.mjs server/central-health-diagnostics.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs",
     "test:smart-guide": "node --experimental-strip-types --test src/smartGuide.test.mjs packages/kiosk-accessibility-sdk/test/guide.test.mjs"
   },
   "keywords": [

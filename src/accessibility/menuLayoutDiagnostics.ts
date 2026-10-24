@@ -15,7 +15,7 @@ export const MENU_LAYOUT_DIAGNOSTICS_KEY = "demo-coffee:menu-layout-diagnostics:
 export const MENU_LAYOUT_DIAGNOSTICS_LIMIT = 50;
 
 const allowedFields = new Set([
-  "phase", "source", "status", "stageIsMenu", "featureFlagEnabled",
+  "phase", "screenId", "source", "status", "stageIsMenu", "featureFlagEnabled",
   "centralQrProfileActive", "mockOnly", "valid", "defaultColumns",
   "allowedColumns", "textScale", "buttonScale", "viewportWidth",
   "viewportClass", "columns", "explicitColumns", "cardLayout", "localRequestId",
@@ -23,7 +23,7 @@ const allowedFields = new Set([
   "viewportChanged", "constraintsChanged", "structureChanged", "planState",
   "aiColumns", "aiCardFlow", "computedColumnCount",
   "computedGridTemplateColumns", "cardLayoutApplied", "imageInfoGapPx",
-  "planInvalidated",
+  "planInvalidated", "optionGroupCount",
 ]);
 
 let pageRunId: string | null = null;
@@ -76,6 +76,7 @@ export function sanitizeMenuLayoutDiagnostic(
     sessionId: context.sessionId ?? getSessionId(),
     pageRunId: context.pageRunId ?? getMenuLayoutPageRunId(),
     phase: typeof event.phase === "string" ? event.phase.slice(0, 80) : "unknown",
+    screenId: typeof event.screenId === "string" ? event.screenId.slice(0, 80) : "cafe.menu",
   };
   for (const field of allowedFields) {
     if (field === "phase" || !(field in event)) continue;

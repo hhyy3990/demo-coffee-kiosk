@@ -16,7 +16,11 @@ declare global {
 
 const panelEnabled = () => new URLSearchParams(window.location.search).get("menuLayoutDiagnostics") === "1";
 
-export default function MenuLayoutDiagnosticsPanel() {
+export default function MenuLayoutDiagnosticsPanel({
+  screenId = "cafe.menu",
+}: {
+  screenId?: string;
+} = {}) {
   const [visible, setVisible] = useState(panelEnabled);
   const [open, setOpen] = useState(false);
   const [records, setRecords] = useState<StoredMenuLayoutDiagnostic[]>(() => loadMenuLayoutDiagnosticHistory());
@@ -49,8 +53,12 @@ export default function MenuLayoutDiagnosticsPanel() {
     [records, currentPageRunId],
   );
   const summary = useMemo(() => {
-    const latest = (phases: string[]) => [...records].reverse().find((record) => phases.includes(record.phase));
+    const screenRecords = records.filter((record) =>
+      (record.screenId ?? "cafe.menu") === screenId,
+    );
+    const latest = (phases: string[]) => [...screenRecords].reverse().find((record) => phases.includes(record.phase));
     const response = latest(["response_received"]);
+    const mockRequest = latest(["request_started"]);
     const plan = latest(["plan_validated", "plan_rejected"]);
     const dom = latest(["react_dom_committed"]);
     const sourceLabel = (source: unknown) =>
@@ -58,12 +66,15 @@ export default function MenuLayoutDiagnosticsPanel() {
       source === "automatic_mock" || source === "mock" ? "개발 Mock" :
       typeof source === "string" ? source : "출처 기록 없음";
     return [
-      ["중앙 요청", response ? `HTTP ${response.status}` : "응답 기록 없음"],
+      [screenId === "cafe.product-options" ? "Mock 요청" : "중앙 요청",
+        screenId === "cafe.product-options"
+          ? mockRequest ? "Development Mock" : "기록 없음"
+          : response ? `HTTP ${response.status}` : "응답 기록 없음"],
       ["계획 검증", plan?.phase === "plan_validated" ? `통과 · ${sourceLabel(plan.source)}` : plan ? `거부 · ${plan.reason ?? "검증 실패"}` : "기록 없음"],
       ["React 커밋", dom?.planState === "applied" ? "DOM 반영" : "적용 기록 없음"],
       ["실제 CSS", dom ? `${dom.computedColumnCount}열 · ${dom.aiColumns ? `계획 ${dom.aiColumns}열` : "계획 표식 없음"}` : "기록 없음"],
     ] as const;
-  }, [records]);
+  }, [records, screenId]);
 
   if (!import.meta.env.DEV || !visible) return null;
 
@@ -112,10 +123,10 @@ export default function MenuLayoutDiagnosticsPanel() {
         진단 {records.length ? `· ${records.length}` : ""}
       </button>
       {open && (
-        <section className="menu-layout-diagnostics-panel" id="menu-layout-diagnostics-panel" aria-label="메뉴 자동 배치 진단">
+        <section className="menu-layout-diagnostics-panel" id="menu-layout-diagnostics-panel" aria-label={screenId === "cafe.product-options" ? "상품 옵션 화면 배치 진단" : "메뉴 자동 배치 진단"}>
           <header>
             <div>
-              <strong>메뉴 배치 진단</strong>
+              <strong>{screenId === "cafe.product-options" ? "상품 옵션 배치 진단" : "메뉴 배치 진단"}</strong>
               <span>Development 전용 · 저장은 현재 탭에만 유지</span>
             </div>
             <button type="button" aria-label="진단 패널 닫기" onClick={() => setOpen(false)}>닫기</button>
@@ -146,6 +157,7 @@ export default function MenuLayoutDiagnosticsPanel() {
 
 function DiagnosticRow({ record }: { record: StoredMenuLayoutDiagnostic }) {
   const details = [
+    record.screenId && `화면 ${record.screenId}`,
     record.source && `출처 ${record.source}`,
     record.status !== undefined && `HTTP ${record.status}`,
     record.allowedColumns && `허용 열 ${record.allowedColumns}`,
