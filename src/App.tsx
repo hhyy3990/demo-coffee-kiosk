@@ -24,6 +24,9 @@ import {
   type CafeStage,
 } from "./accessibility/cafeAdapter";
 import {
+  createAutoMenuLayoutCoordinator,
+} from "./accessibility/autoMenuLayout";
+import {
   createMenuPlanGate,
   createMenuScreenModel,
   createMockMenuLayoutPlan,
@@ -137,8 +140,12 @@ export default function App() {
   const [canScrollCategoryBack, setCanScrollCategoryBack] = useState(false);
   const [canScrollCategoryForward, setCanScrollCategoryForward] = useState(false);
   const [menuLayoutPlan, setMenuLayoutPlan] = useState<ValidatedMenuLayout | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [viewportRevision, setViewportRevision] = useState(0);
   const menuPlanGateRef = useRef<ReturnType<typeof createMenuPlanGate> | null>(null);
   if (!menuPlanGateRef.current) menuPlanGateRef.current = createMenuPlanGate();
+  const autoMenuLayoutRef = useRef<ReturnType<typeof createAutoMenuLayoutCoordinator> | null>(null);
+  if (!autoMenuLayoutRef.current) autoMenuLayoutRef.current = createAutoMenuLayoutCoordinator();
   const previousLayoutStageRef = useRef<Stage>("start");
   const mockPlanConsumedRef = useRef(false);
   const aiMenuPlanAttemptedRef = useRef(false);
@@ -372,6 +379,25 @@ export default function App() {
   }, [stage]);
 
   useEffect(() => {
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    const handleResize = () => {
+      autoMenuLayoutRef.current?.invalidate();
+      menuPlanGateRef.current?.invalidate();
+      setMenuLayoutPlan(null);
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        setViewportWidth(window.innerWidth);
+        setViewportRevision((revision) => revision + 1);
+      }, 160);
+    };
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (settleTimer) clearTimeout(settleTimer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (stage !== "menu" || !menuLayoutPlan) return;
     const gate = menuPlanGateRef.current!;
     const discardStalePlan = () => {
@@ -388,6 +414,7 @@ export default function App() {
   }, [menuLayoutPlan, preferences, stage]);
 
   useEffect(() => {
+    autoMenuLayoutRef.current?.invalidate();
     if (stage !== "menu" || !menuLayoutPlan) return;
     const model = createMenuScreenModel(window.innerWidth, preferences);
     if (menuLayoutPlan.constraintHash !== model.constraintHash) {
@@ -401,6 +428,47 @@ export default function App() {
     menuPlanGateRef.current?.invalidate();
     setMenuLayoutPlan(null);
   }, [preferences]);
+
+  const autoMenuLayoutEnabled =
+    import.meta.env.DEV && import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_AUTO === "true";
+
+  useEffect(() => {
+    if (!autoMenuLayoutEnabled || stage !== "menu" || activeProfile !== "central") return;
+    let cancelled = false;
+    const model = createMenuScreenModel(viewportWidth, preferences);
+    const gate = menuPlanGateRef.current!;
+    const ticket = gate.capture(model);
+    const params = new URLSearchParams(window.location.search);
+    const mockAuto = import.meta.env.DEV && params.get("mockAiLayout") === "auto";
+
+    const request = async () => {
+      if (mockAuto) {
+        return validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
+      }
+      const result = await requestMenuLayoutPlan(model);
+      if (!result.plan && import.meta.env.DEV) {
+        console.info("[automatic menu layout rejected]", {
+          stage: result.stage,
+          status: result.status,
+        });
+      }
+      return result.plan;
+    };
+
+    void autoMenuLayoutRef.current!.run(model, request).then(({ plan, stale }) => {
+      if (cancelled || stale || !plan) return;
+      const currentModel = createMenuScreenModel(window.innerWidth, preferences);
+      if (!gate.canApply(ticket, currentModel)) return;
+      const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
+      menuLayoutDiagnosticBaselineRef.current = new Set(baselineIssues.map((issue) =>
+        `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`,
+      ));
+      setMenuLayoutPlan(plan);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile, autoMenuLayoutEnabled, preferences, stage, viewportRevision, viewportWidth]);
 
   const runAiMenuLayoutTestOnce = useCallback(async () => {
     if (!import.meta.env.DEV) return { ok: false, reason: "development-only" };

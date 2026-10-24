@@ -331,7 +331,7 @@ try {
   if (!hiddenAtScrollEnd) throw new Error("Scroll hint remained visible at the end of the transformed menu.");
 
   // Exercise the development-only manual request path with a browser-local Mock.
-  await openMenu(390, 844, "?mockCentralQrProfileForAiTest=1");
+  await openMenu(390, 844, "?mockCentralQrProfileForAiTest=1&mockAiLayout=auto");
   await waitFor("Boolean(document.querySelector('.profile-strip'))", "Mock central QR profile");
   await evaluate(`(() => {
     window.__nativeFetchForAiTest = window.fetch;
@@ -373,6 +373,30 @@ try {
     delete window.__nativeFetchForAiTest;
     delete window.__aiLayoutMockCallCount;
   })()`);
+
+  // Exercise the automatic QR-profile-to-menu path without any network or AI call.
+  for (const [width, height] of [[360, 667], [390, 844]]) {
+    await openMenu(width, height, "?mockCentralQrProfileForAiTest=1&mockAiLayout=auto");
+    await waitFor(
+      "document.querySelector('.product-grid')?.dataset.aiCardFlow === 'row'",
+      `automatic Mock plan at ${width}px`,
+    );
+    const firstEntry = await readMenu();
+    if (firstEntry.cardFlow !== "row" || firstEntry.computedColumns !== 1) {
+      throw new Error(`Automatic Mock plan was not applied at ${width}px.`);
+    }
+    await click("#menu-product-0");
+    await waitFor("Boolean(document.querySelector('#item-add'))", "automatic flow options screen");
+    await click("#item-add");
+    await waitFor(
+      "document.querySelector('.product-grid')?.dataset.aiCardFlow === 'row'",
+      `cached automatic plan on menu re-entry at ${width}px`,
+    );
+    if (aiLayoutRequests.length !== 0) {
+      throw new Error("Automatic Mock flow unexpectedly called the relay.");
+    }
+    console.log(JSON.stringify({ label: "automatic-mock", width, firstEntry }));
+  }
 
   if (aiLayoutRequests.length !== 0) {
     throw new Error(`The browser unexpectedly called the AI relay: ${JSON.stringify(aiLayoutRequests)}`);

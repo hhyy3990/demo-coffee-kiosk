@@ -22,6 +22,7 @@ export async function requestMenuLayoutPlan(
     credentials: "same-origin",
     cache: "no-store",
     redirect: "error",
+    signal: AbortSignal.timeout(8_000),
   });
   const requestId = response.headers.get("x-request-id");
   if (!response.ok) return { plan: null, status: response.status, requestId, stage: "http_error" };
