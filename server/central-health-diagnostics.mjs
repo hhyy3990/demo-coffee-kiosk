@@ -15,6 +15,7 @@ const SAFE_NETWORK_CODES = new Set([
   "DEPTH_ZERO_SELF_SIGNED_CERT",
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
 ]);
+const MAX_HEALTH_RESPONSE_BYTES = 4 * 1024;
 
 const DNS_CODES = new Set(["EAI_AGAIN", "ENOTFOUND"]);
 const CONNECTION_CODES = new Set([
@@ -68,6 +69,13 @@ function normalizeContentType(response) {
   return /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/.test(mediaType)
     ? mediaType
     : "unknown";
+}
+
+function safeRequestId(response) {
+  const value = response.headers.get("x-request-id");
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(value)
+    ? value
+    : null;
 }
 
 function isJsonContentType(contentType) {
@@ -149,9 +157,42 @@ function classifyResponse(response, contentType, statusOk) {
     redirectDetected,
     httpStatus: response.status,
     contentType,
+    centralRequestId: safeRequestId(response),
     statusOk,
     hasRedirectLocation: redirectDetected && Boolean(response.headers.get("location")),
   };
+}
+
+async function readHealthJson(response) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_HEALTH_RESPONSE_BYTES) {
+    throw new Error("health-response-too-large");
+  }
+  if (!response.body) throw new Error("health-response-empty");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_HEALTH_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error("health-response-too-large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 /**
@@ -233,7 +274,7 @@ export async function checkCentralHealth({
   let statusOk = false;
   if (response.status === 200 && isJsonContentType(contentType)) {
     try {
-      const body = await response.json();
+      const body = await readHealthJson(response);
       statusOk = body?.status === "ok";
     } catch {
       return {
