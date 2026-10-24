@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import {
-  createMenuScreenModel,
   validateMenuLayoutPlan,
+  validateMenuScreenModel,
 } from "../src/accessibility/menuLayoutPlan.ts";
 
 const MAX_REQUEST_BYTES = 16 * 1024;
@@ -19,62 +19,8 @@ const ERRORS = {
   oneShotConsumed: "개발용 화면 구성 시험은 이미 사용했어요.",
 };
 
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function sameContractValue(actual, expected) {
-  if (Array.isArray(expected)) {
-    return Array.isArray(actual) &&
-      actual.length === expected.length &&
-      actual.every((value, index) => sameContractValue(value, expected[index]));
-  }
-  if (isRecord(expected)) {
-    if (!isRecord(actual)) return false;
-    const actualKeys = Object.keys(actual).sort();
-    const expectedKeys = Object.keys(expected).sort();
-    return actualKeys.length === expectedKeys.length &&
-      actualKeys.every((key, index) =>
-        key === expectedKeys[index] && sameContractValue(actual[key], expected[key]),
-      );
-  }
-  return actual === expected;
-}
-
 function modelForRequest(input) {
-  if (!isRecord(input) ||
-      (input.viewportClass !== "compact" && input.viewportClass !== "regular") ||
-      !isRecord(input.constraints)) return null;
-
-  const constraints = input.constraints;
-  if (!["standard", "large", "extraLarge"].includes(constraints.textScale) ||
-      !["standard", "large"].includes(constraints.buttonScale) ||
-      typeof constraints.highContrast !== "boolean") return null;
-  const viewportModePercent = constraints.viewportModePercent;
-  if (viewportModePercent !== null &&
-      viewportModePercent !== 60 && viewportModePercent !== 70 && viewportModePercent !== 80) {
-    return null;
-  }
-
-  const width = input.viewportClass === "compact" ? 360 : 390;
-  const profile = {
-    textSize: constraints.textScale,
-    buttonSize: constraints.buttonScale,
-    contrast: constraints.highContrast === true ? "high" : "standard",
-    viewportMode: viewportModePercent === null ? null : { heightPercent: viewportModePercent },
-  };
-
-  let expected;
-  try {
-    expected = createMenuScreenModel(width, profile);
-  } catch {
-    return null;
-  }
-
-  // The model has no pixel width. Use the canonical 360/390 representatives and
-  // fail closed for other regular-width profiles rather than infer their layout.
-  if (!sameContractValue(input, expected)) return null;
-  return expected;
+  return validateMenuScreenModel(input);
 }
 
 function isValidServerToken(value) {

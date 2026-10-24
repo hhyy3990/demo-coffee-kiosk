@@ -30,6 +30,7 @@ import {
   createMenuPlanGate,
   createMenuScreenModel,
   createMockMenuLayoutPlan,
+  validateMenuScreenModel,
   validateMenuLayoutPlan,
   type ValidatedMenuLayout,
 } from "./accessibility/menuLayoutPlan";
@@ -471,18 +472,36 @@ export default function App() {
     if (stage !== "menu") return;
     const params = new URLSearchParams(window.location.search);
     const mockAuto = import.meta.env.DEV &&
-      (params.get("mockAutoMenuLayout") === "1" || params.get("mockAiLayout") === "auto");
+      (import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_MOCK === "true" ||
+        params.get("mockAutoMenuLayout") === "1" ||
+        params.get("mockAiLayout") === "auto");
     if (!autoMenuLayoutEnabled && !mockAuto) {
-      logMenuLayoutDiagnostic({ phase: "auto_trigger_skipped", reason: "feature_flag_off" });
+      logMenuLayoutDiagnostic({
+        phase: "auto_trigger_skipped",
+        reason: "feature_flag_off",
+        stageIsMenu: true,
+        featureFlagEnabled: autoMenuLayoutEnabled,
+        centralQrProfileActive: activeProfile === "central",
+      });
       return;
     }
     if (activeProfile !== "central") {
-      logMenuLayoutDiagnostic({ phase: "auto_trigger_skipped", reason: "central_qr_profile_not_active" });
+      logMenuLayoutDiagnostic({
+        phase: "auto_trigger_skipped",
+        reason: "central_qr_profile_not_active",
+        stageIsMenu: true,
+        featureFlagEnabled: autoMenuLayoutEnabled,
+        centralQrProfileActive: false,
+      });
       return;
     }
     logMenuLayoutDiagnostic({
       phase: "auto_trigger_eligible",
       source: mockAuto ? "mock" : "central",
+      stageIsMenu: true,
+      featureFlagEnabled: autoMenuLayoutEnabled,
+      centralQrProfileActive: true,
+      mockOnly: mockAuto,
     });
     let cancelled = false;
     let model: ReturnType<typeof createMenuScreenModel>;
@@ -500,6 +519,16 @@ export default function App() {
       textScale: model.constraints.textScale,
       buttonScale: model.constraints.buttonScale,
     });
+    const locallyValidatedModel = validateMenuScreenModel(model);
+    logMenuLayoutDiagnostic({
+      phase: "model_contract_validated",
+      valid: locallyValidatedModel !== null,
+      source: "shared_menu_v2_contract",
+    });
+    if (!locallyValidatedModel) {
+      logMenuLayoutDiagnostic({ phase: "model_rejected_local", reason: "local_contract_invalid" });
+      return;
+    }
     const gate = menuPlanGateRef.current!;
     const ticket = gate.capture(model);
 

@@ -138,6 +138,7 @@ try {
   for (const phase of [
     "auto_trigger_eligible",
     "model_created",
+    "model_contract_validated",
     "request_started",
     "plan_received",
     "plan_validated",

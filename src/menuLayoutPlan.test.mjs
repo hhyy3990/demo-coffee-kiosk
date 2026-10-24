@@ -4,6 +4,7 @@ import {
   createMenuPlanGate,
   createMenuScreenModel,
   createMockMenuLayoutPlan,
+  validateMenuScreenModel,
   validateMenuLayoutPlan,
 } from "./accessibility/menuLayoutPlan.ts";
 import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan.ts";
@@ -18,6 +19,23 @@ const profile = {
 function context(width = 390, currentProfile = profile) {
   return createMenuScreenModel(width, currentProfile);
 }
+
+test("local screen-model validation accepts canonical models and rejects contract mutations", () => {
+  const generated = context(390, {
+    textSize: "large",
+    buttonSize: "large",
+    contrast: "high",
+    viewportMode: null,
+  });
+  assert.deepEqual(validateMenuScreenModel(generated), generated);
+
+  const alteredConstraint = structuredClone(generated);
+  alteredConstraint.constraints.allowedColumns = [1, 2];
+  assert.equal(validateMenuScreenModel(alteredConstraint), null);
+
+  const extraField = { ...generated, userData: "must not pass" };
+  assert.equal(validateMenuScreenModel(extraField), null);
+});
 
 test("manual AI plan request sends one safe model and accepts only a validated response", async () => {
   const model = context();
