@@ -309,13 +309,18 @@ export default function App() {
 
   useEffect(() => {
     if (!import.meta.env.DEV ||
-        new URLSearchParams(window.location.search).get("mockCentralQrProfileForAiTest") !== "1") return;
+        !new URLSearchParams(window.location.search).has("mockCentralQrProfileForAiTest")) return;
+    const mockProfile = new URLSearchParams(window.location.search).get("mockCentralQrProfileForAiTest");
+    const isStandard = mockProfile === "standard";
+    const textSize = mockProfile === "extraLarge"
+      ? "extraLarge"
+      : isStandard ? DEFAULT_PREFERENCES.textSize : "large";
     // Development-only profile fixture for the Mock request-to-React integration test.
     setPreferences(validateAccessibilityProfile({
       ...DEFAULT_PREFERENCES,
-      textSize: "large",
-      buttonSize: "large",
-      contrast: "high",
+      textSize,
+      buttonSize: isStandard ? DEFAULT_PREFERENCES.buttonSize : "large",
+      contrast: isStandard ? DEFAULT_PREFERENCES.contrast : "high",
     }));
     setActiveProfile("central");
   }, []);
@@ -419,7 +424,6 @@ export default function App() {
     const handleResize = () => {
       autoMenuLayoutRef.current?.invalidate();
       menuPlanGateRef.current?.invalidate();
-      setMenuLayoutPlan(null);
       if (settleTimer) clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         setViewportWidth(window.innerWidth);
@@ -440,6 +444,14 @@ export default function App() {
       const model = createMenuScreenModel(window.innerWidth, preferences);
       if (menuLayoutPlan.constraintHash !== model.constraintHash ||
           menuLayoutPlan.viewportClass !== model.viewportClass) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_cancelled",
+          reason: "viewport_model_changed",
+          viewportWidth: window.innerWidth,
+          previousViewportClass: menuLayoutPlan.viewportClass,
+          nextViewportClass: model.viewportClass,
+          previousColumns: menuLayoutPlan.columns,
+        });
         gate.invalidate();
         setMenuLayoutPlan(null);
       }
@@ -461,6 +473,11 @@ export default function App() {
 
   useEffect(() => {
     if (stage !== "menu" || !menuLayoutPlan) return;
+    logMenuLayoutDiagnostic({
+      phase: "plan_cancelled",
+      reason: "accessibility_profile_changed",
+      previousColumns: menuLayoutPlan.columns,
+    });
     menuPlanGateRef.current?.invalidate();
     setMenuLayoutPlan(null);
   }, [preferences]);
@@ -513,6 +530,7 @@ export default function App() {
     }
     logMenuLayoutDiagnostic({
       phase: "model_created",
+      viewportWidth,
       viewportClass: model.viewportClass,
       defaultColumns: model.constraints.defaultColumns,
       allowedColumns: model.constraints.allowedColumns.join(","),
@@ -536,7 +554,10 @@ export default function App() {
       if (mockAuto) {
         logMenuLayoutDiagnostic({ phase: "request_started", source: "mock" });
         logMenuLayoutDiagnostic({ phase: "plan_received", source: "automatic_mock" });
-        const plan = validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
+        const mockColumns = params.get("mockAutoColumns") === "2" ? 2 as const : 1 as const;
+        const plan = validateMenuLayoutPlan(createMockMenuLayoutPlan(model, {
+          columns: mockColumns,
+        }), model);
         if (plan) {
           logMenuLayoutDiagnostic({
             phase: "plan_validated",
@@ -660,6 +681,7 @@ export default function App() {
     lastMenuLayoutDiagnosticRef.current = signature;
     logMenuLayoutDiagnostic({
       phase: "react_dom_committed",
+      viewportWidth: window.innerWidth,
       planState: state,
       aiColumns,
       aiCardFlow: cardFlow,
