@@ -69,11 +69,23 @@ try {
     return result.result?.value;
   };
   const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const setViewport = async (width) => {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height: 844, deviceScaleFactor: 1, mobile: width <= 700,
+      screenWidth: width, screenHeight: 844,
+    });
+  };
   const waitFor = async (expression, label) => {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       if (await evaluate(expression)) return;
       await wait(50);
     }
+    console.log(JSON.stringify({
+      waitFailure: label,
+      viewport: await evaluate("innerWidth"),
+      grid: await readGrid(),
+      recentEvents: await evaluate("(window.__demoCoffeeMenuLayoutDiagnostics ?? []).slice(-16)"),
+    }));
     throw new Error(`Timed out waiting for ${label}`);
   };
   const openMenu = async (query) => {
@@ -83,9 +95,15 @@ try {
     });
     await send("Page.navigate", { url: `${appUrl}/${query}` });
     await waitFor("Boolean(document.querySelector('#start-store'))", "welcome screen");
-    if (query.includes("mockCentralQrProfileForAiTest=1")) {
+    if (query.includes("mockCentralQrProfileForAiTest=")) {
+      const profile = new URLSearchParams(query.slice(1)).get("mockCentralQrProfileForAiTest");
+      const profileCondition = profile === "extraLarge"
+        ? "document.querySelector('.kiosk')?.classList.contains('a11y-text-extra')"
+        : profile === "standard"
+          ? "Boolean(document.querySelector('.profile-strip'))"
+          : "Boolean(document.querySelector('.kiosk')?.classList.contains('a11y-text-large'))";
       await waitFor(
-        "Boolean(document.querySelector('.profile-strip')) && document.querySelector('.kiosk')?.classList.contains('a11y-text-large')",
+        `Boolean(document.querySelector('.profile-strip')) && (${profileCondition})`,
         "Mock central QR profile application",
       );
     }
@@ -131,9 +149,8 @@ try {
     ));
   }
 
-  await openMenu(envMockOnly
-    ? "?mockCentralQrProfileForAiTest=1"
-    : "?mockCentralQrProfileForAiTest=1&mockAutoMenuLayout=1");
+  const mockQuery = envMockOnly ? "" : "&mockAutoMenuLayout=1";
+  await openMenu(`?mockCentralQrProfileForAiTest=extraLarge${mockQuery}`);
   await waitFor(
     'document.querySelector(".product-grid")?.dataset.aiCardFlow === "row"',
     "automatic QR-to-menu Mock plan",
@@ -143,6 +160,12 @@ try {
   assert.equal(automaticMock.aiColumns, "1");
   assert.equal(automaticMock.aiCardFlow, "row");
   assert.equal(automaticMock.computedColumnCount, 1);
+  const largeProfileModel = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'model_created')",
+  );
+  assert.equal(largeProfileModel.viewportWidth, 390);
+  assert.equal(largeProfileModel.textScale, "extraLarge");
+  assert.equal(largeProfileModel.allowedColumns, "1");
 
   const autoPhases = await evaluate(
     "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).map(event => event.phase)",
@@ -169,6 +192,90 @@ try {
     );
     assert.equal(modelValidation?.valid, true);
   }
+
+  await setViewport(1280);
+  try {
+    await waitFor(`(() => {
+      const events = window.__demoCoffeeMenuLayoutDiagnostics ?? [];
+      const committed = events.findLast(event =>
+        event.phase === "react_dom_committed" && event.viewportWidth === 1280 &&
+        event.aiColumns === "1" && event.computedColumnCount === 1);
+      return innerWidth === 1280 && committed;
+    })()`, "Mock plan retention after viewport expansion");
+  } catch (error) {
+    console.log(JSON.stringify({
+      debugViewport: await evaluate("innerWidth"),
+      debugGrid: await readGrid(),
+      debugEvents: await evaluate("(window.__demoCoffeeMenuLayoutDiagnostics ?? []).slice(-15)"),
+    }));
+    throw error;
+  }
+  const expandedGrid = await readGrid();
+  assert.equal(expandedGrid.viewport, 1280);
+  assert.equal(expandedGrid.aiColumns, "1");
+  assert.equal(expandedGrid.computedColumnCount, 1);
+  const expandedModel = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'model_created')",
+  );
+  assert.equal(expandedModel.viewportWidth, 1280);
+  assert.equal(expandedModel.allowedColumns, "1");
+  const preservedOnExpand = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event => event.phase === 'plan_preserved' && event.reason === 'viewport_model_unchanged' && event.viewportWidth === 1280)",
+  );
+  assert.equal(preservedOnExpand, true);
+  const cancelledOnExpand = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event => event.phase === 'plan_cancelled' && event.reason === 'viewport_model_changed')",
+  );
+  assert.equal(cancelledOnExpand, false);
+
+  await setViewport(360);
+  await waitFor(`(() => {
+    const events = window.__demoCoffeeMenuLayoutDiagnostics ?? [];
+    const committed = events.findLast(event =>
+      event.phase === "react_dom_committed" && event.viewportWidth === 360 &&
+      event.aiColumns === "1" && event.computedColumnCount === 1);
+    return innerWidth === 360 && committed;
+  })()`, "Mock plan reapplication after compact model change");
+  const compactGrid = await readGrid();
+  assert.equal(compactGrid.viewport, 360);
+  assert.equal(compactGrid.aiColumns, "1");
+  assert.equal(compactGrid.computedColumnCount, 1);
+  const cancelledOnCompact = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event => event.phase === 'plan_cancelled' && event.reason === 'viewport_model_changed' && event.nextViewportClass === 'compact')",
+  );
+  assert.equal(cancelledOnCompact, true);
+
+  await setViewport(390);
+  await waitFor(`(() => {
+    const events = window.__demoCoffeeMenuLayoutDiagnostics ?? [];
+    const modelIndex = events.findLastIndex(event =>
+      event.phase === "model_created" && event.viewportWidth === 390);
+    const committedIndex = events.findLastIndex(event =>
+      event.phase === "react_dom_committed" && event.viewportWidth === 390 &&
+      event.aiColumns === "1" && event.computedColumnCount === 1);
+    return innerWidth === 390 &&
+      document.querySelector(".product-grid")?.dataset.aiColumns === "1" &&
+      committedIndex > modelIndex;
+  })()`, "Mock plan reapplication after returning to regular model");
+  const returnedGrid = await readGrid();
+  assert.equal(returnedGrid.viewport, 390);
+  assert.equal(returnedGrid.aiColumns, "1");
+  assert.equal(returnedGrid.computedColumnCount, 1);
+
+  await openMenu(`?mockCentralQrProfileForAiTest=standard${mockQuery}&mockAutoColumns=2`);
+  await waitFor(
+    'document.querySelector(".product-grid")?.dataset.aiColumns === "2"',
+    "automatic two-column plan for standard profile",
+  );
+  const standardProfileGrid = await readGrid();
+  assert.equal(standardProfileGrid.viewport, 390);
+  assert.equal(standardProfileGrid.aiColumns, "2");
+  assert.equal(standardProfileGrid.computedColumnCount, 2);
+  const standardProfileModel = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'model_created')",
+  );
+  assert.equal(standardProfileModel.allowedColumns, "1,2");
+  assert.equal(standardProfileModel.textScale, "standard");
 
   await openMenu("?mockAiLayout=columns-2");
   await waitFor(
@@ -217,6 +324,9 @@ try {
   console.log(JSON.stringify({
     noPlan,
     automaticMock,
+    expandedGrid,
+    compactGrid,
+    returnedGrid,
     autoModeDetails,
     appliedTwoColumns,
     appliedOneColumn,

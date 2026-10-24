@@ -46,6 +46,14 @@ type MenuLayoutDiagnostic = {
   [key: string]: string | number | boolean | null | undefined;
 };
 
+function modelViewportWidthFor(actualWidth: number): number {
+  return actualWidth <= 380 ? 360 : 390;
+}
+
+function createCurrentMenuScreenModel(actualWidth: number, preferences: Preferences) {
+  return createMenuScreenModel(modelViewportWidthFor(actualWidth), preferences);
+}
+
 function logMenuLayoutDiagnostic(event: MenuLayoutDiagnostic) {
   if (!import.meta.env.DEV) return;
   const diagnosticWindow = window as Window & {
@@ -390,7 +398,7 @@ export default function App() {
     // Test-only injection: no visible control, network request, or production path.
     const frame = requestAnimationFrame(() => {
       mockPlanConsumedRef.current = true;
-      const model = createMenuScreenModel(window.innerWidth, preferences);
+      const model = createCurrentMenuScreenModel(window.innerWidth, preferences);
       const ticket = gate.capture(model);
       const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
       menuLayoutDiagnosticBaselineRef.current = new Set(baselineIssues.map((issue) =>
@@ -422,8 +430,6 @@ export default function App() {
   useEffect(() => {
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
     const handleResize = () => {
-      autoMenuLayoutRef.current?.invalidate();
-      menuPlanGateRef.current?.invalidate();
       if (settleTimer) clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         setViewportWidth(window.innerWidth);
@@ -441,7 +447,7 @@ export default function App() {
     if (stage !== "menu" || !menuLayoutPlan) return;
     const gate = menuPlanGateRef.current!;
     const discardStalePlan = () => {
-      const model = createMenuScreenModel(window.innerWidth, preferences);
+      const model = createCurrentMenuScreenModel(window.innerWidth, preferences);
       if (menuLayoutPlan.constraintHash !== model.constraintHash ||
           menuLayoutPlan.viewportClass !== model.viewportClass) {
         logMenuLayoutDiagnostic({
@@ -454,6 +460,14 @@ export default function App() {
         });
         gate.invalidate();
         setMenuLayoutPlan(null);
+      } else {
+        logMenuLayoutDiagnostic({
+          phase: "plan_preserved",
+          reason: "viewport_model_unchanged",
+          viewportWidth: window.innerWidth,
+          viewportClass: model.viewportClass,
+          explicitColumns: menuLayoutPlan.columns,
+        });
       }
     };
     window.addEventListener("resize", discardStalePlan, { passive: true });
@@ -464,7 +478,7 @@ export default function App() {
   useEffect(() => {
     autoMenuLayoutRef.current?.invalidate();
     if (stage !== "menu" || !menuLayoutPlan) return;
-    const model = createMenuScreenModel(window.innerWidth, preferences);
+    const model = createCurrentMenuScreenModel(window.innerWidth, preferences);
     if (menuLayoutPlan.constraintHash !== model.constraintHash) {
       menuPlanGateRef.current?.invalidate();
       setMenuLayoutPlan(null);
@@ -523,7 +537,7 @@ export default function App() {
     let cancelled = false;
     let model: ReturnType<typeof createMenuScreenModel>;
     try {
-      model = createMenuScreenModel(viewportWidth, preferences);
+      model = createCurrentMenuScreenModel(viewportWidth, preferences);
     } catch {
       logMenuLayoutDiagnostic({ phase: "model_creation_failed", reason: "invalid_profile_or_viewport" });
       return;
@@ -557,7 +571,12 @@ export default function App() {
         const mockColumns = params.get("mockAutoColumns") === "2" ? 2 as const : 1 as const;
         const plan = validateMenuLayoutPlan(createMockMenuLayoutPlan(model, {
           columns: mockColumns,
+          cardLayout: mockColumns === 1,
         }), model);
+        if (!plan) {
+          logMenuLayoutDiagnostic({ phase: "plan_rejected", reason: "mock_validation_failed" });
+          return null;
+        }
         if (plan) {
           logMenuLayoutDiagnostic({
             phase: "plan_validated",
@@ -632,7 +651,7 @@ export default function App() {
           cardLayout: plan.gapPx !== null,
         });
       }
-      const currentModel = createMenuScreenModel(window.innerWidth, preferences);
+      const currentModel = createCurrentMenuScreenModel(window.innerWidth, preferences);
       if (!gate.canApply(ticket, currentModel)) {
         logMenuLayoutDiagnostic({
           phase: "plan_rejected",
@@ -703,7 +722,7 @@ export default function App() {
 
     // Consume the client-side allowance before any asynchronous work; never retry.
     aiMenuPlanAttemptedRef.current = true;
-    const model = createMenuScreenModel(window.innerWidth, preferences);
+    const model = createCurrentMenuScreenModel(window.innerWidth, preferences);
     const gate = menuPlanGateRef.current!;
     const ticket = gate.capture(model);
     const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
@@ -714,7 +733,7 @@ export default function App() {
 
     try {
       const requestResult = await requestMenuLayoutPlan(model);
-      const currentModel = createMenuScreenModel(window.innerWidth, preferences);
+      const currentModel = createCurrentMenuScreenModel(window.innerWidth, preferences);
       if (!requestResult.plan) {
         console.info("[menu layout request rejected]", {
           requestId: requestResult.requestId,
