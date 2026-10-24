@@ -40,6 +40,23 @@ const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 type Stage = CafeStage;
 type Category = "coffee" | "cake" | "dessert" | "food";
 type Preferences = AccessibilityProfile;
+type MenuLayoutDiagnostic = {
+  phase: string;
+  [key: string]: string | number | boolean | null | undefined;
+};
+
+function logMenuLayoutDiagnostic(event: MenuLayoutDiagnostic) {
+  if (!import.meta.env.DEV) return;
+  const diagnosticWindow = window as Window & {
+    __demoCoffeeMenuLayoutDiagnostics?: MenuLayoutDiagnostic[];
+  };
+  const history = diagnosticWindow.__demoCoffeeMenuLayoutDiagnostics ??= [];
+  history.push(event);
+  if (history.length > 40) history.splice(0, history.length - 40);
+  window.dispatchEvent(new CustomEvent("demo-coffee:menu-layout-diagnostic", { detail: event }));
+  console.info("[menu-layout-diagnostic]", event);
+}
+
 type Product = {
   id: string;
   name: string;
@@ -140,6 +157,7 @@ export default function App() {
   const [canScrollCategoryBack, setCanScrollCategoryBack] = useState(false);
   const [canScrollCategoryForward, setCanScrollCategoryForward] = useState(false);
   const [menuLayoutPlan, setMenuLayoutPlan] = useState<ValidatedMenuLayout | null>(null);
+  const lastMenuLayoutDiagnosticRef = useRef<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [viewportRevision, setViewportRevision] = useState(0);
   const menuPlanGateRef = useRef<ReturnType<typeof createMenuPlanGate> | null>(null);
@@ -373,7 +391,24 @@ export default function App() {
         `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`,
       ));
       const validated = validateMenuLayoutPlan(createMockMenuLayoutPlan(model, mockOptions), model);
-      if (validated && gate.canApply(ticket, model)) setMenuLayoutPlan(validated);
+      logMenuLayoutDiagnostic({ phase: "plan_received", source: "mock" });
+      if (!validated) {
+        logMenuLayoutDiagnostic({ phase: "plan_rejected", reason: "mock_validation_failed" });
+        return;
+      }
+      logMenuLayoutDiagnostic({
+        phase: "plan_validated",
+        source: "mock",
+        columns: validated.columns ?? model.constraints.defaultColumns,
+        explicitColumns: validated.columns,
+        cardLayout: validated.gapPx !== null,
+      });
+      if (gate.canApply(ticket, model)) {
+        logMenuLayoutDiagnostic({ phase: "react_state_update_requested", source: "mock" });
+        setMenuLayoutPlan(validated);
+      } else {
+        logMenuLayoutDiagnostic({ phase: "plan_rejected", reason: "mock_gate_invalidated" });
+      }
     });
     return () => cancelAnimationFrame(frame);
   }, [stage]);
@@ -443,32 +478,128 @@ export default function App() {
 
     const request = async () => {
       if (mockAuto) {
-        return validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
+        logMenuLayoutDiagnostic({ phase: "plan_received", source: "automatic_mock" });
+        const plan = validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
+        if (plan) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_validated",
+            source: "automatic_mock",
+            columns: plan.columns ?? model.constraints.defaultColumns,
+            explicitColumns: plan.columns,
+            cardLayout: plan.gapPx !== null,
+          });
+        }
+        return plan;
       }
-      const result = await requestMenuLayoutPlan(model);
-      if (!result.plan && import.meta.env.DEV) {
-        console.info("[automatic menu layout rejected]", {
-          stage: result.stage,
+      logMenuLayoutDiagnostic({ phase: "request_sent", source: "central" });
+      try {
+        const result = await requestMenuLayoutPlan(model);
+        logMenuLayoutDiagnostic({
+          phase: "plan_received",
+          source: "central",
           status: result.status,
+          requestIdPresent: result.requestId !== null,
         });
+        if (!result.plan) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            reason: result.stage,
+            status: result.status,
+          });
+          return null;
+        }
+        logMenuLayoutDiagnostic({
+          phase: "plan_validated",
+          source: "central",
+          columns: result.plan.columns ?? model.constraints.defaultColumns,
+          explicitColumns: result.plan.columns,
+          cardLayout: result.plan.gapPx !== null,
+        });
+        return result.plan;
+      } catch {
+        logMenuLayoutDiagnostic({ phase: "request_failed", reason: "network_or_timeout" });
+        return null;
       }
-      return result.plan;
     };
 
-    void autoMenuLayoutRef.current!.run(model, request).then(({ plan, stale }) => {
-      if (cancelled || stale || !plan) return;
+    void autoMenuLayoutRef.current!.run(model, request).then(({ plan, cached, stale }) => {
+      if (cancelled) {
+        logMenuLayoutDiagnostic({ phase: "plan_rejected", reason: "effect_replaced" });
+        return;
+      }
+      if (stale) {
+        logMenuLayoutDiagnostic({ phase: "plan_rejected", reason: "model_invalidated_during_request" });
+        return;
+      }
+      if (!plan) return;
+      if (cached) {
+        logMenuLayoutDiagnostic({
+          phase: "validated_plan_cache_hit",
+          columns: plan.columns ?? model.constraints.defaultColumns,
+          explicitColumns: plan.columns,
+          cardLayout: plan.gapPx !== null,
+        });
+      }
       const currentModel = createMenuScreenModel(window.innerWidth, preferences);
-      if (!gate.canApply(ticket, currentModel)) return;
+      if (!gate.canApply(ticket, currentModel)) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_rejected",
+          reason: "stale_plan_gate",
+          viewportChanged: currentModel.viewportClass !== ticket.viewportClass,
+          constraintsChanged: currentModel.constraintHash !== ticket.constraintHash,
+          structureChanged: currentModel.structureHash !== ticket.structureHash,
+        });
+        return;
+      }
       const baselineIssues = accessibilitySdkRef.current?.inspectLayout() ?? [];
       menuLayoutDiagnosticBaselineRef.current = new Set(baselineIssues.map((issue) =>
         `${issue.issueType}|${issue.semanticId}|${issue.relatedSemanticId ?? ""}`,
       ));
+      logMenuLayoutDiagnostic({ phase: "react_state_update_requested", source: cached ? "cache" : "validated_plan" });
       setMenuLayoutPlan(plan);
     });
     return () => {
       cancelled = true;
     };
   }, [activeProfile, autoMenuLayoutEnabled, preferences, stage, viewportRevision, viewportWidth]);
+
+  useLayoutEffect(() => {
+    if (stage !== "menu") {
+      lastMenuLayoutDiagnosticRef.current = null;
+      return;
+    }
+    const grid = productGridRef.current;
+    if (!grid) return;
+    const style = window.getComputedStyle(grid);
+    const columns = style.gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length;
+    const firstCardButton = grid.querySelector<HTMLElement>('[data-menu-layout-id="menu.product-action"]');
+    const firstImage = grid.querySelector<HTMLElement>('[data-menu-layout-id="menu.product-image"]');
+    const firstInfo = grid.querySelector<HTMLElement>('[data-menu-layout-id="menu.product-information"]');
+    const imageRect = firstImage?.getBoundingClientRect();
+    const infoRect = firstInfo?.getBoundingClientRect();
+    const cardFlow = grid.dataset.aiCardFlow ?? null;
+    const aiColumns = grid.dataset.aiColumns ?? null;
+    const state = menuLayoutPlan ? "applied" : "none";
+    const signature = JSON.stringify({
+      state, aiColumns, cardFlow, columns, gridTemplateColumns: style.gridTemplateColumns,
+      cardDisplay: firstCardButton ? window.getComputedStyle(firstCardButton).display : null,
+      imageInfoGap: imageRect && infoRect ? Math.round(infoRect.left - imageRect.right) : null,
+    });
+    if (signature === lastMenuLayoutDiagnosticRef.current) return;
+    lastMenuLayoutDiagnosticRef.current = signature;
+    logMenuLayoutDiagnostic({
+      phase: "react_dom_committed",
+      planState: state,
+      aiColumns,
+      aiCardFlow: cardFlow,
+      computedColumnCount: columns,
+      computedGridTemplateColumns: style.gridTemplateColumns,
+      cardLayoutApplied: cardFlow === "row" &&
+        firstCardButton !== null &&
+        window.getComputedStyle(firstCardButton).display === "grid",
+      imageInfoGapPx: imageRect && infoRect ? Math.round(infoRect.left - imageRect.right) : null,
+    });
+  }, [menuLayoutPlan, stage]);
 
   const runAiMenuLayoutTestOnce = useCallback(async () => {
     if (!import.meta.env.DEV) return { ok: false, reason: "development-only" };
