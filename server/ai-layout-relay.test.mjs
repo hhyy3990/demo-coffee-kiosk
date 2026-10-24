@@ -364,3 +364,61 @@ test("classifies central HTTP errors, malformed JSON, invalid plans, and timeout
     }, { logger: (line) => logs.push(line) });
   });
 });
+
+test("classifies central JSON, HTML, and unsupported-screen 404s without logging error bodies", async (t) => {
+  const cases = [
+    {
+      name: "JSON 404 without a recognized code",
+      response: () => new Response(JSON.stringify({ error: "private upstream detail" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json; charset=utf-8", "X-Request-ID": "json-404" },
+      }),
+      expectedClass: "upstream_json_404",
+      expectedCode: undefined,
+      expectedContentType: "application/json",
+      forbidden: "private upstream detail",
+    },
+    {
+      name: "JSON unsupported-screen code",
+      response: () => new Response(JSON.stringify({
+        code: "unsupported_screen",
+        detail: "private upstream detail",
+      }), {
+        status: 404,
+        headers: { "Content-Type": "application/problem+json", "X-Request-ID": "screen-404" },
+      }),
+      expectedClass: "unsupported_screen_combination",
+      expectedCode: "UNSUPPORTED_SCREEN",
+      expectedContentType: "application/problem+json",
+      forbidden: "private upstream detail",
+    },
+    {
+      name: "HTML 404",
+      response: () => new Response("<html>private proxy detail</html>", {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8", "X-Request-ID": "html-404" },
+      }),
+      expectedClass: "upstream_html_404",
+      expectedCode: undefined,
+      expectedContentType: "text/html",
+      forbidden: "private proxy detail",
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const logs = [];
+      await withRelay(async () => scenario.response(), enabledEnv(), async (origin) => {
+        assert.equal((await postModel(origin)).status, 502);
+        const event = JSON.parse(logs[0]);
+        assert.equal(event.stage, "central_http_error");
+        assert.equal(event.centralStatus, 404);
+        assert.equal(event.centralRequestId !== undefined, true);
+        assert.equal(event.centralErrorClass, scenario.expectedClass);
+        assert.equal(event.centralErrorCode, scenario.expectedCode);
+        assert.equal(event.centralContentType, scenario.expectedContentType);
+        assert.equal(logs.join("\n").includes(scenario.forbidden), false);
+      }, { logger: (line) => logs.push(line) });
+    });
+  }
+});

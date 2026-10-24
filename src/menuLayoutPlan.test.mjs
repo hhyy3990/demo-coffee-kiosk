@@ -84,8 +84,14 @@ test("safe menu model contains only explicit layout structure and constraints", 
   assert.equal(model.schemaVersion, 2);
   assert.equal(model.structureVersion, "menu.v2");
   assert.equal(model.viewportClass, "regular");
+  assert.equal(model.structureHash, "837f86b3");
+  assert.equal(model.constraintHash, "df5bb9a5");
   assert.equal(model.structureHash, context(360).structureHash);
   assert.notEqual(model.constraintHash, context(360).constraintHash);
+  assert.equal(model.constraints.textScale, "standard");
+  assert.equal(model.constraints.buttonScale, "standard");
+  assert.equal(model.constraints.highContrast, false);
+  assert.equal(model.constraints.viewportModePercent, null);
   assert.equal(model.constraints.defaultColumns, 2);
   assert.deepEqual(context(360).constraints.allowedColumns, [1]);
   assert.equal(model.constraints.minimumTouchTargetPx, 44);

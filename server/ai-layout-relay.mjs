@@ -7,6 +7,13 @@ import {
 
 const MAX_REQUEST_BYTES = 16 * 1024;
 const MAX_RESPONSE_BYTES = 16 * 1024;
+const SAFE_CENTRAL_ERROR_CODES = new Set([
+  "HOST_NOT_FOUND",
+  "SCREEN_NOT_FOUND",
+  "UNSUPPORTED_HOST",
+  "UNSUPPORTED_SCREEN",
+  "UNSUPPORTED_SCREEN_COMBINATION",
+]);
 const REQUEST_TIMEOUT_MS = 25_000;
 const CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 128;
@@ -106,7 +113,56 @@ function safeCentralRequestId(response) {
     : null;
 }
 
+function safeCentralContentType(response) {
+  const mediaType = (response.headers.get("content-type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  return /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/.test(mediaType)
+    ? mediaType
+    : "unknown";
+}
+
+function isJsonContentType(contentType) {
+  return contentType === "application/json" ||
+    contentType.endsWith("+json");
+}
+
+async function centralHttpDiagnostics(response) {
+  const contentType = safeCentralContentType(response);
+  const details = { centralContentType: contentType };
+  if (response.status !== 404) return details;
+
+  details.centralErrorClass = isJsonContentType(contentType)
+    ? "upstream_json_404"
+    : contentType === "text/html" ? "upstream_html_404" : "upstream_non_json_404";
+
+  if (!isJsonContentType(contentType)) return details;
+  try {
+    const body = await readBoundedBody(response, MAX_RESPONSE_BYTES);
+    const candidate = body && typeof body === "object" && !Array.isArray(body)
+      ? body.code ?? body.errorCode ?? body.error
+      : null;
+    if (typeof candidate === "string") {
+      const code = candidate.trim().toUpperCase();
+      if (SAFE_CENTRAL_ERROR_CODES.has(code)) {
+        details.centralErrorClass = "unsupported_screen_combination";
+        details.centralErrorCode = code;
+      }
+    }
+  } catch {
+    // Never log or return central error bodies; status and media type remain useful.
+  }
+  return details;
+}
+
 function logRelayEvent(logger, event) {
+  const safeErrorClasses = new Set([
+    "upstream_json_404",
+    "upstream_html_404",
+    "upstream_non_json_404",
+    "unsupported_screen_combination",
+  ]);
   const safeEvent = {
     event: "ai-layout-relay",
     requestId: event.requestId,
@@ -114,6 +170,11 @@ function logRelayEvent(logger, event) {
     ...(event.centralRequestId ? { centralRequestId: event.centralRequestId } : {}),
     ...(Number.isInteger(event.centralStatus) ? { centralStatus: event.centralStatus } : {}),
     ...(Number.isInteger(event.localStatus) ? { localStatus: event.localStatus } : {}),
+    ...(typeof event.centralContentType === "string" ? { centralContentType: event.centralContentType } : {}),
+    ...(safeErrorClasses.has(event.centralErrorClass) ? { centralErrorClass: event.centralErrorClass } : {}),
+    ...(SAFE_CENTRAL_ERROR_CODES.has(event.centralErrorCode)
+      ? { centralErrorCode: event.centralErrorCode }
+      : {}),
     ...(typeof event.timedOut === "boolean" ? { timedOut: event.timedOut } : {}),
     ...(typeof event.planValidated === "boolean" ? { planValidated: event.planValidated } : {}),
   };
@@ -125,11 +186,20 @@ function logRelayEvent(logger, event) {
 }
 
 class RelayStageError extends Error {
-  constructor(stage, { centralRequestId = null, centralStatus = null } = {}) {
+  constructor(stage, {
+    centralRequestId = null,
+    centralStatus = null,
+    centralContentType = null,
+    centralErrorClass = null,
+    centralErrorCode = null,
+  } = {}) {
     super(stage);
     this.stage = stage;
     this.centralRequestId = centralRequestId;
     this.centralStatus = centralStatus;
+    this.centralContentType = centralContentType;
+    this.centralErrorClass = centralErrorClass;
+    this.centralErrorCode = centralErrorCode;
   }
 }
 
@@ -210,9 +280,11 @@ export function registerAiLayoutRoute(
           });
           const centralRequestId = safeCentralRequestId(response);
           if (response.status !== 200) {
+            const diagnostics = await centralHttpDiagnostics(response);
             throw new RelayStageError("central_http_error", {
               centralRequestId,
               centralStatus: response.status,
+              ...diagnostics,
             });
           }
           let plan;
@@ -264,6 +336,9 @@ export function registerAiLayoutRoute(
         log(stage, {
           centralRequestId: error instanceof RelayStageError ? error.centralRequestId : null,
           centralStatus: error instanceof RelayStageError ? error.centralStatus : null,
+          centralContentType: error instanceof RelayStageError ? error.centralContentType : null,
+          centralErrorClass: error instanceof RelayStageError ? error.centralErrorClass : null,
+          centralErrorCode: error instanceof RelayStageError ? error.centralErrorCode : null,
           localStatus: timedOut ? 504 : 502,
           timedOut,
           planValidated: false,
