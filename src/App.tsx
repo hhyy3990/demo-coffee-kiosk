@@ -468,16 +468,44 @@ export default function App() {
     import.meta.env.DEV && import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_AUTO === "true";
 
   useEffect(() => {
-    if (!autoMenuLayoutEnabled || stage !== "menu" || activeProfile !== "central") return;
+    if (stage !== "menu") return;
+    const params = new URLSearchParams(window.location.search);
+    const mockAuto = import.meta.env.DEV &&
+      (params.get("mockAutoMenuLayout") === "1" || params.get("mockAiLayout") === "auto");
+    if (!autoMenuLayoutEnabled && !mockAuto) {
+      logMenuLayoutDiagnostic({ phase: "auto_trigger_skipped", reason: "feature_flag_off" });
+      return;
+    }
+    if (activeProfile !== "central") {
+      logMenuLayoutDiagnostic({ phase: "auto_trigger_skipped", reason: "central_qr_profile_not_active" });
+      return;
+    }
+    logMenuLayoutDiagnostic({
+      phase: "auto_trigger_eligible",
+      source: mockAuto ? "mock" : "central",
+    });
     let cancelled = false;
-    const model = createMenuScreenModel(viewportWidth, preferences);
+    let model: ReturnType<typeof createMenuScreenModel>;
+    try {
+      model = createMenuScreenModel(viewportWidth, preferences);
+    } catch {
+      logMenuLayoutDiagnostic({ phase: "model_creation_failed", reason: "invalid_profile_or_viewport" });
+      return;
+    }
+    logMenuLayoutDiagnostic({
+      phase: "model_created",
+      viewportClass: model.viewportClass,
+      defaultColumns: model.constraints.defaultColumns,
+      allowedColumns: model.constraints.allowedColumns.join(","),
+      textScale: model.constraints.textScale,
+      buttonScale: model.constraints.buttonScale,
+    });
     const gate = menuPlanGateRef.current!;
     const ticket = gate.capture(model);
-    const params = new URLSearchParams(window.location.search);
-    const mockAuto = import.meta.env.DEV && params.get("mockAiLayout") === "auto";
 
     const request = async () => {
       if (mockAuto) {
+        logMenuLayoutDiagnostic({ phase: "request_started", source: "mock" });
         logMenuLayoutDiagnostic({ phase: "plan_received", source: "automatic_mock" });
         const plan = validateMenuLayoutPlan(createMockMenuLayoutPlan(model), model);
         if (plan) {
@@ -491,6 +519,7 @@ export default function App() {
         }
         return plan;
       }
+      logMenuLayoutDiagnostic({ phase: "request_started", source: "central" });
       logMenuLayoutDiagnostic({ phase: "request_sent", source: "central" });
       try {
         const result = await requestMenuLayoutPlan(model);
@@ -500,6 +529,12 @@ export default function App() {
           status: result.status,
           requestIdPresent: result.requestId !== null,
         });
+        if (result.status === 400) {
+          logMenuLayoutDiagnostic({
+            phase: "model_rejected_local",
+            reason: result.stage,
+          });
+        }
         if (!result.plan) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
