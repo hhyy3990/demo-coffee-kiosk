@@ -1,5 +1,26 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Gowun+Dodum&family=Manrope:wght@400;500;600;700;800&display=swap");
 
+.menu-layout-diagnostics { position: fixed; z-index: 1200; right: 14px; bottom: 14px; font: 13px/1.4 "DM Sans", sans-serif; }
+.menu-layout-diagnostics button { min-height: 34px; padding: 6px 10px; border: 1px solid #b89a80; border-radius: 9px; background: #fffaf4; color: #35281f; font: inherit; }
+.menu-layout-diagnostics-trigger { box-shadow: 0 3px 12px #35281f24; }
+.menu-layout-diagnostics-panel { position: absolute; right: 0; bottom: 44px; width: min(540px, calc(100vw - 24px)); max-height: min(76vh, 680px); overflow: auto; padding: 14px; border: 1px solid #cbb7a2; border-radius: 14px; background: #fffdf9; color: #35281f; box-shadow: 0 14px 42px #35281f38; }
+.menu-layout-diagnostics-panel header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.menu-layout-diagnostics-panel header div { display: grid; gap: 3px; }
+.menu-layout-diagnostics-panel header span { color: #78685c; font-size: 11px; }
+.menu-layout-diagnostics-panel dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 12px 0; }
+.menu-layout-diagnostics-panel dl div { padding: 8px; border-radius: 8px; background: #f7f2ea; }
+.menu-layout-diagnostics-panel dt { color: #78685c; font-size: 11px; }
+.menu-layout-diagnostics-panel dd { margin: 3px 0 0; font-weight: 700; }
+.menu-layout-diagnostics-actions { display: flex; gap: 8px; }
+.menu-layout-diagnostics-panel p[role="status"] { margin: 8px 0; color: #68452f; }
+.menu-layout-diagnostics-records { margin-top: 12px; }
+.menu-layout-diagnostics-records h3 { margin: 12px 0 6px; font-size: 12px; }
+.menu-layout-diagnostics-records ol { display: grid; gap: 5px; margin: 0; padding-left: 23px; }
+.menu-layout-diagnostics-records li { padding-left: 2px; }
+.menu-layout-diagnostics-records time { margin-right: 6px; color: #78685c; font-size: 10px; }
+.menu-layout-diagnostics-records li strong { font-size: 11px; }
+.menu-layout-diagnostics-records li span { display: block; color: #78685c; font-size: 10px; overflow-wrap: anywhere; }
+
 :root {
   font-family: "DM Sans", "Gowun Dodum", sans-serif;
   color: #35281f;

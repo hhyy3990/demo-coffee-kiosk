@@ -35,6 +35,8 @@ import {
   type ValidatedMenuLayout,
 } from "./accessibility/menuLayoutPlan";
 import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan";
+import { persistMenuLayoutDiagnostic } from "./accessibility/menuLayoutDiagnostics";
+import MenuLayoutDiagnosticsPanel from "./components/MenuLayoutDiagnosticsPanel";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
 
@@ -60,10 +62,11 @@ function logMenuLayoutDiagnostic(event: MenuLayoutDiagnostic) {
     __demoCoffeeMenuLayoutDiagnostics?: MenuLayoutDiagnostic[];
   };
   const history = diagnosticWindow.__demoCoffeeMenuLayoutDiagnostics ??= [];
-  history.push(event);
-  if (history.length > 40) history.splice(0, history.length - 40);
-  window.dispatchEvent(new CustomEvent("demo-coffee:menu-layout-diagnostic", { detail: event }));
-  console.info("[menu-layout-diagnostic]", event);
+  const safeEvent = persistMenuLayoutDiagnostic(event);
+  history.push(safeEvent);
+  if (history.length > 50) history.splice(0, history.length - 50);
+  window.dispatchEvent(new CustomEvent("demo-coffee:menu-layout-diagnostic", { detail: safeEvent }));
+  console.info("[menu-layout-diagnostic]", safeEvent);
 }
 
 type Product = {
@@ -458,6 +461,7 @@ export default function App() {
           nextViewportClass: model.viewportClass,
           previousColumns: menuLayoutPlan.columns,
         });
+        logMenuLayoutDiagnostic({ phase: "plan_invalidated", reason: "viewport_model_changed" });
         gate.invalidate();
         setMenuLayoutPlan(null);
       } else {
@@ -492,6 +496,7 @@ export default function App() {
       reason: "accessibility_profile_changed",
       previousColumns: menuLayoutPlan.columns,
     });
+    logMenuLayoutDiagnostic({ phase: "plan_invalidated", reason: "accessibility_profile_changed" });
     menuPlanGateRef.current?.invalidate();
     setMenuLayoutPlan(null);
   }, [preferences]);
@@ -701,6 +706,7 @@ export default function App() {
     logMenuLayoutDiagnostic({
       phase: "react_dom_committed",
       viewportWidth: window.innerWidth,
+      viewportClass: window.innerWidth <= 380 ? "compact" : "regular",
       planState: state,
       aiColumns,
       aiCardFlow: cardFlow,
@@ -1529,6 +1535,7 @@ export default function App() {
           </section>
         </div>
       )}
+      {import.meta.env.DEV && <MenuLayoutDiagnosticsPanel />}
     </div>
   );
 }

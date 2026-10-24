@@ -257,6 +257,7 @@ try {
       document.querySelector(".product-grid")?.dataset.aiColumns === "1" &&
       committedIndex > modelIndex;
   })()`, "Mock plan reapplication after returning to regular model");
+  await wait(250);
   const returnedGrid = await readGrid();
   assert.equal(returnedGrid.viewport, 390);
   assert.equal(returnedGrid.aiColumns, "1");
@@ -321,6 +322,52 @@ try {
   assert.ok(diagnosticPhases.includes("react_state_update_requested"));
   assert.ok(diagnosticPhases.includes("react_dom_committed"));
 
+  await openMenu("?mockCentralQrProfileForAiTest=extraLarge&mockAutoMenuLayout=1&menuLayoutDiagnostics=1");
+  await waitFor('Boolean(document.querySelector(".menu-layout-diagnostics-trigger"))', "diagnostics panel trigger");
+  assert.equal(await evaluate('Boolean(document.querySelector("#menu-layout-diagnostics-panel"))'), false);
+  await evaluate('document.querySelector(".menu-layout-diagnostics-trigger").click()');
+  await waitFor('Boolean(document.querySelector("#menu-layout-diagnostics-panel"))', "diagnostics panel open");
+  const firstPageRun = await evaluate("window.__demoCoffeePageRunId");
+  const beforeRefreshCount = await evaluate(
+    `JSON.parse(sessionStorage.getItem("demo-coffee:menu-layout-diagnostics:v1") || "[]").length`,
+  );
+  assert.ok(beforeRefreshCount > 0, "Mock diagnostics should be persisted");
+  await evaluate(`Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: async (text) => { window.__copiedMenuDiagnostics = text; } },
+  })`);
+  await evaluate('[...document.querySelectorAll("#menu-layout-diagnostics-panel button")].find(button => button.textContent.includes("기록 복사")).click()');
+  await waitFor(
+    'document.querySelector("#menu-layout-diagnostics-panel [role=status]")?.textContent.includes("복사했습니다")',
+    "diagnostic copy action",
+  );
+  assert.ok(await evaluate('window.__copiedMenuDiagnostics.includes("react_dom_committed")'));
+
+  await send("Page.reload");
+  await waitFor("Boolean(document.querySelector('#start-store'))", "welcome after reload");
+  await waitFor('Boolean(document.querySelector(".menu-layout-diagnostics-trigger"))', "panel after reload");
+  const secondPageRun = await evaluate("window.__demoCoffeePageRunId");
+  assert.notEqual(secondPageRun, firstPageRun, "Reload should have a distinct page-run ID");
+  const persistedAfterReload = await evaluate(
+    `JSON.parse(sessionStorage.getItem("demo-coffee:menu-layout-diagnostics:v1") || "[]").length`,
+  );
+  assert.equal(persistedAfterReload, beforeRefreshCount);
+  await evaluate('document.querySelector(".menu-layout-diagnostics-trigger").click()');
+  await waitFor(
+    'document.querySelector("#menu-layout-diagnostics-panel")?.textContent.includes("새로고침 이전 기록")',
+    "prior diagnostics after reload",
+  );
+  const previousCount = await evaluate(
+    'Number(document.querySelector(".menu-layout-diagnostics-records h3:last-of-type")?.textContent.match(/\\((\\d+)\\)/)?.[1] || 0)',
+  );
+  assert.ok(previousCount > 0, "Reloaded panel should separate previous page-run records");
+  await evaluate('[...document.querySelectorAll("#menu-layout-diagnostics-panel button")].find(button => button.textContent.includes("기록 초기화")).click()');
+  await waitFor(
+    'JSON.parse(sessionStorage.getItem("demo-coffee:menu-layout-diagnostics:v1") || "[]").length === 0',
+    "diagnostics clear action",
+  );
+  assert.equal(aiLayoutRequests, 0, "Diagnostics browser test must not call the relay");
+
   console.log(JSON.stringify({
     noPlan,
     automaticMock,
@@ -333,6 +380,7 @@ try {
     restored,
     aiLayoutRequests,
     diagnosticEvents: diagnosticPhases,
+    diagnosticsPersistence: { beforeRefreshCount, persistedAfterReload, previousCount },
     result: "PASS",
   }));
 } finally {
