@@ -263,6 +263,27 @@ try {
   assert.equal(returnedGrid.aiColumns, "1");
   assert.equal(returnedGrid.computedColumnCount, 1);
 
+  await openMenu("?mockCentralQrProfileForAiTest=standard");
+  const standardBaseline = await readGrid();
+  assert.equal(standardBaseline.aiColumns, null, "Baseline CSS must not claim an AI-selected column count");
+  assert.equal(standardBaseline.computedColumnCount, 2);
+
+  await openMenu(`?mockCentralQrProfileForAiTest=standard${mockQuery}&mockAutoColumns=1`);
+  await waitFor(
+    'document.querySelector(".product-grid")?.dataset.aiColumns === "1"',
+    "automatic one-column plan for standard profile",
+  );
+  const standardOneColumnGrid = await readGrid();
+  assert.equal(standardOneColumnGrid.aiColumns, "1");
+  assert.equal(standardOneColumnGrid.computedColumnCount, 1);
+  assert.equal(standardOneColumnGrid.aiCardFlow, "row");
+  const standardOneColumnPlan = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'plan_validated')",
+  );
+  assert.equal(standardOneColumnPlan.source, "automatic_mock");
+  assert.equal(standardOneColumnPlan.columns, 1);
+  assert.equal(standardOneColumnPlan.cardLayout, true);
+
   await openMenu(`?mockCentralQrProfileForAiTest=standard${mockQuery}&mockAutoColumns=2`);
   await waitFor(
     'document.querySelector(".product-grid")?.dataset.aiColumns === "2"',
@@ -271,12 +292,20 @@ try {
   const standardProfileGrid = await readGrid();
   assert.equal(standardProfileGrid.viewport, 390);
   assert.equal(standardProfileGrid.aiColumns, "2");
+  assert.equal(standardProfileGrid.aiCardFlow, null);
   assert.equal(standardProfileGrid.computedColumnCount, 2);
   const standardProfileModel = await evaluate(
     "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'model_created')",
   );
   assert.equal(standardProfileModel.allowedColumns, "1,2");
+  assert.equal(standardProfileModel.defaultColumns, 2);
   assert.equal(standardProfileModel.textScale, "standard");
+  const standardTwoColumnPlan = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).findLast(event => event.phase === 'plan_validated')",
+  );
+  assert.equal(standardTwoColumnPlan.source, "automatic_mock");
+  assert.equal(standardTwoColumnPlan.columns, 2);
+  assert.equal(standardTwoColumnPlan.cardLayout, false);
 
   await openMenu("?mockAiLayout=columns-2");
   await waitFor(
