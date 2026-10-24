@@ -4,3 +4,4 @@
 - [Kiosk sticky navigation](kiosk-sticky-layout.md) — use overflow clipping that preserves viewport sticky positioning, and match the category rail to narrow-screen gutters.
 - [Shared kiosk SDK boundary](accessibility-sdk-boundary.md) — keep host-owned workflows separate; Smart Guide uses visible fallback placement and a bounded display lifetime.
 - [Chromium viewport emulation](chromium-viewport-emulation.md) — use CDP device metrics to test exact narrow CSS viewports; headless window sizing may clamp.
+- [Menu layout diagnostic evidence](menu-layout-diagnostic-evidence.md) — client event history is tab-local; server relay logs cannot prove React or CSS application.

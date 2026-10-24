@@ -524,15 +524,22 @@ export default function App() {
       try {
         const result = await requestMenuLayoutPlan(model);
         logMenuLayoutDiagnostic({
+          phase: "response_received",
+          source: "local_relay",
+          status: result.status,
+          localRequestId: result.requestId,
+        });
+        logMenuLayoutDiagnostic({
           phase: "plan_received",
           source: "central",
           status: result.status,
-          requestIdPresent: result.requestId !== null,
+          localRequestId: result.requestId,
         });
         if (result.status === 400) {
           logMenuLayoutDiagnostic({
             phase: "model_rejected_local",
             reason: result.stage,
+            localRequestId: result.requestId,
           });
         }
         if (!result.plan) {

@@ -82,6 +82,12 @@ try {
     });
     await send("Page.navigate", { url: `${appUrl}/${query}` });
     await waitFor("Boolean(document.querySelector('#start-store'))", "welcome screen");
+    if (query.includes("mockCentralQrProfileForAiTest=1")) {
+      await waitFor(
+        "Boolean(document.querySelector('.profile-strip')) && document.querySelector('.kiosk')?.classList.contains('a11y-text-large')",
+        "Mock central QR profile application",
+      );
+    }
     await evaluate("document.querySelector('#start-store').click()");
     await waitFor("Boolean(document.querySelector('.product-grid .product-card'))", "menu");
     await wait(200);
@@ -110,6 +116,34 @@ try {
   assert.equal(noPlan.viewport, 390);
   assert.equal(noPlan.aiColumns, null);
   assert.equal(noPlan.computedColumnCount, 2);
+  const flagOffSkip = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event => event.phase === 'auto_trigger_skipped' && event.reason === 'feature_flag_off')",
+  );
+  assert.equal(flagOffSkip, true, "Feature-flag-off reason should be diagnosable");
+
+  await openMenu("?mockCentralQrProfileForAiTest=1&mockAutoMenuLayout=1");
+  await waitFor(
+    'document.querySelector(".product-grid")?.dataset.aiCardFlow === "row"',
+    "automatic QR-to-menu Mock plan",
+  );
+  const automaticMock = await readGrid();
+  assert.equal(automaticMock.viewport, 390);
+  assert.equal(automaticMock.aiColumns, "1");
+  assert.equal(automaticMock.aiCardFlow, "row");
+  assert.equal(automaticMock.computedColumnCount, 1);
+
+  const autoPhases = await evaluate(
+    "(window.__demoCoffeeMenuLayoutDiagnostics ?? []).map(event => event.phase)",
+  );
+  for (const phase of [
+    "auto_trigger_eligible",
+    "model_created",
+    "request_started",
+    "plan_received",
+    "plan_validated",
+    "react_state_update_requested",
+    "react_dom_committed",
+  ]) assert.ok(autoPhases.includes(phase), `Missing automatic diagnostic phase: ${phase}`);
 
   await openMenu("?mockAiLayout=columns-2");
   await waitFor(
@@ -157,6 +191,7 @@ try {
 
   console.log(JSON.stringify({
     noPlan,
+    automaticMock,
     appliedTwoColumns,
     appliedOneColumn,
     restored,
