@@ -2,9 +2,9 @@
 
 ## Scope and evidence
 
-This document records the current DemoCoffee host contracts and maps them conceptually to the Universal Layout Contract v1 concepts named in the supplied request. It does not change application or server behavior.
+This document records the current DemoCoffee host contracts and maps them to the supplied Universal Layout Contract v1 package. The included `demo-coffee-policy.ts` is a test/Mock fixture, not a statement that the central API has registered this policy.
 
-The supplied attachment names `repeated-card-list`, `choice-grid`, `setColumns`, `setFlow`, and `setChildBasis`, but does not include the full central Universal v1 schema or the central temporary `options.v1` draft. Their complete wire formats, version rules, and operation semantics therefore cannot be verified here. Mappings below are conceptual, not evidence of wire compatibility.
+The package defines `universal-layout.v1`, schema version 1, strict Zod request/plan models, `repeated-card-list`, and `setColumns`. It uses canonical JSON and SHA-256, with a golden vector asserted by the copied contract tests. This universal package is not wired to the central AI endpoint. The central temporary `options.v1` draft is still unavailable.
 
 The Development Workflow command currently sets `AI_LAYOUT_RELAY_ENABLED=false`, `AI_LAYOUT_RELAY_ONE_SHOT=false`, `VITE_DEMO_COFFEE_AI_LAYOUT_AUTO=false`, and `VITE_DEMO_COFFEE_AI_LAYOUT_MOCK=false`. No central API or OpenAI call was made for this extraction.
 
@@ -96,7 +96,9 @@ The present Mock trigger is one-shot per page lifetime through a consumed ref. A
 
 ## 3. Differences from the central temporary `options.v1` draft
 
-The central draft itself is not present in the workspace or in the supplied attachment. Therefore its group IDs, field names, schema version, hashes, structure inventory, constraints, operations, or hash algorithm cannot be compared safely with the actual host values above.
+The new ZIP provides the exact Universal v1 model and the `democoffee` / `cafe.menu` policy fixture. That policy confirms a repeated-card-list component `menu.product-list`, `setColumns`, compact `[1]`, regular/wide `[1,2]`, 44px touch target, and single-column forcing for large text and large buttons. It explicitly says this fixture is not active central API registration.
+
+The central temporary options draft itself is not included. Its group IDs, field names, schema version, hashes, structure inventory, constraints, and operations therefore remain unverified.
 
 Do not treat any central draft group ID or hash as a DemoCoffee value. Before connecting the host to a shared engine, compare the full central schema against:
 
@@ -111,11 +113,9 @@ Do not treat any central draft group ID or hash as a DemoCoffee value. Before co
 | Host surface | Universal component candidate | Existing operation | Conceptual Universal mapping |
 |---|---|---|---|
 | Ordered product list | `repeated-card-list` | `setGroupColumns` on `menu.product-list` | `setColumns` on the list container |
-| Product card | Repeated-card child layout | `setGroupFlow` on `menu.product-card` | `setFlow` on the card's child layout |
-| Product image | Product-card child | `setChildBasis` on `menu.product-image` | `setChildBasis` on the image child |
-| Option-choice groups | `choice-grid` | `setChoiceColumns` on `options.choice-groups` | `setColumns` on each present option group, or on a documented shared group target |
+| Option-choice groups | Possible future `choice-grid` | `setChoiceColumns` on `options.choice-groups` | Not supported by the supplied Universal v1 package/policy; no mapping should be implemented yet |
 
-The menu card `setFlow` and `setChildBasis` concepts do not correspond to options-screen operations. The Universal v1 target syntax and whether one operation can target multiple option groups are not established by the available central draft excerpt. Do not silently translate `options.choice-groups` into a central target until that contract is confirmed.
+Universal v1 has no `setFlow` or `setChildBasis` operation: the current package only permits `setColumns`. Those existing menu.v2 operations therefore remain exclusive to the legacy path and are not part of this Universal Mock. The options screen is not supported by the supplied policy. Do not infer a Universal `choice-grid` policy from this package.
 
 ## 5. Accessibility policy and common validation requirements
 
@@ -166,11 +166,10 @@ Diagnostics should remain limited to safe phases, IDs, model constraints, operat
 
 ## 10. Items not verified
 
-- The complete central Universal Layout Contract v1 schema and validator.
+- Central API registration of the supplied DemoCoffee policy.
 - The central temporary `options.v1` draft's exact IDs, hashes, operations, and constraints.
-- Whether the central engine supports per-group targets or shared choice-grid targets.
-- Whether central prompt behavior can be generic across repeated-card-list and choice-grid without loss of safety.
-- Wire compatibility between current host `menu.v2` / `options.v1` and the future Universal v1 envelope.
+- Whether the central engine supports `choice-grid` or multiple option targets.
+- Any central endpoint behavior; the supplied README explicitly says this package is not connected to it.
 - Any central-side ONE_SHOT behavior; only the DemoCoffee Development relay implementation was inspected.
 
-No AI plan, Health, or central API request was made for this contract extraction; no app, relay, SDK, Production, or Secret behavior was changed.
+No AI plan, Health, or central API request was made for the contract extraction. See the implementation report for Development-only Mock changes and verification.

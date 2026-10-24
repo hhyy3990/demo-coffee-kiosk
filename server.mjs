@@ -54,6 +54,11 @@ app.post("/api/qr-profile", express.json({ limit: "8kb" }), async (req, res) => 
 });
 
 registerAiLayoutRoute(app);
+if (process.env.NODE_ENV === "development") {
+  const { registerUniversalLayoutMockRoute } =
+    await import("./server/universal-layout-v1/mock-route.mjs");
+  registerUniversalLayoutMockRoute(app);
+}
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static("dist", { maxAge: "1h" }));

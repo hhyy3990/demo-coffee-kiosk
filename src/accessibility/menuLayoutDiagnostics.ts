@@ -23,6 +23,7 @@ const allowedFields = new Set([
   "viewportChanged", "constraintsChanged", "structureChanged", "planState",
   "aiColumns", "aiCardFlow", "computedColumnCount",
   "computedGridTemplateColumns", "cardLayoutApplied", "imageInfoGapPx",
+  "universalColumns",
   "planInvalidated", "optionGroupCount",
 ]);
 

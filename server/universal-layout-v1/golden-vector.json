@@ -1,0 +1,8 @@
+{
+  "input": {
+    "b": 2,
+    "a": "é"
+  },
+  "canonicalJson": "{\"a\":\"é\",\"b\":2}",
+  "sha256": "06c264c46ad5ada9493abd3aa2383fb205ae99d7d0bad40b03a43bfec8a1b8de"
+}

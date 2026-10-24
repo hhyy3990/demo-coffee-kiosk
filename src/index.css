@@ -259,6 +259,8 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .add-round:hover { transform:scale(1.06);background:var(--accent); }
 .product-grid[data-menu-layout-id="menu.product-list"][data-ai-columns="1"] { grid-template-columns:minmax(0,1fr); }
 .product-grid[data-menu-layout-id="menu.product-list"][data-ai-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.product-grid[data-menu-layout-id="menu.product-list"][data-universal-columns="1"] { grid-template-columns:minmax(0,1fr); }
+.product-grid[data-menu-layout-id="menu.product-list"][data-universal-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .product-grid[data-menu-layout-id="menu.product-list"][data-ai-card-flow="row"] [data-menu-layout-id="menu.product-card"] > button {
   display:grid;
   grid-template-columns:minmax(var(--menu-ai-image-min, 76px),var(--menu-ai-image-basis, 25%)) minmax(0,1fr);

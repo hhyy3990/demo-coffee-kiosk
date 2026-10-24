@@ -56,6 +56,12 @@ type MenuLayoutDiagnostic = {
   phase: string;
   [key: string]: string | number | boolean | null | undefined;
 };
+type UniversalMockLayout = {
+  columns: 1 | 2;
+  viewportClass: "compact" | "regular";
+  structureHash: string;
+  constraintHash: string;
+};
 
 function modelViewportWidthFor(actualWidth: number): number {
   return actualWidth <= 380 ? 360 : 390;
@@ -205,6 +211,9 @@ export default function App() {
   const [menuLayoutPlan, setMenuLayoutPlan] = useState<ValidatedMenuLayout | null>(null);
   const lastMenuLayoutDiagnosticRef = useRef<string | null>(null);
   const [optionLayoutPlan, setOptionLayoutPlan] = useState<ValidatedOptionLayout | null>(null);
+  const [universalMockLayout, setUniversalMockLayout] = useState<UniversalMockLayout | null>(null);
+  const universalMockLayoutRef = useRef<UniversalMockLayout | null>(null);
+  universalMockLayoutRef.current = universalMockLayout;
   const lastOptionLayoutDiagnosticRef = useRef<string | null>(null);
   const optionMockConsumedRef = useRef(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -226,6 +235,18 @@ export default function App() {
   const subtotal = cart.reduce((sum, line) => sum + (line.product.price + (line.options.size === "large" && line.product.optionsSupported ? 700 : 0)) * line.quantity, 0);
   const total = subtotal;
   const currentProducts = PRODUCTS.filter((product) => product.category === category);
+  const universalItemIdsKey = JSON.stringify(currentProducts.map((product) => product.id));
+  const universalInputKeyRef = useRef("");
+  universalInputKeyRef.current = JSON.stringify({
+    stage,
+    activeProfile,
+    viewportClass: window.innerWidth <= 380 ? "compact" : "regular",
+    textScale: preferences.textSize,
+    buttonScale: preferences.buttonSize,
+    contrast: preferences.contrast,
+    viewportMode: preferences.viewportMode,
+    itemIds: universalItemIdsKey,
+  });
   const scrollCategoryRail = (direction: -1 | 1) => {
     const rail = categoryNavRef.current;
     if (!rail) return;
@@ -601,6 +622,10 @@ export default function App() {
 
     if (!stageChanged) return;
     const params = new URLSearchParams(window.location.search);
+    if (import.meta.env.DEV && params.get("universalLayoutMock") === "1") {
+      setMenuLayoutPlan(null);
+      return;
+    }
     const mockMode = params.get("mockAiLayout");
     const mockOptions = mockMode === "menu-row"
       ? { columns: 1 as const, cardLayout: true }
@@ -665,6 +690,172 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const enabled = import.meta.env.DEV && params.get("universalLayoutMock") === "1";
+    const requested = params.get("universalMockColumns") ?? "1";
+    if (!enabled || stage !== "menu") {
+      setUniversalMockLayout(null);
+      return;
+    }
+    if (requested !== "1" && requested !== "2") {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        source: "universal_mock",
+        reason: "invalid_mock_columns",
+      });
+      setUniversalMockLayout(null);
+      return;
+    }
+
+    const viewportClass = window.innerWidth <= 380 ? "compact" as const : "regular" as const;
+    const inputKey = universalInputKeyRef.current;
+    const orderedItemIds = currentProducts.map((product) => product.id);
+    const accessibility = {
+      textScale: preferences.textSize,
+      buttonScale: preferences.buttonSize,
+      contrast: preferences.contrast,
+      viewportMode: preferences.viewportMode
+        ? { mode: "bottom" as const, heightPercent: preferences.viewportMode.heightPercent }
+        : null,
+    };
+    let cancelled = false;
+    const controller = new AbortController();
+    setUniversalMockLayout(null);
+    logMenuLayoutDiagnostic({
+      phase: "universal_model_request_started",
+      source: "universal_mock",
+      viewportClass,
+      viewportWidth,
+      itemCount: orderedItemIds.length,
+      requestedColumns: Number(requested),
+    });
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/dev/universal-layout/mock-plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            viewportClass,
+            accessibility,
+            orderedItemIds,
+            columns: Number(requested),
+          }),
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok || !payload || typeof payload !== "object") {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_mock",
+            status: response.status,
+            reason: payload && typeof payload === "object" && "error" in payload &&
+              typeof payload.error === "string" ? payload.error : "mock_response_invalid",
+          });
+          return;
+        }
+
+        const result = payload as {
+          model?: Record<string, unknown>;
+          plan?: Record<string, unknown>;
+        };
+        const model = result.model;
+        const plan = result.plan;
+        const components = model?.components;
+        const component = Array.isArray(components) ? components[0] as Record<string, unknown> | undefined : undefined;
+        const operations = plan?.operations;
+        const operation = Array.isArray(operations) ? operations[0] as Record<string, unknown> | undefined : undefined;
+        const metadataMatches = model?.schemaVersion === 1 &&
+          model.contractVersion === "universal-layout.v1" &&
+          model.hostId === "democoffee" &&
+          model.screenId === "cafe.menu" &&
+          model.structureVersion === "menu.v2" &&
+          model.viewportClass === viewportClass &&
+          model.accessibility && JSON.stringify(model.accessibility) === JSON.stringify(accessibility) &&
+          typeof model.structureHash === "string" && /^[a-f0-9]{64}$/.test(model.structureHash) &&
+          typeof model.constraintHash === "string" && /^[a-f0-9]{64}$/.test(model.constraintHash) &&
+          component?.id === "menu.product-list" &&
+          component.kind === "repeated-card-list" &&
+          component.itemCount === orderedItemIds.length &&
+          Array.isArray(component.allowedColumns) &&
+          component.allowedColumns.includes(Number(requested)) &&
+          plan?.schemaVersion === model.schemaVersion &&
+          plan.contractVersion === model.contractVersion &&
+          plan.hostId === model.hostId &&
+          plan.screenId === model.screenId &&
+          plan.structureVersion === model.structureVersion &&
+          plan.structureHash === model.structureHash &&
+          plan.constraintHash === model.constraintHash &&
+          plan.viewportClass === model.viewportClass &&
+          Array.isArray(operations) && operations.length === 1 &&
+          operation?.type === "setColumns" &&
+          operation.targetId === "menu.product-list" &&
+          operation.columns === Number(requested);
+        if (!metadataMatches) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_mock",
+            reason: "response_model_plan_mismatch",
+          });
+          return;
+        }
+        if (cancelled || universalInputKeyRef.current !== inputKey ||
+            document.querySelectorAll(
+              '[data-menu-layout-id="menu.product-list"] [data-menu-layout-id="menu.product-card"]',
+            ).length !== orderedItemIds.length) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_mock",
+            reason: "stale_screen_or_model",
+          });
+          return;
+        }
+        logMenuLayoutDiagnostic({
+          phase: "plan_validated",
+          source: "universal_mock",
+          columns: Number(requested),
+          viewportClass,
+        });
+        logMenuLayoutDiagnostic({
+          phase: "react_state_update_requested",
+          source: "universal_mock",
+          columns: Number(requested),
+        });
+        setUniversalMockLayout({
+          columns: Number(requested) as 1 | 2,
+          viewportClass,
+          structureHash: model!.structureHash as string,
+          constraintHash: model!.constraintHash as string,
+        });
+      } catch (error) {
+        if (!cancelled && !(error instanceof DOMException && error.name === "AbortError")) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_mock",
+            reason: "local_mock_request_failed",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (universalMockLayoutRef.current) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_cancelled",
+          source: "universal_mock",
+          reason: "screen_profile_or_viewport_changed",
+          columns: universalMockLayoutRef.current.columns,
+        });
+      }
+    };
+  }, [
+    stage, viewportWidth, preferences, universalItemIdsKey,
+  ]);
+
+  useEffect(() => {
     if (stage !== "menu" || !menuLayoutPlan) return;
     const gate = menuPlanGateRef.current!;
     const discardStalePlan = () => {
@@ -725,6 +916,17 @@ export default function App() {
   useEffect(() => {
     if (stage !== "menu") return;
     const params = new URLSearchParams(window.location.search);
+    if (import.meta.env.DEV && params.get("universalLayoutMock") === "1") {
+      logMenuLayoutDiagnostic({
+        phase: "auto_trigger_skipped",
+        source: "universal_mock",
+        reason: "universal_mock_active",
+        stageIsMenu: true,
+        featureFlagEnabled: autoMenuLayoutEnabled,
+        centralQrProfileActive: activeProfile === "central",
+      });
+      return;
+    }
     const mockAuto = import.meta.env.DEV &&
       (import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_MOCK === "true" ||
         params.get("mockAutoMenuLayout") === "1" ||
@@ -913,9 +1115,12 @@ export default function App() {
     const infoRect = firstInfo?.getBoundingClientRect();
     const cardFlow = grid.dataset.aiCardFlow ?? null;
     const aiColumns = grid.dataset.aiColumns ?? null;
-    const state = menuLayoutPlan ? "applied" : "none";
+    const universalColumns = grid.dataset.universalColumns ?? null;
+    const state = menuLayoutPlan || universalMockLayout ? "applied" : "none";
+    const layoutSource = universalMockLayout ? "universal_mock" : menuLayoutPlan ? "menu_v2" : "none";
     const signature = JSON.stringify({
-      state, aiColumns, cardFlow, columns, gridTemplateColumns: style.gridTemplateColumns,
+      state, layoutSource, aiColumns, universalColumns, cardFlow, columns,
+      gridTemplateColumns: style.gridTemplateColumns,
       cardDisplay: firstCardButton ? window.getComputedStyle(firstCardButton).display : null,
       imageInfoGap: imageRect && infoRect ? Math.round(infoRect.left - imageRect.right) : null,
     });
@@ -926,7 +1131,9 @@ export default function App() {
       viewportWidth: window.innerWidth,
       viewportClass: window.innerWidth <= 380 ? "compact" : "regular",
       planState: state,
+      source: layoutSource,
       aiColumns,
+      universalColumns,
       aiCardFlow: cardFlow,
       computedColumnCount: columns,
       computedGridTemplateColumns: style.gridTemplateColumns,
@@ -935,7 +1142,7 @@ export default function App() {
         window.getComputedStyle(firstCardButton).display === "grid",
       imageInfoGapPx: imageRect && infoRect ? Math.round(infoRect.left - imageRect.right) : null,
     });
-  }, [menuLayoutPlan, stage]);
+  }, [menuLayoutPlan, universalMockLayout, stage]);
 
   const runAiMenuLayoutTestOnce = useCallback(async () => {
     if (!import.meta.env.DEV) return { ok: false, reason: "development-only" };
@@ -1457,6 +1664,7 @@ export default function App() {
                     ref={productGridRef}
                     data-menu-count={currentProducts.length}
                     data-ai-columns={menuLayoutPlan?.columns ?? undefined}
+                    data-universal-columns={universalMockLayout?.columns ?? undefined}
                     data-ai-card-flow={menuLayoutPlan?.gapPx !== null && menuLayoutPlan?.gapPx !== undefined ? "row" : undefined}
                     style={menuLayoutPlan ? {
                       ...(menuLayoutPlan.gapPx !== null ? { "--menu-ai-card-gap": `${menuLayoutPlan.gapPx}px` } : {}),
