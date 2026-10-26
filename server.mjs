@@ -57,7 +57,10 @@ registerAiLayoutRoute(app);
 if (process.env.NODE_ENV === "development") {
   const { registerUniversalLayoutMockRoute } =
     await import("./server/universal-layout-v1/mock-route.mjs");
+  const { registerUniversalLayoutRelayRoute } =
+    await import("./server/universal-layout-v1/relay-route.mjs");
   registerUniversalLayoutMockRoute(app);
+  registerUniversalLayoutRelayRoute(app);
 }
 
 if (process.env.NODE_ENV === "production") {

@@ -691,16 +691,28 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const enabled = import.meta.env.DEV && params.get("universalLayoutMock") === "1";
-    const requested = params.get("universalMockColumns") ?? "1";
-    if (!enabled || stage !== "menu") {
+    const mockMode = import.meta.env.DEV && params.get("universalLayoutMock") === "1";
+    const centralMode = import.meta.env.DEV && params.get("universalLayoutRelay") === "1";
+    if (mockMode && centralMode) {
+      logMenuLayoutDiagnostic({
+        phase: "plan_rejected",
+        source: "universal_v1",
+        reason: "conflicting_universal_modes",
+      });
       setUniversalMockLayout(null);
       return;
     }
-    if (requested !== "1" && requested !== "2") {
+    const enabled = mockMode || centralMode;
+    const source = centralMode ? "central" : "universal_mock";
+    const requested = params.get("universalMockColumns") ?? "1";
+    if (!enabled || stage !== "menu" || (centralMode && activeProfile !== "central")) {
+      setUniversalMockLayout(null);
+      return;
+    }
+    if (mockMode && requested !== "1" && requested !== "2") {
       logMenuLayoutDiagnostic({
         phase: "plan_rejected",
-        source: "universal_mock",
+        source,
         reason: "invalid_mock_columns",
       });
       setUniversalMockLayout(null);
@@ -722,37 +734,43 @@ export default function App() {
     const controller = new AbortController();
     setUniversalMockLayout(null);
     logMenuLayoutDiagnostic({
-      phase: "universal_model_request_started",
-      source: "universal_mock",
+      phase: "request_started",
+      source,
       viewportClass,
       viewportWidth,
       itemCount: orderedItemIds.length,
-      requestedColumns: Number(requested),
+      ...(mockMode ? { requestedColumns: Number(requested) } : {}),
     });
 
     void (async () => {
       try {
-        const response = await fetch("/api/dev/universal-layout/mock-plan", {
+        const response = await fetch(
+          centralMode
+            ? "/api/dev/universal-layout/plan"
+            : "/api/dev/universal-layout/mock-plan",
+          {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             viewportClass,
             accessibility,
             orderedItemIds,
-            columns: Number(requested),
+            ...(mockMode ? { columns: Number(requested) } : {}),
           }),
           credentials: "same-origin",
           cache: "no-store",
           signal: controller.signal,
-        });
+          },
+        );
+        logMenuLayoutDiagnostic({ phase: "request_sent", source, status: response.status });
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok || !payload || typeof payload !== "object") {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_mock",
+            source,
             status: response.status,
             reason: payload && typeof payload === "object" && "error" in payload &&
-              typeof payload.error === "string" ? payload.error : "mock_response_invalid",
+              typeof payload.error === "string" ? payload.error : "universal_response_invalid",
           });
           return;
         }
@@ -767,6 +785,7 @@ export default function App() {
         const component = Array.isArray(components) ? components[0] as Record<string, unknown> | undefined : undefined;
         const operations = plan?.operations;
         const operation = Array.isArray(operations) ? operations[0] as Record<string, unknown> | undefined : undefined;
+        const returnedColumns = operation?.columns;
         const metadataMatches = model?.schemaVersion === 1 &&
           model.contractVersion === "universal-layout.v1" &&
           model.hostId === "democoffee" &&
@@ -780,7 +799,9 @@ export default function App() {
           component.kind === "repeated-card-list" &&
           component.itemCount === orderedItemIds.length &&
           Array.isArray(component.allowedColumns) &&
-          component.allowedColumns.includes(Number(requested)) &&
+          typeof returnedColumns === "number" &&
+          component.allowedColumns.includes(returnedColumns) &&
+          (!mockMode || returnedColumns === Number(requested)) &&
           plan?.schemaVersion === model.schemaVersion &&
           plan.contractVersion === model.contractVersion &&
           plan.hostId === model.hostId &&
@@ -792,11 +813,11 @@ export default function App() {
           Array.isArray(operations) && operations.length === 1 &&
           operation?.type === "setColumns" &&
           operation.targetId === "menu.product-list" &&
-          operation.columns === Number(requested);
+          operation.columns === returnedColumns;
         if (!metadataMatches) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_mock",
+            source,
             reason: "response_model_plan_mismatch",
           });
           return;
@@ -807,24 +828,24 @@ export default function App() {
             ).length !== orderedItemIds.length) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_mock",
+            source,
             reason: "stale_screen_or_model",
           });
           return;
         }
         logMenuLayoutDiagnostic({
           phase: "plan_validated",
-          source: "universal_mock",
-          columns: Number(requested),
+          source,
+          columns: returnedColumns,
           viewportClass,
         });
         logMenuLayoutDiagnostic({
           phase: "react_state_update_requested",
-          source: "universal_mock",
-          columns: Number(requested),
+          source,
+          columns: returnedColumns,
         });
         setUniversalMockLayout({
-          columns: Number(requested) as 1 | 2,
+          columns: returnedColumns as 1 | 2,
           viewportClass,
           structureHash: model!.structureHash as string,
           constraintHash: model!.constraintHash as string,
@@ -833,8 +854,8 @@ export default function App() {
         if (!cancelled && !(error instanceof DOMException && error.name === "AbortError")) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_mock",
-            reason: "local_mock_request_failed",
+            source,
+            reason: centralMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });
         }
       }
@@ -845,15 +866,13 @@ export default function App() {
       if (universalMockLayoutRef.current) {
         logMenuLayoutDiagnostic({
           phase: "plan_cancelled",
-          source: "universal_mock",
+          source,
           reason: "screen_profile_or_viewport_changed",
           columns: universalMockLayoutRef.current.columns,
         });
       }
     };
-  }, [
-    stage, viewportWidth, preferences, universalItemIdsKey,
-  ]);
+  }, [stage, viewportWidth, preferences, universalItemIdsKey, activeProfile]);
 
   useEffect(() => {
     if (stage !== "menu" || !menuLayoutPlan) return;
@@ -916,11 +935,13 @@ export default function App() {
   useEffect(() => {
     if (stage !== "menu") return;
     const params = new URLSearchParams(window.location.search);
-    if (import.meta.env.DEV && params.get("universalLayoutMock") === "1") {
+    if (import.meta.env.DEV &&
+        (params.get("universalLayoutMock") === "1" ||
+          params.get("universalLayoutRelay") === "1")) {
       logMenuLayoutDiagnostic({
         phase: "auto_trigger_skipped",
-        source: "universal_mock",
-        reason: "universal_mock_active",
+        source: params.get("universalLayoutRelay") === "1" ? "central" : "universal_mock",
+        reason: "universal_v1_active",
         stageIsMenu: true,
         featureFlagEnabled: autoMenuLayoutEnabled,
         centralQrProfileActive: activeProfile === "central",

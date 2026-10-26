@@ -146,6 +146,33 @@ try {
   const viewportCancelled = await grid();
   assert.equal(viewportCancelled.computedColumns, 1);
 
+  const relayPreload = await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (input, init = {}) => {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (url.pathname !== '/api/dev/universal-layout/plan') return nativeFetch(input, init);
+        const request = JSON.parse(init.body);
+        return nativeFetch('/api/dev/universal-layout/mock-plan', {
+          ...init,
+          body: JSON.stringify({ ...request, columns: 1 }),
+        });
+      };
+    })();`,
+  });
+  try { await evaluate("sessionStorage.clear()"); } catch {}
+  await send("Page.navigate", {
+    url: `${appUrl}/?menuLayoutDiagnostics=1&universalLayoutRelay=1&mockCentralQrProfileForAiTest=standard`,
+  });
+  await until("Boolean(document.querySelector('#start-store'))", "central-mode welcome screen");
+  await evaluate("document.querySelector('#start-store').click()");
+  await waitForApplied(1);
+  const centralModeSource = await evaluate(
+    `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_validated' && e.source === 'central' && e.columns === 1)`,
+  );
+  assert.equal(centralModeSource, true, "React central relay mode applied the locally substituted plan");
+  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: relayPreload.identifier });
+
   await openMenu(390, 2);
   await waitForApplied(2);
   await evaluate("document.querySelector('#menu-product-0').click()");
@@ -170,7 +197,8 @@ try {
   assert.ok(localMockRequests >= 6, "Development local Mock route exercised");
   console.log(JSON.stringify({
     regularOne, regularTwo, compactOne, compactRejected, accessibilityRejected,
-    viewportCancelled, screenCancelled, cartVerified, localMockRequests, centralPlanRequests,
+    viewportCancelled, centralModeSource, screenCancelled, cartVerified,
+    localMockRequests, centralPlanRequests,
   }, null, 2));
 } finally {
   socket?.close();
