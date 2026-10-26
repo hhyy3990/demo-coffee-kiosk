@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import test from "node:test";
 import express from "express";
 import { createServer } from "node:http";
 import { once } from "node:events";
@@ -176,6 +177,7 @@ test("identical concurrent requests share one central call", async () => {
     const [first, second] = await Promise.all([post(origin), post(origin)]);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
+    assert.equal((await post(origin)).status, 200);
     assert.equal(calls, 1);
   });
 });

@@ -95,15 +95,24 @@ try {
       gridTemplateColumns: css?.gridTemplateColumns ?? null
     };
   })()`);
-  const waitForApplied = async (columns) => {
-    await until(
-      `document.querySelector('.product-grid')?.dataset.universalColumns === '${columns}'`,
-      `${columns}-column plan`,
-    );
+  const waitForApplied = async (columns, source = "universal_mock") => {
+    try {
+      await until(
+        `document.querySelector('.product-grid')?.dataset.universalColumns === '${columns}'`,
+        `${columns}-column plan`,
+      );
+    } catch (error) {
+      console.error("apply diagnostics", JSON.stringify(await evaluate(`({
+        stage: document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? null,
+        grid: document.querySelector('.product-grid')?.outerHTML.slice(0, 250) ?? null,
+        events: window.__demoCoffeeMenuLayoutDiagnostics ?? []
+      })`), null, 2));
+      throw error;
+    }
     const result = await grid();
     assert.equal(result.computedColumns, columns);
     const committed = await evaluate(
-      `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'react_dom_committed' && e.source === 'universal_mock' && e.universalColumns === '${columns}' && e.computedColumnCount === ${columns})`,
+      `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'react_dom_committed' && e.source === '${source}' && e.universalColumns === '${columns}' && e.computedColumnCount === ${columns})`,
     );
     assert.equal(committed, true, "React/CSS commit diagnostic");
     return result;
@@ -146,32 +155,30 @@ try {
   const viewportCancelled = await grid();
   assert.equal(viewportCancelled.computedColumns, 1);
 
-  const relayPreload = await send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `(() => {
-      const nativeFetch = window.fetch.bind(window);
-      window.fetch = async (input, init = {}) => {
-        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
-        if (url.pathname !== '/api/dev/universal-layout/plan') return nativeFetch(input, init);
-        const request = JSON.parse(init.body);
-        return nativeFetch('/api/dev/universal-layout/mock-plan', {
-          ...init,
-          body: JSON.stringify({ ...request, columns: 1 }),
-        });
-      };
-    })();`,
-  });
   try { await evaluate("sessionStorage.clear()"); } catch {}
   await send("Page.navigate", {
-    url: `${appUrl}/?menuLayoutDiagnostics=1&universalLayoutRelay=1&mockCentralQrProfileForAiTest=standard`,
+    url: `${appUrl}/?menuLayoutDiagnostics=1&universalLayoutRelay=1&mockCentralQrProfileForAiTest=standard&mockAiLayout=columns-2`,
   });
   await until("Boolean(document.querySelector('#start-store'))", "central-mode welcome screen");
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/plan') return nativeFetch(input, init);
+      const request = JSON.parse(init.body);
+      return nativeFetch('/api/dev/universal-layout/mock-plan', {
+        ...init,
+        body: JSON.stringify({ ...request, columns: 1 }),
+      });
+    };
+  })()`);
   await evaluate("document.querySelector('#start-store').click()");
-  await waitForApplied(1);
+  await waitForApplied(1, "central");
   const centralModeSource = await evaluate(
     `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_validated' && e.source === 'central' && e.columns === 1)`,
   );
   assert.equal(centralModeSource, true, "React central relay mode applied the locally substituted plan");
-  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: relayPreload.identifier });
+  assert.equal((await grid()).menuV2Columns, null, "menu.v2 mock cannot override Universal relay mode");
 
   await openMenu(390, 2);
   await waitForApplied(2);

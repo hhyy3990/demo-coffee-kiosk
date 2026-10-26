@@ -58,6 +58,7 @@ type MenuLayoutDiagnostic = {
 };
 type UniversalMockLayout = {
   columns: 1 | 2;
+  source: "central" | "universal_mock";
   viewportClass: "compact" | "regular";
   structureHash: string;
   constraintHash: string;
@@ -622,7 +623,9 @@ export default function App() {
 
     if (!stageChanged) return;
     const params = new URLSearchParams(window.location.search);
-    if (import.meta.env.DEV && params.get("universalLayoutMock") === "1") {
+    if (import.meta.env.DEV &&
+        (params.get("universalLayoutMock") === "1" ||
+          params.get("universalLayoutRelay") === "1")) {
       setMenuLayoutPlan(null);
       return;
     }
@@ -762,7 +765,15 @@ export default function App() {
           signal: controller.signal,
           },
         );
-        logMenuLayoutDiagnostic({ phase: "request_sent", source, status: response.status });
+        const localRequestId = response.headers.get("x-request-id");
+        logMenuLayoutDiagnostic({
+          phase: "response_received",
+          source,
+          status: response.status,
+          ...(localRequestId && /^[A-Za-z0-9._:-]{1,128}$/.test(localRequestId)
+            ? { localRequestId }
+            : {}),
+        });
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok || !payload || typeof payload !== "object") {
           logMenuLayoutDiagnostic({
@@ -846,6 +857,7 @@ export default function App() {
         });
         setUniversalMockLayout({
           columns: returnedColumns as 1 | 2,
+          source,
           viewportClass,
           structureHash: model!.structureHash as string,
           constraintHash: model!.constraintHash as string,
@@ -1138,7 +1150,9 @@ export default function App() {
     const aiColumns = grid.dataset.aiColumns ?? null;
     const universalColumns = grid.dataset.universalColumns ?? null;
     const state = menuLayoutPlan || universalMockLayout ? "applied" : "none";
-    const layoutSource = universalMockLayout ? "universal_mock" : menuLayoutPlan ? "menu_v2" : "none";
+    const layoutSource = universalMockLayout
+      ? universalMockLayout.source
+      : menuLayoutPlan ? "menu_v2" : "none";
     const signature = JSON.stringify({
       state, layoutSource, aiColumns, universalColumns, cardFlow, columns,
       gridTemplateColumns: style.gridTemplateColumns,

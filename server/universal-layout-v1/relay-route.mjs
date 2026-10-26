@@ -110,10 +110,12 @@ function buildModel(input) {
 export function registerUniversalLayoutRelayRoute(app, {
   env = process.env,
   fetchImpl = globalThis.fetch,
+  now = Date.now,
   logger = (line) => console.info(line),
 } = {}) {
   if (env.NODE_ENV !== "development") return;
   const inFlight = new Map();
+  const resultCache = new Map();
   app.post("/api/dev/universal-layout/plan", parseJsonBody, async (req, res) => {
     const localRequestId = randomUUID();
     res.setHeader("X-Request-ID", localRequestId);
@@ -145,6 +147,15 @@ export function registerUniversalLayoutRelayRoute(app, {
       return res.status(400).json({ error: "MODEL_INVALID" });
     }
     const requestKey = `${model.structureHash}:${model.constraintHash}`;
+    const timestamp = now();
+    for (const [key, value] of resultCache) {
+      if (value.expiresAt <= timestamp) resultCache.delete(key);
+    }
+    const cached = resultCache.get(requestKey);
+    if (cached) {
+      log("duplicate_cached", { localStatus: 200 });
+      return res.status(200).json({ model, plan: cached.plan });
+    }
     let pending = inFlight.get(requestKey);
     if (!pending) {
       pending = (async () => {
@@ -187,12 +198,18 @@ export function registerUniversalLayoutRelayRoute(app, {
     }
     try {
       const { plan, centralRequestId } = await pending;
+      resultCache.set(requestKey, { plan, expiresAt: now() + 15_000 });
+      if (resultCache.size > 64) resultCache.delete(resultCache.keys().next().value);
       log("plan_validated", { localStatus: 200, centralStatus: 200, centralRequestId });
       return res.status(200).json({ model, plan });
     } catch (error) {
       const centralStatus = Number.isInteger(error?.centralStatus) ? error.centralStatus : null;
       const centralRequestId = typeof error?.centralRequestId === "string" ? error.centralRequestId : null;
-      log("upstream_rejected", { localStatus: 502, centralStatus, centralRequestId });
+      const failureClass = error?.publicCode === "UPSTREAM_PLAN_INVALID"
+        ? "plan_invalid"
+        : centralStatus ? "central_http_error"
+          : error?.name === "TimeoutError" ? "timeout" : "network_or_response_error";
+      log("upstream_rejected", { localStatus: 502, centralStatus, centralRequestId, failureClass });
       return res.status(502).json({
         error: typeof error?.publicCode === "string"
           ? error.publicCode

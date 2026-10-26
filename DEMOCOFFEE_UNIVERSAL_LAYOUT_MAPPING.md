@@ -4,9 +4,9 @@
 
 This document records the current DemoCoffee host contracts and maps them to the supplied Universal Layout Contract v1 package. The included `demo-coffee-policy.ts` is a test/Mock fixture, not a statement that the central API has registered this policy.
 
-The package defines `universal-layout.v1`, schema version 1, strict Zod request/plan models, `repeated-card-list`, and `setColumns`. It uses canonical JSON and SHA-256, with a golden vector asserted by the copied contract tests. This universal package is not wired to the central AI endpoint. The central temporary `options.v1` draft is still unavailable.
+The package defines `universal-layout.v1`, schema version 1, strict Zod request/plan models, `repeated-card-list`, and `setColumns`. It uses canonical JSON and SHA-256, with a golden vector asserted by the copied contract tests. The contract module remains pure; a separate DemoCoffee Development relay now forwards the server-created model to the central Development route and validates the response. The relay is disabled in the current Workflow. The central temporary `options.v1` draft is still unavailable.
 
-The Development Workflow command currently sets `AI_LAYOUT_RELAY_ENABLED=false`, `AI_LAYOUT_RELAY_ONE_SHOT=false`, `VITE_DEMO_COFFEE_AI_LAYOUT_AUTO=false`, and `VITE_DEMO_COFFEE_AI_LAYOUT_MOCK=false`. No central API or OpenAI call was made for this extraction.
+The Development Workflow command currently sets `AI_LAYOUT_RELAY_ENABLED=false`, `AI_LAYOUT_RELAY_ONE_SHOT=false`, `UNIVERSAL_LAYOUT_RELAY_ENABLED=false`, `VITE_DEMO_COFFEE_AI_LAYOUT_AUTO=false`, and `VITE_DEMO_COFFEE_AI_LAYOUT_MOCK=false`. The Universal relay uses the existing central URL and token settings without changing their values. It is not exercised against the live central API during local tests.
 
 ## 1. Existing menu model and contract
 
@@ -169,7 +169,7 @@ Diagnostics should remain limited to safe phases, IDs, model constraints, operat
 - Central API registration of the supplied DemoCoffee policy.
 - The central temporary `options.v1` draft's exact IDs, hashes, operations, and constraints.
 - Whether the central engine supports `choice-grid` or multiple option targets.
-- Any central endpoint behavior; the supplied README explicitly says this package is not connected to it.
+- Live central endpoint behavior or policy registration; no external request has been made.
 - Any central-side ONE_SHOT behavior; only the DemoCoffee Development relay implementation was inspected.
 
-No AI plan, Health, or central API request was made for the contract extraction. See the implementation report for Development-only Mock changes and verification.
+No live central AI plan, Health, or OpenAI request was made. The relay tests inject an in-process fetch mock and do not use the configured host or credentials.
