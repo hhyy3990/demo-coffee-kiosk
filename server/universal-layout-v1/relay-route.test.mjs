@@ -92,7 +92,9 @@ test("relay forwards only the validated Universal model and accepts a valid cent
       assert.equal(parsedUrl.pathname, "/api/dev/universal-layout/plan");
       assert.equal(parsedUrl.searchParams.get("project-protection-bypass"), env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN);
       assert.equal(request.headers.Authorization, `Bearer ${env.AI_LAYOUT_SERVICE_TOKEN}`);
-      const sentModel = JSON.parse(request.body);
+      const sentPayload = JSON.parse(request.body);
+      assert.deepEqual(Object.keys(sentPayload), ["model"]);
+      const sentModel = sentPayload.model;
       assert.equal(sentModel.hostId, "democoffee");
       assert.equal(sentModel.screenId, "cafe.menu");
       assert.equal(sentModel.components[0].itemOrderHash, makeModel().components[0].itemOrderHash);

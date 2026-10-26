@@ -165,7 +165,7 @@ export function registerUniversalLayoutRelayRoute(app, {
             "Content-Type": "application/json",
             Authorization: `Bearer ${serviceToken}`,
           },
-          body: JSON.stringify(model),
+          body: JSON.stringify({ model }),
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           cache: "no-store",
           redirect: "error",
