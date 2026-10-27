@@ -111,6 +111,7 @@ test("relay forwards only the validated Universal model and accepts a valid cent
     assert.equal(payload.model.contractVersion, "universal-layout.v1");
     assert.equal(calls, 1);
     assert.ok(logs.some((line) => line.includes('"stage":"plan_validated"')));
+    assert.ok(logs.some((line) => line.includes('"centralContentType":"application/json"')));
     const logText = logs.join("\n");
     assert.equal(logText.includes(env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN), false);
     assert.equal(logText.includes(env.AI_LAYOUT_SERVICE_TOKEN), false);
