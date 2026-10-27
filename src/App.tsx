@@ -58,7 +58,7 @@ type MenuLayoutDiagnostic = {
 };
 type UniversalMockLayout = {
   columns: 1 | 2;
-  source: "central" | "universal_mock";
+  source: "central" | "central_ai" | "universal_mock";
   viewportClass: "compact" | "regular";
   structureHash: string;
   constraintHash: string;
@@ -625,7 +625,8 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (import.meta.env.DEV &&
         (params.get("universalLayoutMock") === "1" ||
-          params.get("universalLayoutRelay") === "1")) {
+          params.get("universalLayoutRelay") === "1" ||
+          params.get("universalLayoutOpenAi") === "1")) {
       setMenuLayoutPlan(null);
       return;
     }
@@ -696,7 +697,9 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const mockMode = import.meta.env.DEV && params.get("universalLayoutMock") === "1";
     const centralMode = import.meta.env.DEV && params.get("universalLayoutRelay") === "1";
-    if (mockMode && centralMode) {
+    const centralAiMode = import.meta.env.DEV && params.get("universalLayoutOpenAi") === "1";
+    const selectedModes = [mockMode, centralMode, centralAiMode].filter(Boolean).length;
+    if (selectedModes > 1) {
       logMenuLayoutDiagnostic({
         phase: "plan_rejected",
         source: "universal_v1",
@@ -705,10 +708,11 @@ export default function App() {
       setUniversalMockLayout(null);
       return;
     }
-    const enabled = mockMode || centralMode;
-    const source = centralMode ? "central" : "universal_mock";
+    const enabled = mockMode || centralMode || centralAiMode;
+    const source = centralAiMode ? "central_ai" : centralMode ? "central" : "universal_mock";
     const requested = params.get("universalMockColumns") ?? "1";
-    if (!enabled || stage !== "menu" || (centralMode && activeProfile !== "central")) {
+    if (!enabled || stage !== "menu" ||
+        ((centralMode || centralAiMode) && activeProfile !== "central")) {
       setUniversalMockLayout(null);
       return;
     }
@@ -748,8 +752,10 @@ export default function App() {
     void (async () => {
       try {
         const response = await fetch(
-          centralMode
-            ? "/api/dev/universal-layout/plan"
+          centralMode || centralAiMode
+            ? centralAiMode
+              ? "/api/dev/universal-layout/openai-plan"
+              : "/api/dev/universal-layout/plan"
             : "/api/dev/universal-layout/mock-plan",
           {
           method: "POST",
@@ -867,7 +873,9 @@ export default function App() {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
             source,
-            reason: centralMode ? "central_relay_request_failed" : "local_mock_request_failed",
+            reason: centralMode || centralAiMode
+              ? "central_relay_request_failed"
+              : "local_mock_request_failed",
           });
         }
       }
@@ -947,12 +955,17 @@ export default function App() {
   useEffect(() => {
     if (stage !== "menu") return;
     const params = new URLSearchParams(window.location.search);
-    if (import.meta.env.DEV &&
-        (params.get("universalLayoutMock") === "1" ||
-          params.get("universalLayoutRelay") === "1")) {
+    const universalModes = [
+      params.get("universalLayoutMock") === "1",
+      params.get("universalLayoutRelay") === "1",
+      params.get("universalLayoutOpenAi") === "1",
+    ];
+    if (import.meta.env.DEV && universalModes.some(Boolean)) {
       logMenuLayoutDiagnostic({
         phase: "auto_trigger_skipped",
-        source: params.get("universalLayoutRelay") === "1" ? "central" : "universal_mock",
+        source: params.get("universalLayoutOpenAi") === "1"
+          ? "central_ai"
+          : params.get("universalLayoutRelay") === "1" ? "central" : "universal_mock",
         reason: "universal_v1_active",
         stageIsMenu: true,
         featureFlagEnabled: autoMenuLayoutEnabled,

@@ -40,6 +40,7 @@ try {
     if (message.method === "Network.requestWillBeSent") {
       const path = new URL(message.params.request.url).pathname;
       if (path === "/api/ai-layout/plan") centralPlanRequests += 1;
+      if (path === "/api/dev/universal-layout/openai-plan") centralPlanRequests += 1;
       if (path === "/api/dev/universal-layout/mock-plan") localMockRequests += 1;
     }
     if (!message.id) return;
@@ -180,6 +181,60 @@ try {
   assert.equal(centralModeSource, true, "React central relay mode applied the locally substituted plan");
   assert.equal((await grid()).menuV2Columns, null, "menu.v2 mock cannot override Universal relay mode");
 
+  await evaluate("sessionStorage.clear()");
+  await send("Page.navigate", {
+    url: `${appUrl}/?menuLayoutDiagnostics=1&universalLayoutOpenAi=1&mockCentralQrProfileForAiTest=standard`,
+  });
+  await until("Boolean(document.querySelector('#start-store'))", "OpenAI mode welcome screen");
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/openai-plan') return nativeFetch(input, init);
+      window.__openAiTestStarted = true;
+      const request = JSON.parse(init.body);
+      return nativeFetch('/api/dev/universal-layout/mock-plan', {
+        ...init,
+        body: JSON.stringify({ ...request, columns: 1 }),
+      });
+    };
+  })()`);
+  await evaluate("document.querySelector('#start-store').click()");
+  await waitForApplied(1, "central_ai");
+  assert.equal(await evaluate(
+    `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_validated' && e.source === 'central_ai')`,
+  ), true, "AI-selected endpoint uses the shared React apply path");
+
+  await evaluate("sessionStorage.clear()");
+  await send("Page.navigate", {
+    url: `${appUrl}/?menuLayoutDiagnostics=1&universalLayoutOpenAi=1&mockCentralQrProfileForAiTest=standard`,
+  });
+  await until("Boolean(document.querySelector('#start-store'))", "OpenAI stale-response screen");
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/openai-plan') return nativeFetch(input, init);
+      window.__openAiTestStarted = true;
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const request = JSON.parse(init.body);
+      return nativeFetch('/api/dev/universal-layout/mock-plan', {
+        ...init, signal: undefined,
+        body: JSON.stringify({ ...request, columns: 1 }),
+      });
+    };
+  })()`);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until("window.__openAiTestStarted === true", "fake AI request start");
+  await evaluate("document.querySelector('#menu-product-0').click()");
+  await until("Boolean(document.querySelector('#item-add'))", "screen transition during AI response");
+  await until(
+    `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'central_ai' && e.reason === 'stale_screen_or_model')`,
+    "stale AI plan rejection",
+  );
+  assert.equal(await evaluate("document.querySelector('.product-grid') === null"), true,
+    "stale AI plan did not reintroduce the menu layout after screen transition");
+
   await openMenu(390, 2);
   await waitForApplied(2);
   await evaluate("document.querySelector('#menu-product-0').click()");
@@ -205,6 +260,7 @@ try {
   console.log(JSON.stringify({
     regularOne, regularTwo, compactOne, compactRejected, accessibilityRejected,
     viewportCancelled, centralModeSource, screenCancelled, cartVerified,
+    openAiReactApplied: true, openAiStaleRejected: true,
     localMockRequests, centralPlanRequests,
   }, null, 2));
 } finally {

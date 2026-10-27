@@ -61,6 +61,7 @@ if (process.env.NODE_ENV === "development") {
     await import("./server/universal-layout-v1/relay-route.mjs");
   registerUniversalLayoutMockRoute(app);
   registerUniversalLayoutRelayRoute(app);
+  registerUniversalLayoutRelayRoute(app, { mode: "openai" });
 }
 
 if (process.env.NODE_ENV === "production") {

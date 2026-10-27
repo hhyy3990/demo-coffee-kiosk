@@ -48,7 +48,7 @@ function normalizedContentType(response) {
     : null;
 }
 
-function buildPlanUrl(base, externalToken) {
+function buildPlanUrl(base, externalToken, endpointPath) {
   if (typeof base !== "string" || base.length > 512 || !validToken(externalToken)) return null;
   try {
     const url = new URL(base);
@@ -56,7 +56,7 @@ function buildPlanUrl(base, externalToken) {
         url.hostname === "naebangsikqr.replit.app" ||
         (url.port && url.port !== "443") || url.username || url.password ||
         url.pathname !== "/" || url.search || url.hash) return null;
-    const endpoint = new URL("/api/dev/universal-layout/plan", url.origin);
+    const endpoint = new URL(endpointPath, url.origin);
     endpoint.searchParams.set("project-protection-bypass", externalToken);
     return endpoint.toString();
   } catch {
@@ -121,18 +121,36 @@ export function registerUniversalLayoutRelayRoute(app, {
   fetchImpl = globalThis.fetch,
   now = Date.now,
   logger = (line) => console.info(line),
+  mode = "mock",
 } = {}) {
   if (env.NODE_ENV !== "development") return;
+  if (mode !== "mock" && mode !== "openai") throw new Error("INVALID_UNIVERSAL_RELAY_MODE");
+  const endpointPath = mode === "openai"
+    ? "/api/dev/universal-layout/openai-plan"
+    : "/api/dev/universal-layout/plan";
+  const enabledEnv = mode === "openai"
+    ? "UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED"
+    : "UNIVERSAL_LAYOUT_RELAY_ENABLED";
+  const conflictingEnv = mode === "openai"
+    ? "UNIVERSAL_LAYOUT_RELAY_ENABLED"
+    : "UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED";
   const inFlight = new Map();
   const resultCache = new Map();
-  app.post("/api/dev/universal-layout/plan", parseJsonBody, async (req, res) => {
+  app.post(endpointPath, parseJsonBody, async (req, res) => {
     const localRequestId = randomUUID();
     res.setHeader("X-Request-ID", localRequestId);
     res.setHeader("Cache-Control", "no-store");
     const log = (stage, details = {}) => {
-      logger(JSON.stringify({ event: "universal-layout-relay", localRequestId, stage, ...details }));
+      logger(JSON.stringify({
+        event: "universal-layout-relay",
+        mode,
+        localRequestId,
+        stage,
+        ...details,
+      }));
     };
-    if (env.NODE_ENV !== "development" || env.UNIVERSAL_LAYOUT_RELAY_ENABLED !== "true") {
+    if (env.NODE_ENV !== "development" || env[enabledEnv] !== "true" ||
+        env[conflictingEnv] === "true") {
       log("relay_disabled", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_DISABLED" });
     }
@@ -143,7 +161,7 @@ export function registerUniversalLayoutRelayRoute(app, {
     }
     const externalToken = env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN;
     const serviceToken = env.AI_LAYOUT_SERVICE_TOKEN;
-    const url = buildPlanUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken);
+    const url = buildPlanUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken, endpointPath);
     if (!url || !validToken(serviceToken) || typeof fetchImpl !== "function") {
       log("relay_unconfigured", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_NOT_CONFIGURED" });
