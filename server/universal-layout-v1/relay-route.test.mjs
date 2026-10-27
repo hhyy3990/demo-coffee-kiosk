@@ -90,8 +90,11 @@ test("relay forwards only the validated Universal model and accepts a valid cent
       calls += 1;
       const parsedUrl = new URL(url);
       assert.equal(parsedUrl.pathname, "/api/dev/universal-layout/plan");
+      assert.equal(request.method, "POST");
+      assert.deepEqual([...parsedUrl.searchParams.keys()], ["project-protection-bypass"]);
       assert.equal(parsedUrl.searchParams.get("project-protection-bypass"), env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN);
       assert.equal(request.headers.Authorization, `Bearer ${env.AI_LAYOUT_SERVICE_TOKEN}`);
+      assert.equal(request.redirect, "error");
       const sentPayload = JSON.parse(request.body);
       assert.deepEqual(Object.keys(sentPayload), ["model"]);
       const sentModel = sentPayload.model;
@@ -116,6 +119,29 @@ test("relay forwards only the validated Universal model and accepts a valid cent
     assert.equal(logText.includes(env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN), false);
     assert.equal(logText.includes(env.AI_LAYOUT_SERVICE_TOKEN), false);
     assert.equal(logText.includes("central-mock.replit.dev"), false);
+  });
+});
+
+test("central HTML 404 is classified without exposing response or credentials", async () => {
+  const privateBody = "<html>private protection page</html>";
+  await withServer({
+    fetchImpl: async () => new Response(privateBody, {
+      status: 404,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    }),
+  }, async (origin, logs) => {
+    const response = await post(origin);
+    const payload = await response.json();
+    assert.equal(response.status, 502);
+    assert.equal(payload.error, "UPSTREAM_HTTP_ERROR");
+    const logText = logs.join("\n");
+    assert.ok(logText.includes('"centralStatus":404'));
+    assert.ok(logText.includes('"centralContentType":"text/html"'));
+    assert.ok(logText.includes('"failureClass":"central_http_error"'));
+    assert.equal(logText.includes(privateBody), false);
+    assert.equal(logText.includes(env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN), false);
+    assert.equal(logText.includes(env.AI_LAYOUT_SERVICE_TOKEN), false);
+    assert.equal(logText.includes(env.AI_LAYOUT_CENTRAL_URL), false);
   });
 });
 
