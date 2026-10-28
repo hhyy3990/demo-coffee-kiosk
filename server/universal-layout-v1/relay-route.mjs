@@ -74,7 +74,7 @@ function parseJsonBody(req, res, next) {
   );
 }
 
-async function readPlan(response) {
+async function readCentralPlan(response) {
   const length = Number(response.headers.get("content-length"));
   if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) throw new Error("RESPONSE_TOO_LARGE");
   if (!response.body) throw new Error("EMPTY_RESPONSE");
@@ -210,7 +210,7 @@ export function registerUniversalLayoutRelayRoute(app, {
         }
         let plan;
         try {
-          plan = await readPlan(response);
+          plan = await readCentralPlan(response);
           validateUniversalLayoutPlan(plan, model, policies);
         } catch {
           const error = new Error("UPSTREAM_PLAN_INVALID");

@@ -84,7 +84,7 @@ async function post(origin, body = input, path = "/api/dev/universal-layout/plan
   });
 }
 
-test("relay forwards only the validated Universal model and accepts a valid central one-column plan", async () => {
+test("Mock relay accepts a top-level central plan and returns the local model-plan envelope", async () => {
   let calls = 0;
   await withServer({
     fetchImpl: async (url, request) => {
@@ -187,23 +187,6 @@ test("OpenAI relay rejects an invalid plan and coalesces duplicate requests", as
     UNIVERSAL_LAYOUT_RELAY_ENABLED: "false",
     UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED: "true",
   };
-  const invalidPlan = makePlan(input, (plan) => ({
-    ...plan,
-    constraintHash: "0".repeat(64),
-  }));
-  await withServer({
-    mode: "openai",
-    env: openAiEnv,
-    fetchImpl: async () => new Response(JSON.stringify(invalidPlan), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  }, async (origin) => {
-    const response = await post(origin, input, "/api/dev/universal-layout/openai-plan");
-    assert.equal(response.status, 502);
-    assert.equal((await response.json()).error, "UPSTREAM_PLAN_INVALID");
-  });
-
   let calls = 0;
   await withServer({
     mode: "openai",
@@ -258,6 +241,35 @@ test("OpenAI relay rejects a two-column plan under the large-text accessibility 
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "UPSTREAM_PLAN_INVALID");
   });
+});
+
+test("Mock and OpenAI relays reject central model-plan envelopes", async () => {
+  for (const mode of ["mock", "openai"]) {
+    const modeEnv = {
+      ...env,
+      UNIVERSAL_LAYOUT_RELAY_ENABLED: mode === "mock" ? "true" : "false",
+      UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED: mode === "openai" ? "true" : "false",
+    };
+    const centralEnvelope = {
+      model: makeModel(),
+      plan: makePlan(),
+    };
+    await withServer({
+      mode,
+      env: modeEnv,
+      fetchImpl: async () => new Response(JSON.stringify(centralEnvelope), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    }, async (origin) => {
+      const path = mode === "openai"
+        ? "/api/dev/universal-layout/openai-plan"
+        : "/api/dev/universal-layout/plan";
+      const response = await post(origin, input, path);
+      assert.equal(response.status, 502);
+      assert.equal((await response.json()).error, "UPSTREAM_PLAN_INVALID");
+    });
+  }
 });
 
 test("OpenAI relay blocks when its gate is off or Mock relay is enabled", async () => {
@@ -327,19 +339,31 @@ test("relay rejects wrong hashes, wrong screens, and policy-disallowed plans", a
       operations: [{ ...plan.operations[0], columns: 6 }],
     })),
   ];
-  for (const invalidPlan of plans) {
-    await withServer({
-      fetchImpl: async () => new Response(JSON.stringify(invalidPlan), {
-        status: 200,
-        headers: { "Content-Type": "application/json", "X-Request-ID": "central-invalid-456" },
-      }),
-    }, async (origin, logs) => {
-      const response = await post(origin);
-      const payload = await response.json();
-      assert.equal(response.status, 502);
-      assert.equal(payload.error, "UPSTREAM_PLAN_INVALID");
-      assert.ok(logs.some((line) => line.includes('"centralStatus":200')));
-    });
+  for (const mode of ["mock", "openai"]) {
+    for (const invalidPlan of plans) {
+      const modeEnv = {
+        ...env,
+        UNIVERSAL_LAYOUT_RELAY_ENABLED: mode === "mock" ? "true" : "false",
+        UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED: mode === "openai" ? "true" : "false",
+      };
+      await withServer({
+        mode,
+        env: modeEnv,
+        fetchImpl: async () => new Response(JSON.stringify(invalidPlan), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "X-Request-ID": "central-invalid-456" },
+        }),
+      }, async (origin, logs) => {
+        const path = mode === "openai"
+          ? "/api/dev/universal-layout/openai-plan"
+          : "/api/dev/universal-layout/plan";
+        const response = await post(origin, input, path);
+        const payload = await response.json();
+        assert.equal(response.status, 502);
+        assert.equal(payload.error, "UPSTREAM_PLAN_INVALID");
+        assert.ok(logs.some((line) => line.includes('"centralStatus":200')));
+      });
+    }
   }
 });
 
