@@ -63,6 +63,12 @@ type UniversalMockLayout = {
   structureHash: string;
   constraintHash: string;
 };
+type UniversalV2Preset = {
+  optionId: "compact-grid";
+  structureHash: string;
+  constraintHash: string;
+  viewportClass: "compact" | "regular" | "wide";
+};
 
 function modelViewportWidthFor(actualWidth: number): number {
   return actualWidth <= 380 ? 360 : 390;
@@ -213,6 +219,7 @@ export default function App() {
   const lastMenuLayoutDiagnosticRef = useRef<string | null>(null);
   const [optionLayoutPlan, setOptionLayoutPlan] = useState<ValidatedOptionLayout | null>(null);
   const [universalMockLayout, setUniversalMockLayout] = useState<UniversalMockLayout | null>(null);
+  const [universalV2Preset, setUniversalV2Preset] = useState<UniversalV2Preset | null>(null);
   const universalMockLayoutRef = useRef<UniversalMockLayout | null>(null);
   universalMockLayoutRef.current = universalMockLayout;
   const lastOptionLayoutDiagnosticRef = useRef<string | null>(null);
@@ -695,10 +702,217 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const enabled = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
+    const conflictingV1Mode = [
+      "universalLayoutMock",
+      "universalLayoutRelay",
+      "universalLayoutOpenAi",
+    ].some((key) => params.get(key) === "1");
+    if (!enabled || stage !== "menu" || conflictingV1Mode) {
+      setUniversalV2Preset(null);
+      if (enabled && conflictingV1Mode) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_rejected",
+          source: "universal_v2_mock",
+          reason: "conflicting_universal_modes",
+        });
+      }
+      return;
+    }
+
+    const viewportClass = window.innerWidth <= 380
+      ? "compact" as const
+      : window.innerWidth <= 1100 ? "regular" as const : "wide" as const;
+    const orderedItemIds = currentProducts.map((product) => product.id);
+    const accessibility = {
+      textScale: preferences.textSize,
+      buttonScale: preferences.buttonSize,
+      contrast: preferences.contrast,
+      viewportMode: preferences.viewportMode
+        ? { mode: "bottom" as const, heightPercent: preferences.viewportMode.heightPercent }
+        : null,
+    };
+    const snapshot = JSON.stringify({
+      stage,
+      activeProfile,
+      viewportWidth: window.innerWidth,
+      viewportClass,
+      accessibility,
+      orderedItemIds,
+    });
+    let cancelled = false;
+    const controller = new AbortController();
+    const cancelForResize = () => {
+      cancelled = true;
+      controller.abort();
+      setUniversalV2Preset(null);
+    };
+    window.addEventListener("resize", cancelForResize, { once: true, passive: true });
+    setUniversalV2Preset(null);
+    logMenuLayoutDiagnostic({
+      phase: "request_started",
+      source: "universal_v2_mock",
+      viewportClass,
+      viewportWidth: window.innerWidth,
+      itemCount: orderedItemIds.length,
+    });
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/dev/universal-layout/v2/mock-plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ viewportClass, accessibility, orderedItemIds }),
+          credentials: "same-origin",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok || !payload || typeof payload !== "object") {
+          const error = payload && typeof payload === "object" && "error" in payload &&
+            typeof payload.error === "string" ? payload.error : "universal_v2_response_invalid";
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_v2_mock",
+            reason: error,
+            status: response.status,
+          });
+          return;
+        }
+        const result = payload as {
+          model?: Record<string, unknown>;
+          plan?: Record<string, unknown>;
+        };
+        const model = result.model;
+        const plan = result.plan;
+        const components = model?.components;
+        const component = Array.isArray(components)
+          ? components[0] as Record<string, unknown> | undefined
+          : undefined;
+        const groups = component?.optionGroups;
+        const arrangement = Array.isArray(groups)
+          ? groups.find((group) => group && typeof group === "object" &&
+            "id" in group && group.id === "arrangement") as Record<string, unknown> | undefined
+          : undefined;
+        const operations = plan?.operations;
+        const operation = Array.isArray(operations)
+          ? operations[0] as Record<string, unknown> | undefined
+          : undefined;
+        const metadataMatches = model?.schemaVersion === 2 &&
+          model.contractVersion === "universal-layout.v2" &&
+          model.hostId === "democoffee" &&
+          model.screenId === "cafe.menu" &&
+          model.structureVersion === "menu.v2" &&
+          model.viewportClass === viewportClass &&
+          model.accessibility && JSON.stringify(model.accessibility) === JSON.stringify(accessibility) &&
+          model.layoutCapabilities && Array.isArray(model.layoutCapabilities) &&
+          model.layoutCapabilities.length === 0 &&
+          typeof model.structureHash === "string" && /^[a-f0-9]{64}$/.test(model.structureHash) &&
+          typeof model.constraintHash === "string" && /^[a-f0-9]{64}$/.test(model.constraintHash) &&
+          component?.id === "menu.product-list" &&
+          component.itemCount === orderedItemIds.length &&
+          typeof component.itemOrderHash === "string" &&
+          /^[a-f0-9]{64}$/.test(component.itemOrderHash) &&
+          Array.isArray(component.operations) && component.operations.includes("selectLayoutOption") &&
+          Array.isArray(arrangement?.optionIds) &&
+          arrangement.optionIds.includes("compact-grid") &&
+          Array.isArray(model.allowedOperations) && model.allowedOperations.includes("selectLayoutOption") &&
+          plan?.schemaVersion === model.schemaVersion &&
+          plan.contractVersion === model.contractVersion &&
+          plan.hostId === model.hostId &&
+          plan.screenId === model.screenId &&
+          plan.structureVersion === model.structureVersion &&
+          plan.structureHash === model.structureHash &&
+          plan.constraintHash === model.constraintHash &&
+          plan.viewportClass === model.viewportClass &&
+          Array.isArray(operations) && operations.length === 1 &&
+          operation?.type === "selectLayoutOption" &&
+          operation.targetId === "menu.product-list" &&
+          operation.groupId === "arrangement" &&
+          operation.optionId === "compact-grid" &&
+          Object.keys(operation).sort().join(",") === "groupId,optionId,targetId,type" &&
+          Object.keys(plan).sort().join(",") ===
+            "constraintHash,contractVersion,hostId,operations,schemaVersion,screenId,structureHash,structureVersion,viewportClass" &&
+          Object.keys(model).sort().join(",") ===
+            "accessibility,allowedOperations,components,constraintHash,contractVersion,hostId,layoutCapabilities,schemaVersion,screenId,structureHash,structureVersion,viewportClass";
+        const currentProductIds = Array.from(document.querySelectorAll(
+          '[data-menu-layout-id="menu.product-card"]',
+        )).map((card) => card.getAttribute("data-menu-product-id"));
+        if (!metadataMatches) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_v2_mock",
+            reason: "response_model_plan_mismatch",
+          });
+          return;
+        }
+        if (cancelled || JSON.stringify(currentProductIds) !== JSON.stringify(orderedItemIds) ||
+            document.querySelectorAll('[data-menu-layout-id="menu.product-list"]').length !== 1 ||
+            JSON.stringify({
+              stage,
+              activeProfile,
+              viewportWidth: window.innerWidth,
+              viewportClass: window.innerWidth <= 380
+                ? "compact"
+                : window.innerWidth <= 1100 ? "regular" : "wide",
+              accessibility: {
+                textScale: preferences.textSize,
+                buttonScale: preferences.buttonSize,
+                contrast: preferences.contrast,
+                viewportMode: preferences.viewportMode
+                  ? { mode: "bottom", heightPercent: preferences.viewportMode.heightPercent }
+                  : null,
+              },
+              orderedItemIds: currentProducts.map((product) => product.id),
+            }) !== snapshot) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_v2_mock",
+            reason: "stale_screen_or_model",
+          });
+          return;
+        }
+        logMenuLayoutDiagnostic({
+          phase: "plan_validated",
+          source: "universal_v2_mock",
+          optionId: "compact-grid",
+          viewportClass,
+        });
+        logMenuLayoutDiagnostic({
+          phase: "react_state_update_requested",
+          source: "universal_v2_mock",
+          optionId: "compact-grid",
+        });
+        setUniversalV2Preset({
+          optionId: "compact-grid",
+          structureHash: model.structureHash as string,
+          constraintHash: model.constraintHash as string,
+          viewportClass,
+        });
+      } catch (error) {
+        if (!cancelled && !(error instanceof DOMException && error.name === "AbortError")) {
+          logMenuLayoutDiagnostic({
+            phase: "plan_rejected",
+            source: "universal_v2_mock",
+            reason: "local_mock_request_failed",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.removeEventListener("resize", cancelForResize);
+    };
+  }, [stage, viewportWidth, preferences, universalItemIdsKey, activeProfile]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
     const mockMode = import.meta.env.DEV && params.get("universalLayoutMock") === "1";
     const centralMode = import.meta.env.DEV && params.get("universalLayoutRelay") === "1";
     const centralAiMode = import.meta.env.DEV && params.get("universalLayoutOpenAi") === "1";
-    const selectedModes = [mockMode, centralMode, centralAiMode].filter(Boolean).length;
+    const v2Mode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
+    const selectedModes = [mockMode, centralMode, centralAiMode, v2Mode].filter(Boolean).length;
     if (selectedModes > 1) {
       logMenuLayoutDiagnostic({
         phase: "plan_rejected",
@@ -959,6 +1173,7 @@ export default function App() {
       params.get("universalLayoutMock") === "1",
       params.get("universalLayoutRelay") === "1",
       params.get("universalLayoutOpenAi") === "1",
+      params.get("universalLayoutV2Mock") === "1",
     ];
     if (import.meta.env.DEV && universalModes.some(Boolean)) {
       logMenuLayoutDiagnostic({
@@ -1713,6 +1928,7 @@ export default function App() {
                     data-menu-count={currentProducts.length}
                     data-ai-columns={menuLayoutPlan?.columns ?? undefined}
                     data-universal-columns={universalMockLayout?.columns ?? undefined}
+                    data-universal-v2-option={universalV2Preset?.optionId ?? undefined}
                     data-ai-card-flow={menuLayoutPlan?.gapPx !== null && menuLayoutPlan?.gapPx !== undefined ? "row" : undefined}
                     style={menuLayoutPlan ? {
                       ...(menuLayoutPlan.gapPx !== null ? { "--menu-ai-card-gap": `${menuLayoutPlan.gapPx}px` } : {}),
@@ -1726,6 +1942,7 @@ export default function App() {
                         <article
                           className="product-card"
                           data-menu-layout-id="menu.product-card"
+                          data-menu-product-id={product.id}
                           data-a11y-highlight-container
                           data-menu-index={index}
                           key={product.id}

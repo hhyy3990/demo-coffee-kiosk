@@ -30,3 +30,9 @@ OpenAI relay coalescing keys the complete validated model, not only selected has
 **Why:** Two browser-local requests do not establish the number of central calls; distinct models must remain separate, while duplicate OpenAI attempts need a hard cost limit.
 
 **How to apply:** Keep the OpenAI gate OFF outside an authorized test, capture `central_upstream_started` events before restarting, and set a higher cap only for isolated Development tests.
+
+Universal v2's copied central validator is a contract implementation, not proof that a host policy is centrally registered or approved. DemoCoffee's compact-grid conformance policy is Development-only and locally owned; do not represent it as central registration or enable a relay based on it.
+
+**Why:** The central v2 handoff explicitly labels the compact-grid fixture as test-only and has no registered DemoCoffee endpoint or provider.
+
+**How to apply:** Use the exact v2 schema, hash, and validators for local Fake plans; keep production routes and claims of central approval disabled until an authoritative registration exists.

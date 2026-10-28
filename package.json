@@ -13,10 +13,12 @@
     "test:menu-layout-diagnostics-browser": "node scripts/test-menu-layout-diagnostics-browser.mjs",
     "test:option-layout-browser": "node scripts/test-option-layout-browser.mjs",
     "test:universal-layout-browser": "node scripts/test-universal-layout-browser.mjs",
+    "test:universal-layout-v2": "tsx --test server/universal-layout-v2/mock-route.test.mjs",
+    "test:universal-layout-v2-browser": "node scripts/test-universal-layout-v2-browser.mjs",
     "health:development": "NODE_ENV=development node scripts/check-central-health.mjs",
     "start": "NODE_ENV=production node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs src/menuLayoutPlan.test.mjs src/accessibility/optionLayoutPlan.test.mjs src/accessibility/autoMenuLayout.test.mjs src/accessibility/menuLayoutDiagnostics.test.mjs server/ai-layout-relay.test.mjs server/central-health-diagnostics.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs && npm run test:universal-layout",
+    "test": "node --experimental-strip-types --test src/smartGuide.test.mjs src/menuLayoutPlan.test.mjs src/accessibility/optionLayoutPlan.test.mjs src/accessibility/autoMenuLayout.test.mjs src/accessibility/menuLayoutDiagnostics.test.mjs server/ai-layout-relay.test.mjs server/central-health-diagnostics.test.mjs packages/kiosk-accessibility-sdk/test/*.test.mjs && npm run test:universal-layout && npm run test:universal-layout-v2",
     "test:universal-layout": "tsx --test server/universal-layout-v1/universal-layout-contract.test.ts server/universal-layout-v1/mock-route.test.mjs server/universal-layout-v1/relay-route.test.mjs",
     "test:smart-guide": "node --experimental-strip-types --test src/smartGuide.test.mjs packages/kiosk-accessibility-sdk/test/guide.test.mjs"
   },

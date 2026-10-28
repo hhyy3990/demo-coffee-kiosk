@@ -1,0 +1,245 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const chromiumPath = process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium";
+const appUrl = process.env.DEMOCOFFEE_URL || "http://127.0.0.1:5000";
+const debugPort = 49800 + (process.pid % 150);
+const userData = await mkdtemp(join(tmpdir(), "democoffee-universal-v2-"));
+const browser = spawn(chromiumPath, [
+  "--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+  `--remote-debugging-port=${debugPort}`, `--user-data-dir=${userData}`, "about:blank",
+], { stdio: "ignore", detached: true });
+const browserExit = new Promise((resolve) => browser.once("exit", resolve));
+let socket;
+
+try {
+  let target;
+  for (let i = 0; i < 120; i += 1) {
+    try {
+      target = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`))
+        .json()).find((entry) => entry.type === "page");
+      if (target) break;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(target, "Chromium did not start");
+  socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  let requestId = 0;
+  let centralRequests = 0;
+  let v2MockRequests = 0;
+  const pending = new Map();
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data));
+    if (message.method === "Network.requestWillBeSent") {
+      const path = new URL(message.params.request.url).pathname;
+      if (path === "/api/ai-layout/plan" ||
+          path === "/api/dev/universal-layout/plan" ||
+          path === "/api/dev/universal-layout/openai-plan") centralRequests += 1;
+      if (path === "/api/dev/universal-layout/v2/mock-plan") v2MockRequests += 1;
+    }
+    if (!message.id) return;
+    const waiter = pending.get(message.id);
+    if (!waiter) return;
+    pending.delete(message.id);
+    message.error ? waiter.reject(new Error(message.error.message)) : waiter.resolve(message.result);
+  });
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++requestId;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async (expression) => {
+    const result = await send("Runtime.evaluate", {
+      expression, awaitPromise: true, returnByValue: true,
+    });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    return result.result?.value;
+  };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const until = async (predicate, label) => {
+    for (let i = 0; i < 120; i += 1) {
+      if (await evaluate(predicate)) return;
+      await wait(50);
+    }
+    throw new Error(`Timed out: ${label}`);
+  };
+  const visit = async (query, width = 1280) => {
+    try { await evaluate("sessionStorage.clear()"); } catch {}
+    await send("Emulation.setDeviceMetricsOverride", {
+      width, height: 900, deviceScaleFactor: 1, mobile: width <= 700,
+      screenWidth: width, screenHeight: 900,
+    });
+    await send("Page.navigate", { url: `${appUrl}/${query}` });
+    await until("Boolean(document.querySelector('#start-store'))", "welcome screen");
+  };
+  await send("Runtime.enable");
+  await send("Network.enable");
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
+  await evaluate("document.querySelector('#start-store').click()");
+  await until(
+    `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+    "compact-grid React state",
+  );
+  const applied = await evaluate(`(() => {
+    const grid = document.querySelector('.product-grid');
+    const card = grid?.querySelector('.product-card');
+    const button = card?.querySelector('button');
+    return {
+      option: grid?.dataset.universalV2Option ?? null,
+      gap: getComputedStyle(grid).gap,
+      imageHeight: getComputedStyle(card?.querySelector('.product-art')).height,
+      buttonMinHeight: getComputedStyle(button).minHeight,
+      productIds: Array.from(grid.querySelectorAll('.product-card')).map(el => el.dataset.menuProductId),
+      names: Array.from(grid.querySelectorAll('[data-menu-layout-id="menu.product-name"] h3')).map(el => el.textContent),
+    };
+  })()`);
+  assert.equal(applied.option, "compact-grid");
+  assert.equal(applied.gap, "10px");
+  assert.equal(applied.imageHeight, "118px");
+  assert.equal(applied.buttonMinHeight, "44px");
+  assert.deepEqual(applied.productIds, [
+    "americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea",
+  ]);
+  assert.equal(applied.names.length, 5);
+  await evaluate("document.querySelector('#menu-product-0').click()");
+  await until("Boolean(document.querySelector('#item-add'))", "product options");
+  await evaluate("document.querySelector('#item-add').click()");
+  await until("Boolean(document.querySelector('#menu-order-confirm'))", "menu after adding");
+  await evaluate("document.querySelector('#menu-order-confirm').click()");
+  await until("Boolean(document.querySelector('#cart-pay'))", "cart screen");
+  const cartVerified = await evaluate(
+    `document.body.innerText.includes('아메리카노') && document.body.innerText.includes('4,200원')`,
+  );
+  assert.equal(cartVerified, true, "selected product and price reached the cart");
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", 390);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until(
+    `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+    "compact-grid at narrow regular viewport",
+  );
+  const narrowRegular = await evaluate(`(() => {
+    const grid = document.querySelector('.product-grid');
+    return {
+      gap: getComputedStyle(grid).gap,
+      imageHeight: getComputedStyle(grid.querySelector('.product-art')).height,
+      buttonMinHeight: getComputedStyle(grid.querySelector('.product-card button')).minHeight,
+    };
+  })()`);
+  assert.deepEqual(narrowRegular, {
+    gap: "10px", imageHeight: "104px", buttonMinHeight: "44px",
+  });
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", 360);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until(
+    `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+    "compact-grid at compact viewport",
+  );
+  const compactViewport = await evaluate(`(() => ({
+    columns: getComputedStyle(document.querySelector('.product-grid')).gridTemplateColumns,
+    gap: getComputedStyle(document.querySelector('.product-grid')).gap,
+    imageHeight: getComputedStyle(document.querySelector('.product-art')).height,
+    buttonMinHeight: getComputedStyle(document.querySelector('.product-card button')).minHeight,
+  }))()`);
+  assert.equal(compactViewport.columns.split(/\\s+/).filter(Boolean).length, 1);
+  assert.equal(compactViewport.gap, "10px");
+  assert.equal(Number.parseFloat(compactViewport.buttonMinHeight) >= 44, true);
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&mockCentralQrProfileForAiTest=large");
+  await evaluate("document.querySelector('#start-store').click()");
+  await until("Boolean(document.querySelector('.product-grid .product-card'))", "large-text menu");
+  await wait(350);
+  const largeText = await evaluate(`(() => ({
+    option: document.querySelector('.product-grid')?.dataset.universalV2Option ?? null,
+    gap: getComputedStyle(document.querySelector('.product-grid')).gap,
+    columns: getComputedStyle(document.querySelector('.product-grid')).gridTemplateColumns,
+  }))()`);
+  assert.equal(largeText.option, null, "large-text profile removes the preset");
+  assert.equal(largeText.gap, "14px", "baseline spacing is restored");
+
+  const runMutatedPlan = async (mutation, expectedLabel) => {
+    await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
+    await evaluate(`(() => {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (input, init = {}) => {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (url.pathname !== '/api/dev/universal-layout/v2/mock-plan') return nativeFetch(input, init);
+        const response = await nativeFetch(input, init);
+        const payload = await response.json();
+        ${mutation}
+        return new Response(JSON.stringify(payload), {
+          status: response.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+    })()`);
+    await evaluate("document.querySelector('#start-store').click()");
+    await until(
+      `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'universal_v2_mock' && e.reason === 'response_model_plan_mismatch')`,
+      expectedLabel,
+    );
+    assert.equal(
+      await evaluate("document.querySelector('.product-grid')?.dataset.universalV2Option ?? null"),
+      null,
+    );
+  };
+  await runMutatedPlan(
+    "payload.plan.operations[0].optionId = 'unregistered-grid';",
+    "unregistered option rejection",
+  );
+  await runMutatedPlan(
+    "payload.plan.constraintHash = '0'.repeat(64);",
+    "hash mismatch rejection",
+  );
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/v2/mock-plan') return nativeFetch(input, init);
+      window.__v2FakePending = true;
+      await new Promise(resolve => setTimeout(resolve, 350));
+      return nativeFetch(input, { ...init, signal: undefined });
+    };
+  })()`);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until("window.__v2FakePending === true", "delayed fake plan");
+  await evaluate("document.querySelector('#menu-product-0').click()");
+  await until("Boolean(document.querySelector('#item-add'))", "screen transition");
+  await wait(500);
+  assert.equal(await evaluate("document.querySelector('.product-grid') === null"), true);
+  const staleRejected = await evaluate(
+    `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'universal_v2_mock' && e.reason === 'stale_screen_or_model')`,
+  );
+  assert.equal(staleRejected, true, "late response is rejected after screen change");
+  assert.equal(centralRequests, 0, "no relay or OpenAI endpoints were called");
+  assert.ok(v2MockRequests >= 5, "only the local v2 Fake endpoint was used");
+  console.log(JSON.stringify({
+    applied, narrowRegular, compactViewport,
+    cartVerified,
+    largeText,
+    invalidOptionRejected: true,
+    hashMismatchRejected: true,
+    staleRejected,
+    centralRequests,
+    v2MockRequests,
+  }, null, 2));
+} finally {
+  socket?.close();
+  try { process.kill(-browser.pid, "SIGTERM"); } catch {}
+  await Promise.race([
+    browserExit,
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+  await rm(userData, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
+}

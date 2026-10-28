@@ -261,6 +261,10 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .product-grid[data-menu-layout-id="menu.product-list"][data-ai-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .product-grid[data-menu-layout-id="menu.product-list"][data-universal-columns="1"] { grid-template-columns:minmax(0,1fr); }
 .product-grid[data-menu-layout-id="menu.product-list"][data-universal-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.product-grid[data-universal-v2-option="compact-grid"] { gap:10px; }
+.product-grid[data-universal-v2-option="compact-grid"] .product-card > button { min-height:44px; }
+.product-grid[data-universal-v2-option="compact-grid"] .product-art { height:118px; }
+.product-grid[data-universal-v2-option="compact-grid"] .product-meta { padding:12px; }
 .product-grid[data-menu-layout-id="menu.product-list"][data-ai-card-flow="row"] [data-menu-layout-id="menu.product-card"] > button {
   display:grid;
   grid-template-columns:minmax(var(--menu-ai-image-min, 76px),var(--menu-ai-image-basis, 25%)) minmax(0,1fr);
@@ -462,6 +466,7 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .category-button.active { box-shadow:inset 0 -3px 0 var(--accent); }
   .product-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
   .kiosk.a11y-text-large .product-grid, .kiosk.a11y-text-extra .product-grid, .kiosk.a11y-controls-large .product-grid { grid-template-columns:minmax(0,1fr); }
+  .product-grid[data-universal-v2-option="compact-grid"] .product-art { height:104px; }
   .product-art { height:112px; }
   .product-meta { padding:12px; }
   .product-name-row { display:block; }
@@ -494,6 +499,7 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .product-card { display:block; }
   .product-card > button { display:grid;grid-template-columns:minmax(92px,30%) minmax(0,1fr);align-items:stretch; }
   .product-art { height:auto;min-height:138px; }
+  .product-grid[data-universal-v2-option="compact-grid"] .product-art { height:auto;min-height:138px; }
   .product-meta { min-width:0;padding:11px; }
   .qr-modal { padding:18px; }
   .qr-camera-panel { padding:10px; }
