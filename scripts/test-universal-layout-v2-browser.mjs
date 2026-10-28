@@ -138,6 +138,40 @@ try {
     gap: "10px", imageHeight: "104px", buttonMinHeight: "44px",
   });
 
+  for (const [width, expectedClass] of [[1080, "regular"], [1200, "wide"]]) {
+    await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", width);
+    await evaluate("document.querySelector('#start-store').click()");
+    await until(
+      `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+      `compact-grid at ${expectedClass} viewport`,
+    );
+    const viewportEvidence = await evaluate(`(() => {
+      const grid = document.querySelector('.product-grid');
+      const cards = Array.from(grid.querySelectorAll('.product-card'));
+      const boxes = cards.map(card => card.getBoundingClientRect());
+      const hasOverlaps = boxes.some((box, index) => boxes.slice(index + 1).some(other =>
+        box.left < other.right && box.right > other.left &&
+        box.top < other.bottom && box.bottom > other.top));
+      return {
+        viewportWidth: window.innerWidth,
+        viewportClass: (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+          .findLast(event => event.phase === 'plan_validated' && event.source === 'universal_v2_mock')
+          ?.viewportClass ?? null,
+        documentWidth: document.documentElement.scrollWidth,
+        cardCount: cards.length,
+        hasOverlaps,
+        buttonMinimumHeight: Math.min(...cards.map(card =>
+          Number.parseFloat(getComputedStyle(card.querySelector('button')).minHeight))),
+      };
+    })()`);
+    assert.equal(viewportEvidence.viewportWidth, width);
+    assert.equal(viewportEvidence.viewportClass, expectedClass);
+    assert.ok(viewportEvidence.documentWidth <= width, `${width}px layout has no horizontal overflow`);
+    assert.equal(viewportEvidence.cardCount, 5);
+    assert.equal(viewportEvidence.hasOverlaps, false);
+    assert.ok(viewportEvidence.buttonMinimumHeight >= 44);
+  }
+
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", 360);
   await evaluate("document.querySelector('#start-store').click()");
   await until(
@@ -165,6 +199,46 @@ try {
   }))()`);
   assert.equal(largeText.option, null, "large-text profile removes the preset");
   assert.equal(largeText.gap, "14px", "baseline spacing is restored");
+
+  const accessibilityProfiles = [
+    { profile: "large-text", selector: ".a11y-text-large", textSize: "large", buttonSize: "standard" },
+    { profile: "buttons", selector: ".a11y-controls-large", textSize: "standard", buttonSize: "large" },
+    { profile: "large-text-buttons", selector: ".a11y-text-large.a11y-controls-large", textSize: "large", buttonSize: "large" },
+  ];
+  for (const item of accessibilityProfiles) {
+    await visit(
+      `?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&poc-profile=${item.profile}`,
+      390,
+    );
+    await until(
+      `document.querySelector('.kiosk')?.matches('${item.selector}')`,
+      `${item.profile} accessibility profile`,
+    );
+    await evaluate("document.querySelector('#start-store').click()");
+    await until("Boolean(document.querySelector('.product-grid .product-card'))", `${item.profile} menu`);
+    await wait(350);
+    const profileEvidence = await evaluate(`(() => {
+      const grid = document.querySelector('.product-grid');
+      const event = (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+        .findLast(item => item.phase === 'request_started' && item.source === 'universal_v2_mock');
+      const rejected = (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+        .findLast(item => item.phase === 'plan_rejected' && item.source === 'universal_v2_mock');
+      return {
+        option: grid?.dataset.universalV2Option ?? null,
+        requestViewportClass: event?.viewportClass ?? null,
+        rejectionReason: rejected?.reason ?? null,
+        columns: getComputedStyle(grid).gridTemplateColumns,
+        cardCount: grid?.querySelectorAll('.product-card').length ?? 0,
+        documentWidth: document.documentElement.scrollWidth,
+      };
+    })()`);
+    assert.equal(profileEvidence.option, null, `${item.profile} must reject compact-grid`);
+    assert.equal(profileEvidence.requestViewportClass, "regular");
+    assert.equal(profileEvidence.rejectionReason, "UNSUPPORTED_PLAN_OPERATION");
+    assert.equal(profileEvidence.cardCount, 5);
+    assert.ok(profileEvidence.documentWidth <= 390);
+    assert.ok(profileEvidence.columns.length > 0);
+  }
 
   const runMutatedPlan = async (mutation, expectedLabel) => {
     await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
@@ -248,6 +322,8 @@ try {
   assert.ok(v2MockRequests >= 5, "only the local v2 Fake endpoint was used");
   console.log(JSON.stringify({
     applied, narrowRegular, compactViewport,
+    desktopViewports: [1080, 1200],
+    accessibilityProfiles: accessibilityProfiles.map(({ profile }) => profile),
     cartVerified,
     largeText,
     invalidOptionRejected: true,
