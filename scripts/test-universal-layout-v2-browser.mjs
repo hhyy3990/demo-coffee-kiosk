@@ -222,6 +222,28 @@ try {
     `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'universal_v2_mock' && e.reason === 'stale_screen_or_model')`,
   );
   assert.equal(staleRejected, true, "late response is rejected after screen change");
+
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2Relay=1");
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.__v2RelayUiRequests = 0;
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/v2/relay-plan') return nativeFetch(input, init);
+      window.__v2RelayUiRequests += 1;
+      return nativeFetch('/api/dev/universal-layout/v2/mock-plan', init);
+    };
+  })()`);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until(
+    `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+    "central relay UI branch using local Fake response",
+  );
+  assert.equal(await evaluate("window.__v2RelayUiRequests"), 1);
+  const relayUiSource = await evaluate(
+    `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_validated' && e.source === 'universal_v2_central')`,
+  );
+  assert.equal(relayUiSource, true, "central relay mode reaches the React preset path");
   assert.equal(centralRequests, 0, "no relay or OpenAI endpoints were called");
   assert.ok(v2MockRequests >= 5, "only the local v2 Fake endpoint was used");
   console.log(JSON.stringify({
@@ -231,6 +253,8 @@ try {
     invalidOptionRejected: true,
     hashMismatchRejected: true,
     staleRejected,
+    relayUiSource,
+    relayUiRequests: await evaluate("window.__v2RelayUiRequests"),
     centralRequests,
     v2MockRequests,
   }, null, 2));

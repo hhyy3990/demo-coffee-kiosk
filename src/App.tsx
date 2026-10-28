@@ -702,18 +702,21 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const enabled = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
-    const conflictingV1Mode = [
+    const v2MockMode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
+    const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
+    const enabled = v2MockMode || v2RelayMode;
+    const source = v2RelayMode ? "universal_v2_central" : "universal_v2_mock";
+    const conflictingMode = v2MockMode && v2RelayMode || [
       "universalLayoutMock",
       "universalLayoutRelay",
       "universalLayoutOpenAi",
     ].some((key) => params.get(key) === "1");
-    if (!enabled || stage !== "menu" || conflictingV1Mode) {
+    if (!enabled || stage !== "menu" || conflictingMode) {
       setUniversalV2Preset(null);
-      if (enabled && conflictingV1Mode) {
+      if (enabled && conflictingMode) {
         logMenuLayoutDiagnostic({
           phase: "plan_rejected",
-          source: "universal_v2_mock",
+          source,
           reason: "conflicting_universal_modes",
         });
       }
@@ -751,7 +754,7 @@ export default function App() {
     setUniversalV2Preset(null);
     logMenuLayoutDiagnostic({
       phase: "request_started",
-      source: "universal_v2_mock",
+      source,
       viewportClass,
       viewportWidth: window.innerWidth,
       itemCount: orderedItemIds.length,
@@ -759,21 +762,26 @@ export default function App() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/dev/universal-layout/v2/mock-plan", {
+        const response = await fetch(
+          v2RelayMode
+            ? "/api/dev/universal-layout/v2/relay-plan"
+            : "/api/dev/universal-layout/v2/mock-plan",
+          {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ viewportClass, accessibility, orderedItemIds }),
           credentials: "same-origin",
           cache: "no-store",
           signal: controller.signal,
-        });
+          },
+        );
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok || !payload || typeof payload !== "object") {
           const error = payload && typeof payload === "object" && "error" in payload &&
             typeof payload.error === "string" ? payload.error : "universal_v2_response_invalid";
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_v2_mock",
+            source,
             reason: error,
             status: response.status,
           });
@@ -841,7 +849,7 @@ export default function App() {
         if (!metadataMatches) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_v2_mock",
+            source,
             reason: "response_model_plan_mismatch",
           });
           return;
@@ -867,20 +875,20 @@ export default function App() {
             }) !== snapshot) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_v2_mock",
+            source,
             reason: "stale_screen_or_model",
           });
           return;
         }
         logMenuLayoutDiagnostic({
           phase: "plan_validated",
-          source: "universal_v2_mock",
+          source,
           optionId: "compact-grid",
           viewportClass,
         });
         logMenuLayoutDiagnostic({
           phase: "react_state_update_requested",
-          source: "universal_v2_mock",
+          source,
           optionId: "compact-grid",
         });
         setUniversalV2Preset({
@@ -893,8 +901,8 @@ export default function App() {
         if (!cancelled && !(error instanceof DOMException && error.name === "AbortError")) {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
-            source: "universal_v2_mock",
-            reason: "local_mock_request_failed",
+            source,
+            reason: v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });
         }
       }
@@ -912,7 +920,8 @@ export default function App() {
     const centralMode = import.meta.env.DEV && params.get("universalLayoutRelay") === "1";
     const centralAiMode = import.meta.env.DEV && params.get("universalLayoutOpenAi") === "1";
     const v2Mode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
-    const selectedModes = [mockMode, centralMode, centralAiMode, v2Mode].filter(Boolean).length;
+    const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
+    const selectedModes = [mockMode, centralMode, centralAiMode, v2Mode, v2RelayMode].filter(Boolean).length;
     if (selectedModes > 1) {
       logMenuLayoutDiagnostic({
         phase: "plan_rejected",

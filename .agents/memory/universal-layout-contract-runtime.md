@@ -36,3 +36,9 @@ Universal v2's copied central validator is a contract implementation, not proof 
 **Why:** The central v2 handoff explicitly labels the compact-grid fixture as test-only and has no registered DemoCoffee endpoint or provider.
 
 **How to apply:** Use the exact v2 schema, hash, and validators for local Fake plans; keep production routes and claims of central approval disabled until an authoritative registration exists.
+
+Keep the v2 central Fake relay separate from both the local v2 Fake and v1/OpenAI relays. It must be Development-only, require its own explicit opt-in, validate the returned top-level plan against the current v2 model, and never fall back to the local Fake after a central error. Bound it to one upstream attempt per process unless a later authorized test requires otherwise.
+
+**Why:** The central Fake is a distinct trust boundary; keeping independent controls prevents a local fixture or an unrelated AI switch from silently authorizing an upstream request.
+
+**How to apply:** Leave `UNIVERSAL_LAYOUT_V2_RELAY_ENABLED` unset/false by default. Test with injected fetches and keep all real central/OpenAI calls explicitly authorized.
