@@ -24,3 +24,9 @@ Capture Development relay logs before disabling the gate or restarting the Workf
 **Why:** Without the original relay events, multiple browser-to-local requests cannot be reliably counted as central upstream calls after the restart.
 
 **How to apply:** Read and save the relevant sanitized relay event counts before restoration, then restart and verify all gates are OFF.
+
+OpenAI relay coalescing keys the complete validated model, not only selected hashes. In Development, its upstream attempt cap defaults to one per server process; a validated positive `UNIVERSAL_LAYOUT_OPENAI_MAX_UPSTREAM_REQUESTS` can raise the cap for controlled fake tests. The sanitized `central_upstream_started` event increments once per actual fetch attempt and its counter resets on server restart.
+
+**Why:** Two browser-local requests do not establish the number of central calls; distinct models must remain separate, while duplicate OpenAI attempts need a hard cost limit.
+
+**How to apply:** Keep the OpenAI gate OFF outside an authorized test, capture `central_upstream_started` events before restarting, and set a higher cap only for isolated Development tests.

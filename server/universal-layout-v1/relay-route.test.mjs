@@ -178,10 +178,11 @@ test("OpenAI relay timeout is reported without a retry", async () => {
     assert.equal(response.status, 502);
     assert.equal(calls, 1);
     assert.ok(logs.some((line) => line.includes('"failureClass":"timeout"')));
+    assert.equal(logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length, 1);
   });
 });
 
-test("OpenAI relay rejects an invalid plan and coalesces duplicate requests", async () => {
+test("OpenAI relay validates a plan and coalesces duplicate requests", async () => {
   const openAiEnv = {
     ...env,
     UNIVERSAL_LAYOUT_RELAY_ENABLED: "false",
@@ -199,7 +200,7 @@ test("OpenAI relay rejects an invalid plan and coalesces duplicate requests", as
         headers: { "Content-Type": "application/json" },
       });
     },
-  }, async (origin) => {
+  }, async (origin, logs) => {
     const path = "/api/dev/universal-layout/openai-plan";
     const [first, second] = await Promise.all([
       post(origin, input, path),
@@ -207,6 +208,90 @@ test("OpenAI relay rejects an invalid plan and coalesces duplicate requests", as
     ]);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
+    assert.equal(calls, 1);
+    assert.equal(
+      logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length,
+      1,
+    );
+  });
+});
+
+test("OpenAI coalescing uses the complete model and permits distinct models separately", async () => {
+  const openAiEnv = {
+    ...env,
+    UNIVERSAL_LAYOUT_RELAY_ENABLED: "false",
+    UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED: "true",
+    UNIVERSAL_LAYOUT_OPENAI_MAX_UPSTREAM_REQUESTS: "2",
+  };
+  const otherInput = { ...input, orderedItemIds: ["coffee-01", "coffee-03"] };
+  let calls = 0;
+  await withServer({
+    mode: "openai",
+    env: openAiEnv,
+    fetchImpl: async (_url, request) => {
+      calls += 1;
+      const sentModel = JSON.parse(request.body).model;
+      const value = sentModel.structureHash === makeModel(input).structureHash ? input : otherInput;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return new Response(JSON.stringify(makePlan(value)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  }, async (origin, logs) => {
+    const path = "/api/dev/universal-layout/openai-plan";
+    const [sameA, sameB] = await Promise.all([
+      post(origin, input, path),
+      post(origin, input, path),
+    ]);
+    const different = await post(origin, otherInput, path);
+    const [a, b, c] = await Promise.all([sameA.json(), sameB.json(), different.json()]);
+    assert.equal(sameA.status, 200);
+    assert.equal(sameB.status, 200);
+    assert.equal(different.status, 200);
+    assert.equal(a.plan.structureHash, b.plan.structureHash);
+    assert.deepEqual(a.plan, b.plan);
+    assert.notEqual(a.model.structureHash, c.model.structureHash);
+    assert.equal(calls, 2);
+    assert.equal(
+      logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length,
+      2,
+    );
+  });
+});
+
+test("OpenAI duplicates share one upstream error and the default one-call cap blocks another model", async () => {
+  const openAiEnv = {
+    ...env,
+    UNIVERSAL_LAYOUT_RELAY_ENABLED: "false",
+    UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED: "true",
+  };
+  let calls = 0;
+  await withServer({
+    mode: "openai",
+    env: openAiEnv,
+    fetchImpl: async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return new Response(JSON.stringify({ error: "PRIVATE_UPSTREAM_ERROR" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  }, async (origin, logs) => {
+    const path = "/api/dev/universal-layout/openai-plan";
+    const [a, b] = await Promise.all([post(origin, input, path), post(origin, input, path)]);
+    assert.equal(a.status, 502);
+    assert.equal(b.status, 502);
+    assert.equal(calls, 1);
+    assert.equal(
+      logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length,
+      1,
+    );
+    assert.equal(logs.filter((line) => line.includes('"stage":"upstream_rejected"')).length, 2);
+    const capped = await post(origin, { ...input, orderedItemIds: ["coffee-03"] }, path);
+    assert.equal(capped.status, 429);
+    assert.equal((await capped.json()).error, "UPSTREAM_REQUEST_LIMIT");
     assert.equal(calls, 1);
   });
 });

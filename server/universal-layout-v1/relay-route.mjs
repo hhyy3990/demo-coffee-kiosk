@@ -134,8 +134,15 @@ export function registerUniversalLayoutRelayRoute(app, {
   const conflictingEnv = mode === "openai"
     ? "UNIVERSAL_LAYOUT_RELAY_ENABLED"
     : "UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED";
+  const configuredMax = env.UNIVERSAL_LAYOUT_OPENAI_MAX_UPSTREAM_REQUESTS;
+  const maxUpstreamRequests = mode === "openai"
+    ? configuredMax === undefined ? 1 : Number(configuredMax)
+    : Number.POSITIVE_INFINITY;
+  const maxUpstreamRequestsValid = mode !== "openai" ||
+    (Number.isInteger(maxUpstreamRequests) && maxUpstreamRequests >= 1 && maxUpstreamRequests <= 100);
   const inFlight = new Map();
   const resultCache = new Map();
+  let upstreamAttemptCount = 0;
   app.post(endpointPath, parseJsonBody, async (req, res) => {
     const localRequestId = randomUUID();
     res.setHeader("X-Request-ID", localRequestId);
@@ -162,7 +169,8 @@ export function registerUniversalLayoutRelayRoute(app, {
     const externalToken = env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN;
     const serviceToken = env.AI_LAYOUT_SERVICE_TOKEN;
     const url = buildPlanUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken, endpointPath);
-    if (!url || !validToken(serviceToken) || typeof fetchImpl !== "function") {
+    if (!url || !validToken(serviceToken) || typeof fetchImpl !== "function" ||
+        !maxUpstreamRequestsValid) {
       log("relay_unconfigured", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_NOT_CONFIGURED" });
     }
@@ -173,7 +181,7 @@ export function registerUniversalLayoutRelayRoute(app, {
       log("model_rejected", { localStatus: 400 });
       return res.status(400).json({ error: "MODEL_INVALID" });
     }
-    const requestKey = `${model.structureHash}:${model.constraintHash}`;
+    const requestKey = universalSha256(model);
     const timestamp = now();
     for (const [key, value] of resultCache) {
       if (value.expiresAt <= timestamp) resultCache.delete(key);
@@ -185,7 +193,17 @@ export function registerUniversalLayoutRelayRoute(app, {
     }
     let pending = inFlight.get(requestKey);
     if (!pending) {
+      if (upstreamAttemptCount >= maxUpstreamRequests) {
+        log("upstream_request_limit_reached", {
+          localStatus: 429,
+          upstreamAttemptCount,
+          maxUpstreamRequests,
+        });
+        return res.status(429).json({ error: "UPSTREAM_REQUEST_LIMIT" });
+      }
       pending = (async () => {
+        upstreamAttemptCount += 1;
+        log("central_upstream_started", { upstreamAttemptCount });
         const response = await fetchImpl(url, {
           method: "POST",
           headers: {
