@@ -73,7 +73,7 @@ try {
   const visit = async (query, width = 1280) => {
     try { await evaluate("sessionStorage.clear()"); } catch {}
     await send("Emulation.setDeviceMetricsOverride", {
-      width, height: 900, deviceScaleFactor: 1, mobile: width <= 700,
+      width, height: 900, deviceScaleFactor: 1, mobile: false,
       screenWidth: width, screenHeight: 900,
     });
     await send("Page.navigate", { url: `${appUrl}/${query}` });
@@ -379,12 +379,27 @@ try {
           centerHit: hit === button || button.contains(hit),
           hitTarget: hit?.id ?? hit?.closest('button')?.id ?? null,
           buttonHeight: rect.height,
+          centerX: x,
+          centerY: y,
         };
       })()`);
       assert.equal(lastProductBeforeCart.visible, true);
       assert.equal(lastProductBeforeCart.centerHit, true);
       assert.ok(lastProductBeforeCart.buttonHeight >= 44);
-      await evaluate("document.querySelector('#menu-product-4').click()");
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: lastProductBeforeCart.centerX,
+        y: lastProductBeforeCart.centerY,
+        button: "left",
+        clickCount: 1,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: lastProductBeforeCart.centerX,
+        y: lastProductBeforeCart.centerY,
+        button: "left",
+        clickCount: 1,
+      });
       await until("Boolean(document.querySelector('#item-add'))", `last product options at ${width}px`);
       await evaluate("document.querySelector('#item-add').click()");
       await until("Boolean(document.querySelector('.cart-bar'))", `sticky cart bar at ${width}px`);
@@ -408,11 +423,14 @@ try {
       assert.ok(stickyAtTop.width > 0 && stickyAtTop.height > 0);
       assert.ok(stickyAtTop.documentWidth <= width);
 
-      await evaluate(`window.scrollTo({
-        top: document.documentElement.scrollHeight,
-        behavior: 'instant',
-      })`);
-      await wait(200);
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: Math.round(width / 2),
+        y: 450,
+        deltaX: 0,
+        deltaY: 5000,
+      });
+      await wait(250);
       const stickyAtPageBottom = await evaluate(`(() => {
         const bar = document.querySelector('.cart-bar');
         const card = document.querySelector('[data-menu-product-id="lemon-tea"]');
@@ -422,7 +440,9 @@ try {
           cardRect.top < barRect.bottom && cardRect.bottom > barRect.top;
         return {
           scrollY: window.scrollY,
-          documentHeight: document.documentElement.scrollHeight,
+          scrollTop: document.scrollingElement.scrollTop,
+          documentHeight: document.scrollingElement.scrollHeight,
+          scrollClientHeight: document.scrollingElement.clientHeight,
           barTop: barRect.top,
           barBottom: barRect.bottom,
           barHeight: barRect.height,
@@ -462,6 +482,8 @@ try {
           buttonVisible: buttonRect.bottom > 0 && buttonRect.top < innerHeight,
           buttonCenterHit: hit === button || button.contains(hit),
           buttonHeight: buttonRect.height,
+          buttonCenterX: buttonRect.left + buttonRect.width / 2,
+          buttonCenterY: buttonRect.top + buttonRect.height / 2,
           cardTop: cardRect.top,
           cardBottom: cardRect.bottom,
           barTop: barRect.top,
@@ -477,7 +499,20 @@ try {
       assert.ok(lastProductWithCartBar.buttonHeight >= 44);
       assert.ok(lastProductWithCartBar.documentWidth <= width);
 
-      await evaluate("document.querySelector('#menu-product-4').click()");
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: lastProductWithCartBar.buttonCenterX,
+        y: lastProductWithCartBar.buttonCenterY,
+        button: "left",
+        clickCount: 1,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: lastProductWithCartBar.buttonCenterX,
+        y: lastProductWithCartBar.buttonCenterY,
+        button: "left",
+        clickCount: 1,
+      });
       await until("Boolean(document.querySelector('.item-add')) || Boolean(document.querySelector('#item-add'))",
         `last product remains clickable with cart bar at ${width}px`);
       await evaluate("document.querySelector('.back-button').click()");
