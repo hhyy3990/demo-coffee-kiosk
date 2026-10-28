@@ -42,3 +42,9 @@ Keep the v2 central Fake relay separate from both the local v2 Fake and v1/OpenA
 **Why:** The central Fake is a distinct trust boundary; keeping independent controls prevents a local fixture or an unrelated AI switch from silently authorizing an upstream request.
 
 **How to apply:** Leave `UNIVERSAL_LAYOUT_V2_RELAY_ENABLED` unset/false by default. Test with injected fetches and keep all real central/OpenAI calls explicitly authorized.
+
+A single menu entry can produce duplicate browser-to-local v2 relay POSTs in Development; identical requests may be served by the in-flight coalescer or short success cache, so count `central_upstream_started` separately from browser requests.
+
+**Why:** A live Development screen test observed two local relay POSTs but only one central upstream fetch; the second local request was a cache hit.
+
+**How to apply:** Report both counts independently and keep the per-process upstream cap as the safety boundary.
