@@ -18,3 +18,9 @@ For the OpenAI route, require its own Development opt-in and keep it mutually ex
 **Why:** A Mock test must never silently become a paid AI request.
 
 **How to apply:** Keep the OpenAI relay gate unset or false by default; fake-test the route and React path without contacting the central service.
+
+Capture Development relay logs before disabling the gate or restarting the Workflow; the restarted process output may not retain the previous instance's request events.
+
+**Why:** Without the original relay events, multiple browser-to-local requests cannot be reliably counted as central upstream calls after the restart.
+
+**How to apply:** Read and save the relevant sanitized relay event counts before restoration, then restart and verify all gates are OFF.
