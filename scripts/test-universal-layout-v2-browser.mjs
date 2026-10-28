@@ -324,6 +324,181 @@ try {
   );
   assert.equal(staleRejected, true, "late response is rejected after screen change");
 
+  const stickyMatrix = [];
+  const stickyProfiles = [
+    { id: "standard", query: "standard", selector: "" },
+    { id: "large-text", query: "large-text", selector: ".a11y-text-large" },
+    { id: "large-buttons", query: "buttons", selector: ".a11y-controls-large" },
+    { id: "large-text-and-buttons", query: "large-text-buttons", selector: ".a11y-text-large.a11y-controls-large" },
+  ];
+  for (const width of [360, 390, 1080, 1200]) {
+    for (const profile of stickyProfiles) {
+      await visit(
+        `?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&poc-profile=${profile.query}&bottom-poc=60`,
+        width,
+      );
+      if (profile.selector) {
+        await until(
+          `document.querySelector('.kiosk')?.matches('${profile.selector}')`,
+          `${profile.id} profile at ${width}px`,
+        );
+      } else {
+        await wait(100);
+      }
+      await evaluate(`(() => {
+        const url = new URL(location.href);
+        url.searchParams.delete('bottom-poc');
+        history.replaceState(null, '', url);
+      })()`);
+      await evaluate("document.querySelector('#start-store').click()");
+      await until("Boolean(document.querySelector('#menu-product-4'))", `menu at ${width}px`);
+      await wait(300);
+
+      const presetBeforeCart = await evaluate(
+        `document.querySelector('.product-grid')?.dataset.universalV2Option ?? null`,
+      );
+      assert.equal(
+        presetBeforeCart,
+        profile.id === "standard" ? "compact-grid" : null,
+        `${profile.id} plan behavior at ${width}px`,
+      );
+
+      await evaluate(`(() => {
+        const last = document.querySelector('#menu-product-4');
+        last.scrollIntoView({ block: 'center', behavior: 'instant' });
+      })()`);
+      await wait(100);
+      const lastProductBeforeCart = await evaluate(`(() => {
+        const button = document.querySelector('#menu-product-4');
+        const rect = button.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          visible: rect.bottom > 0 && rect.top < innerHeight,
+          centerHit: hit === button || button.contains(hit),
+          hitTarget: hit?.id ?? hit?.closest('button')?.id ?? null,
+          buttonHeight: rect.height,
+        };
+      })()`);
+      assert.equal(lastProductBeforeCart.visible, true);
+      assert.equal(lastProductBeforeCart.centerHit, true);
+      assert.ok(lastProductBeforeCart.buttonHeight >= 44);
+      await evaluate("document.querySelector('#menu-product-4').click()");
+      await until("Boolean(document.querySelector('#item-add'))", `last product options at ${width}px`);
+      await evaluate("document.querySelector('#item-add').click()");
+      await until("Boolean(document.querySelector('.cart-bar'))", `sticky cart bar at ${width}px`);
+
+      const stickyAtTop = await evaluate(`(() => {
+        window.scrollTo(0, 0);
+        const bar = document.querySelector('.cart-bar');
+        const rect = bar.getBoundingClientRect();
+        return {
+          position: getComputedStyle(bar).position,
+          width: rect.width,
+          height: rect.height,
+          top: rect.top,
+          bottom: rect.bottom,
+          viewportHeight: innerHeight,
+          documentWidth: document.documentElement.scrollWidth,
+          scrollY: window.scrollY,
+        };
+      })()`);
+      assert.equal(stickyAtTop.position, "sticky");
+      assert.ok(stickyAtTop.width > 0 && stickyAtTop.height > 0);
+      assert.ok(stickyAtTop.documentWidth <= width);
+
+      await evaluate(`window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior: 'instant',
+      })`);
+      await wait(200);
+      const stickyAtPageBottom = await evaluate(`(() => {
+        const bar = document.querySelector('.cart-bar');
+        const card = document.querySelector('[data-menu-product-id="lemon-tea"]');
+        const barRect = bar.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const intersects = cardRect.left < barRect.right && cardRect.right > barRect.left &&
+          cardRect.top < barRect.bottom && cardRect.bottom > barRect.top;
+        return {
+          scrollY: window.scrollY,
+          documentHeight: document.documentElement.scrollHeight,
+          barTop: barRect.top,
+          barBottom: barRect.bottom,
+          barHeight: barRect.height,
+          lastCardTop: cardRect.top,
+          lastCardBottom: cardRect.bottom,
+          viewportHeight: innerHeight,
+          overlapAtNaturalBottom: intersects,
+          documentWidth: document.documentElement.scrollWidth,
+        };
+      })()`);
+      assert.ok(stickyAtPageBottom.scrollY + stickyAtPageBottom.viewportHeight >=
+        stickyAtPageBottom.documentHeight - 1,
+        `${profile.id} reached page bottom at ${width}px: ${JSON.stringify(stickyAtPageBottom)}`);
+      assert.equal(stickyAtPageBottom.overlapAtNaturalBottom, false,
+        `${profile.id} natural-bottom overlap at ${width}px`);
+      assert.ok(stickyAtPageBottom.documentWidth <= width);
+
+      await evaluate(`document.querySelector('#menu-product-4').scrollIntoView({
+        block: 'center', behavior: 'instant'
+      })`);
+      await wait(100);
+      const lastProductWithCartBar = await evaluate(`(() => {
+        const button = document.querySelector('#menu-product-4');
+        const card = button.closest('.product-card');
+        const bar = document.querySelector('.cart-bar');
+        const cardRect = card.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        const intersects = cardRect.left < barRect.right && cardRect.right > barRect.left &&
+          cardRect.top < barRect.bottom && cardRect.bottom > barRect.top;
+        const buttonRect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          buttonRect.left + buttonRect.width / 2,
+          buttonRect.top + buttonRect.height / 2,
+        );
+        return {
+          cardBarOverlap: intersects,
+          buttonVisible: buttonRect.bottom > 0 && buttonRect.top < innerHeight,
+          buttonCenterHit: hit === button || button.contains(hit),
+          buttonHeight: buttonRect.height,
+          cardTop: cardRect.top,
+          cardBottom: cardRect.bottom,
+          barTop: barRect.top,
+          barBottom: barRect.bottom,
+          viewportHeight: innerHeight,
+          documentWidth: document.documentElement.scrollWidth,
+        };
+      })()`);
+      assert.equal(lastProductWithCartBar.cardBarOverlap, false,
+        `${profile.id} last-card overlap at ${width}px`);
+      assert.equal(lastProductWithCartBar.buttonVisible, true);
+      assert.equal(lastProductWithCartBar.buttonCenterHit, true);
+      assert.ok(lastProductWithCartBar.buttonHeight >= 44);
+      assert.ok(lastProductWithCartBar.documentWidth <= width);
+
+      await evaluate("document.querySelector('#menu-product-4').click()");
+      await until("Boolean(document.querySelector('.item-add')) || Boolean(document.querySelector('#item-add'))",
+        `last product remains clickable with cart bar at ${width}px`);
+      await evaluate("document.querySelector('.back-button').click()");
+      await until("Boolean(document.querySelector('.cart-bar'))", `return to menu at ${width}px`);
+      stickyMatrix.push({
+        viewportWidth: width,
+        profile: profile.id,
+        presetBeforeCart,
+        beforeCartButtonHeight: lastProductBeforeCart.buttonHeight,
+        barHeightAtTop: stickyAtTop.height,
+        barPosition: stickyAtTop.position,
+        pageBottomScrollY: stickyAtPageBottom.scrollY,
+        documentHeight: stickyAtPageBottom.documentHeight,
+        pageBottomOverlap: stickyAtPageBottom.overlapAtNaturalBottom,
+        lastCardOverlap: lastProductWithCartBar.cardBarOverlap,
+        lastButtonHit: lastProductWithCartBar.buttonCenterHit,
+        lastButtonHeight: lastProductWithCartBar.buttonHeight,
+      });
+    }
+  }
+
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Relay=1");
   await evaluate(`(() => {
     const nativeFetch = window.fetch.bind(window);
@@ -357,6 +532,7 @@ try {
     invalidOptionRejected: true,
     hashMismatchRejected: true,
     staleRejected,
+    stickyMatrix,
     relayUiSource,
     relayUiRequests: await evaluate("window.__v2RelayUiRequests"),
     centralRequests,
