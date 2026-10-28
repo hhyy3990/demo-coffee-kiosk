@@ -113,6 +113,10 @@ try {
   await until("Boolean(document.querySelector('#item-add'))", "product options");
   await evaluate("document.querySelector('#item-add').click()");
   await until("Boolean(document.querySelector('#menu-order-confirm'))", "menu after adding");
+  const cartBarPosition = await evaluate(
+    `getComputedStyle(document.querySelector('.cart-bar')).position`,
+  );
+  assert.equal(cartBarPosition, "sticky", "cart action bar is sticky, not fixed");
   await evaluate("document.querySelector('#menu-order-confirm').click()");
   await until("Boolean(document.querySelector('#cart-pay'))", "cart screen");
   const cartVerified = await evaluate(
@@ -128,16 +132,25 @@ try {
   );
   const narrowRegular = await evaluate(`(() => {
     const grid = document.querySelector('.product-grid');
+    const cards = Array.from(grid.querySelectorAll('.product-card'));
+    const boxes = cards.map(card => card.getBoundingClientRect());
     return {
       gap: getComputedStyle(grid).gap,
       imageHeight: getComputedStyle(grid.querySelector('.product-art')).height,
       buttonMinHeight: getComputedStyle(grid.querySelector('.product-card button')).minHeight,
+      documentWidth: document.documentElement.scrollWidth,
+      hasOverlaps: boxes.some((box, index) => boxes.slice(index + 1).some(other =>
+        box.left < other.right && box.right > other.left &&
+        box.top < other.bottom && box.bottom > other.top)),
     };
   })()`);
-  assert.deepEqual(narrowRegular, {
-    gap: "10px", imageHeight: "104px", buttonMinHeight: "44px",
-  });
+  assert.equal(narrowRegular.gap, "10px");
+  assert.equal(narrowRegular.imageHeight, "104px");
+  assert.equal(narrowRegular.buttonMinHeight, "44px");
+  assert.ok(narrowRegular.documentWidth <= 390);
+  assert.equal(narrowRegular.hasOverlaps, false);
 
+  const desktopEvidence = [];
   for (const [width, expectedClass] of [[1080, "regular"], [1200, "wide"]]) {
     await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", width);
     await evaluate("document.querySelector('#start-store').click()");
@@ -170,6 +183,7 @@ try {
     assert.equal(viewportEvidence.cardCount, 5);
     assert.equal(viewportEvidence.hasOverlaps, false);
     assert.ok(viewportEvidence.buttonMinimumHeight >= 44);
+    desktopEvidence.push(viewportEvidence);
   }
 
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1", 360);
@@ -178,15 +192,26 @@ try {
     `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
     "compact-grid at compact viewport",
   );
-  const compactViewport = await evaluate(`(() => ({
-    columns: getComputedStyle(document.querySelector('.product-grid')).gridTemplateColumns,
-    gap: getComputedStyle(document.querySelector('.product-grid')).gap,
-    imageHeight: getComputedStyle(document.querySelector('.product-art')).height,
-    buttonMinHeight: getComputedStyle(document.querySelector('.product-card button')).minHeight,
-  }))()`);
+  const compactViewport = await evaluate(`(() => {
+    const grid = document.querySelector('.product-grid');
+    const cards = Array.from(grid.querySelectorAll('.product-card'));
+    const boxes = cards.map(card => card.getBoundingClientRect());
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns,
+      gap: getComputedStyle(grid).gap,
+      imageHeight: getComputedStyle(grid.querySelector('.product-art')).height,
+      buttonMinHeight: getComputedStyle(grid.querySelector('.product-card button')).minHeight,
+      documentWidth: document.documentElement.scrollWidth,
+      hasOverlaps: boxes.some((box, index) => boxes.slice(index + 1).some(other =>
+        box.left < other.right && box.right > other.left &&
+        box.top < other.bottom && box.bottom > other.top)),
+    };
+  })()`);
   assert.equal(compactViewport.columns.split(/\\s+/).filter(Boolean).length, 1);
   assert.equal(compactViewport.gap, "10px");
   assert.equal(Number.parseFloat(compactViewport.buttonMinHeight) >= 44, true);
+  assert.ok(compactViewport.documentWidth <= 360);
+  assert.equal(compactViewport.hasOverlaps, false);
 
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&mockCentralQrProfileForAiTest=large");
   await evaluate("document.querySelector('#start-store').click()");
@@ -205,9 +230,10 @@ try {
     { profile: "buttons", selector: ".a11y-controls-large", textSize: "standard", buttonSize: "large" },
     { profile: "large-text-buttons", selector: ".a11y-text-large.a11y-controls-large", textSize: "large", buttonSize: "large" },
   ];
+  const accessibilityEvidence = [];
   for (const item of accessibilityProfiles) {
     await visit(
-      `?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&poc-profile=${item.profile}`,
+      `?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&poc-profile=${item.profile}&bottom-poc=60`,
       390,
     );
     await until(
@@ -238,6 +264,7 @@ try {
     assert.equal(profileEvidence.cardCount, 5);
     assert.ok(profileEvidence.documentWidth <= 390);
     assert.ok(profileEvidence.columns.length > 0);
+    accessibilityEvidence.push({ profile: item.profile, ...profileEvidence });
   }
 
   const runMutatedPlan = async (mutation, expectedLabel) => {
@@ -322,8 +349,9 @@ try {
   assert.ok(v2MockRequests >= 5, "only the local v2 Fake endpoint was used");
   console.log(JSON.stringify({
     applied, narrowRegular, compactViewport,
-    desktopViewports: [1080, 1200],
-    accessibilityProfiles: accessibilityProfiles.map(({ profile }) => profile),
+    desktopEvidence,
+    accessibilityEvidence,
+    cartBarPosition,
     cartVerified,
     largeText,
     invalidOptionRejected: true,
