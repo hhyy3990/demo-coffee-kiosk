@@ -1,0 +1,227 @@
+{
+  "documentType": "democoffee-universal-layout-v2-host-compatibility",
+  "documentVersion": 1,
+  "generatedAt": "2026-10-28",
+  "source": {
+    "environment": "Development",
+    "modelSource": "local Fake plan using the host's current menu state",
+    "upstreamCalls": 0,
+    "productDetailsIncluded": false,
+    "orderedProductIdsIncluded": false
+  },
+  "contract": {
+    "schemaVersion": 2,
+    "contractVersion": "universal-layout.v2",
+    "validator": "copied central Universal v2 validator implementation",
+    "validatorSourceSha256": "e1a445c627332f372b6a3bad4e4ace06e0dc7cce802de2d4b751cbd91522cab0"
+  },
+  "hostPolicy": {
+    "hostId": "democoffee",
+    "screenId": "cafe.menu",
+    "structureVersion": "menu.v2",
+    "centralRegistryStatus": {
+      "hostId": "democoffee",
+      "screenId": "cafe.menu",
+      "componentId": "menu.product-list",
+      "optionGroupId": "arrangement",
+      "optionId": "compact-grid",
+      "hostPolicyVerified": false
+    },
+    "components": [
+      {
+        "id": "menu.product-list",
+        "kind": "repeated-card-list",
+        "role": "ordered-menu-list",
+        "order": 0,
+        "itemCountRange": [0, 100],
+        "operations": ["setColumns", "selectLayoutOption"],
+        "allowedColumnsByViewport": {
+          "compact": [1],
+          "regular": [1, 2],
+          "wide": [1, 2]
+        },
+        "singleColumnForLargeText": true,
+        "singleColumnForLargeButtons": true,
+        "singleColumnForHighContrast": false,
+        "singleColumnForBottomViewport": false,
+        "minimumTouchTargetPx": 44,
+        "protectedProperties": ["items", "order", "selection", "actions"],
+        "optionGroups": [
+          {
+            "id": "arrangement",
+            "options": [
+              {
+                "id": "compact-grid",
+                "accessibility": {
+                  "textScale": ["standard"],
+                  "buttonScale": ["standard"]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "layoutCapabilities": [],
+    "allowedOperations": ["setColumns", "selectLayoutOption"]
+  },
+  "planOperation": {
+    "type": "selectLayoutOption",
+    "targetId": "menu.product-list",
+    "groupId": "arrangement",
+    "optionId": "compact-grid",
+    "cssIsHostOwned": true,
+    "planContainsCss": false
+  },
+  "eligibility": {
+    "viewports": {
+      "compact": {
+        "windowWidthRulePx": "<=380",
+        "allowedColumns": [1],
+        "optionAvailableWhenAccessibilityMatches": true
+      },
+      "regular": {
+        "windowWidthRulePx": ">380 and <=1100",
+        "allowedColumns": [1, 2],
+        "optionAvailableWhenAccessibilityMatches": true
+      },
+      "wide": {
+        "windowWidthRulePx": ">1100",
+        "allowedColumns": [1, 2],
+        "optionAvailableWhenAccessibilityMatches": true
+      }
+    },
+    "accessibility": {
+      "textScale": {
+        "standard": "compact-grid option allowed",
+        "large": "option unavailable; host forces one column",
+        "extraLarge": "option unavailable; host forces one column"
+      },
+      "buttonScale": {
+        "standard": "compact-grid option allowed",
+        "large": "option unavailable; host forces one column"
+      },
+      "contrast": {
+        "standard": "allowed",
+        "high": "allowed; high contrast does not force one column"
+      },
+      "viewportMode": {
+        "none": "allowed",
+        "bottom-60": "allowed",
+        "bottom-70": "allowed",
+        "bottom-80": "allowed"
+      },
+      "minimumTouchTargetPx": 44
+    },
+    "optionAvailabilityRule": "compact-grid is emitted only when textScale is standard and buttonScale is standard; viewport class, contrast, and supported bottom viewport modes do not independently filter this option."
+  },
+  "compactGridCssPreset": {
+    "activation": "product grid data-universal-v2-option=\"compact-grid\"",
+    "baseRules": {
+      "gridGap": "10px",
+      "productCardButtonMinHeight": "44px",
+      "productArtworkHeight": "118px",
+      "productMetadataPadding": "12px"
+    },
+    "responsiveOverrides": [
+      {
+        "media": "max-width: 700px",
+        "productArtworkHeight": "104px"
+      },
+      {
+        "media": "max-width: 380px",
+        "productArtworkHeight": "auto",
+        "productArtworkMinHeight": "138px",
+        "productCardFlow": "horizontal image-and-content layout",
+        "gridColumns": 1
+      }
+    ],
+    "outsidePreset": "Existing host responsive grid rules continue to determine column count; the compact-grid CSS preset does not add, remove, reorder, select, or mutate products or actions."
+  },
+  "currentMenuStructure": {
+    "componentId": "menu.product-list",
+    "itemCount": 5,
+    "itemOrderDisclosure": "The current ordered product IDs are not included. Their exact sequence is represented by itemOrderHash.",
+    "itemOrderHashInput": {
+      "orderedItemIds": "the current five product IDs in rendered menu order"
+    },
+    "itemOrderHash": "af0c4a1b243d46755fc31fa279e936f612bf2b3914b293d67e585d6aa5fb091a",
+    "structureHash": "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e"
+  },
+  "hashRules": {
+    "canonicalJson": [
+      "Recursively sort object keys by normalized NFC key.",
+      "Normalize string values to Unicode NFC.",
+      "Preserve array order.",
+      "Accept only safe integer numbers; normalize negative zero to zero.",
+      "Serialize the canonical value as JSON."
+    ],
+    "digest": "SHA-256 of canonical JSON UTF-8 bytes, lowercase hexadecimal",
+    "structureHashInput": [
+      "schemaVersion",
+      "contractVersion",
+      "hostId",
+      "screenId",
+      "structureVersion",
+      "components sorted by order then id, projecting id, kind, role, order, itemCount, itemOrderHash"
+    ],
+    "constraintHashInput": [
+      "schemaVersion",
+      "contractVersion",
+      "viewportClass",
+      "accessibility",
+      "sorted layoutCapabilities",
+      "allowedOperations",
+      "components sorted by order then id, projecting id, operations, allowedColumns, minimumTouchTargetPx, protectedProperties, optionGroups when present"
+    ],
+    "itemOrderHashInput": "SHA-256 canonical JSON of { orderedItemIds: [...] }; array order is significant",
+    "representativeHashes": [
+      {
+        "viewportClass": "compact",
+        "accessibility": {
+          "textScale": "standard",
+          "buttonScale": "standard",
+          "contrast": "standard",
+          "viewportMode": null
+        },
+        "structureHash": "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e",
+        "constraintHash": "2f008c8481d1fbf7b91886a0ed2a00dc5720a1cd2ba0eae83a27706ebfeb8747"
+      },
+      {
+        "viewportClass": "regular",
+        "accessibility": {
+          "textScale": "standard",
+          "buttonScale": "standard",
+          "contrast": "standard",
+          "viewportMode": null
+        },
+        "structureHash": "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e",
+        "constraintHash": "6aabe7d629c36395e1cb12ec3b45085f077e8d8c445cdfbe676cc8fe0eed0d5e"
+      },
+      {
+        "viewportClass": "wide",
+        "accessibility": {
+          "textScale": "standard",
+          "buttonScale": "standard",
+          "contrast": "standard",
+          "viewportMode": null
+        },
+        "structureHash": "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e",
+        "constraintHash": "52888ec8f0fdd8b30431ecd4281d1ecbcfa581fab3681c35b60b09bd6aafa456"
+      }
+    ]
+  },
+  "centralFixtureComparison": {
+    "fixtureStructureHash": "51616a81efd7fe21b9d215a697532924cacd3e37aff2c250af43d0944d910182",
+    "fixtureConstraintHashForRegularStandardProfile": "6aabe7d629c36395e1cb12ec3b45085f077e8d8c445cdfbe676cc8fe0eed0d5e",
+    "identityFieldsMatchRegistryRow": true,
+    "regularStandardConstraintHashMatchesKnownFixture": true,
+    "structureHashMatchesKnownFixture": false,
+    "interpretation": "The host, screen, component, group, and option identifiers match the supplied registry row. The regular/standard constraint hash matches the known synthetic fixture; the structure hash differs because this model contains the host's actual five-item count and order digest. The registry row reports hostPolicyVerified=false, so this is not central verification or approval."
+  },
+  "limitations": [
+    "This file describes the local Development policy and observed model contract only.",
+    "The registry record's hostPolicyVerified=false remains authoritative.",
+    "The registry record supplied for this task does not specify its item-count range, accessibility filters, viewport column policy, CSS values, or expected structure hash; those details cannot be claimed to match it."
+  ]
+}
