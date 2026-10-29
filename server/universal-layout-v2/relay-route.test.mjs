@@ -156,6 +156,10 @@ test("v2 OpenAI relay forwards the canonical model to the OpenAI endpoint and va
     assert.equal(calls, 1, "only the successful response is cached");
     assert.equal(logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length, 1);
     assert.equal(logs.join("\n").includes(env.AI_LAYOUT_SERVICE_TOKEN), false);
+    const validatedEvent = logs.map((line) => JSON.parse(line))
+      .find((event) => event.stage === "plan_validated");
+    assert.equal(validatedEvent.centralStatus, 200);
+    assert.equal(validatedEvent.centralContentType, "application/json");
   });
 });
 

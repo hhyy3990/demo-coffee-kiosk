@@ -46,6 +46,15 @@ function validToken(value) {
     value.length <= 2048 && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
+function normalizedContentType(response) {
+  const value = response.headers.get("content-type");
+  if (typeof value !== "string") return null;
+  const mimeType = value.split(";", 1)[0].trim().toLowerCase();
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mimeType)
+    ? mimeType
+    : null;
+}
+
 function buildCentralUrl(base, externalToken, endpointPath) {
   if (typeof base !== "string" || base.length > 512 || !validToken(externalToken)) return null;
   try {
@@ -234,12 +243,14 @@ export function registerUniversalLayoutV2RelayRoute(app, {
           cache: "no-store",
           redirect: "error",
         });
+        const centralContentType = normalizedContentType(response);
         const centralId = response.headers.get("x-request-id");
         const centralRequestId = typeof centralId === "string" &&
           /^[A-Za-z0-9._:-]{1,128}$/.test(centralId) ? centralId : null;
         if (response.status !== 200) {
           const error = new Error("UPSTREAM_HTTP_ERROR");
           error.centralStatus = response.status;
+          error.centralContentType = centralContentType;
           error.centralRequestId = centralRequestId;
           throw error;
         }
@@ -250,11 +261,12 @@ export function registerUniversalLayoutV2RelayRoute(app, {
         } catch {
           const error = new Error("UPSTREAM_PLAN_INVALID");
           error.centralStatus = response.status;
+          error.centralContentType = centralContentType;
           error.centralRequestId = centralRequestId;
           error.publicCode = "UPSTREAM_PLAN_INVALID";
           throw error;
         }
-        return { plan, centralRequestId };
+        return { plan, centralRequestId, centralContentType };
       })();
       inFlight.set(key, pending);
     } else {
@@ -262,19 +274,33 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     }
 
     try {
-      const { plan, centralRequestId } = await pending;
+      const { plan, centralRequestId, centralContentType } = await pending;
       resultCache.set(key, { plan, expiresAt: now() + CACHE_TTL_MS });
       if (resultCache.size > 64) resultCache.delete(resultCache.keys().next().value);
-      log("plan_validated", { localStatus: 200, centralStatus: 200, centralRequestId });
+      log("plan_validated", {
+        localStatus: 200,
+        centralStatus: 200,
+        centralContentType,
+        centralRequestId,
+      });
       return res.status(200).json({ model, plan });
     } catch (error) {
       const centralStatus = Number.isInteger(error?.centralStatus) ? error.centralStatus : null;
       const centralRequestId = typeof error?.centralRequestId === "string" ? error.centralRequestId : null;
+      const centralContentType = typeof error?.centralContentType === "string"
+        ? error.centralContentType
+        : null;
       const failureClass = error?.publicCode === "UPSTREAM_PLAN_INVALID"
         ? "plan_invalid"
         : centralStatus ? "central_http_error"
           : error?.name === "TimeoutError" ? "timeout" : "network_or_response_error";
-      log("upstream_rejected", { localStatus: 502, centralStatus, centralRequestId, failureClass });
+      log("upstream_rejected", {
+        localStatus: 502,
+        centralStatus,
+        centralContentType,
+        centralRequestId,
+        failureClass,
+      });
       return res.status(502).json({
         error: typeof error?.publicCode === "string"
           ? error.publicCode
