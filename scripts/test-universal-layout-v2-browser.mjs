@@ -39,6 +39,7 @@ try {
   let fakeQrRequests = 0;
   let fakeAutoAiRequests = 0;
   let fakeV2LocalRequests = 0;
+  let fakeAutoRequestBodies = [];
   const pending = new Map();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
@@ -60,6 +61,7 @@ try {
         }
         if (path === "/api/dev/universal-layout/v2/openai-plan" && fakeAutoAiMode) {
           fakeAutoAiRequests += 1;
+          fakeAutoRequestBodies.push(JSON.parse(paused.request.postData));
           if (fakeAutoAiMode === "delayed-mock") await new Promise((resolve) => setTimeout(resolve, 350));
           if (fakeAutoAiMode === "local-mock" || fakeAutoAiMode === "delayed-mock") {
             fakeV2LocalRequests += 1;
@@ -85,7 +87,11 @@ try {
           return;
         }
         await send("Fetch.continueRequest", { requestId: paused.requestId });
-      })().catch((error) => console.error("Fetch interception failed", error));
+      })().catch((error) => {
+        if (!String(error?.message ?? error).includes("Invalid InterceptionId")) {
+          console.error("Fetch interception failed", error);
+        }
+      });
       return;
     }
     if (message.method === "Network.requestWillBeSent") {
@@ -533,6 +539,7 @@ try {
     fakeQrRequests = 0;
     fakeAutoAiRequests = 0;
     fakeV2LocalRequests = 0;
+    fakeAutoRequestBodies = [];
     await visit("?menuLayoutDiagnostics=1", width, 844, true);
     await send("Network.setBlockedURLs", { urls: ["https://*"] });
     await evaluate(`(() => {
@@ -589,6 +596,16 @@ try {
     assert.equal(auto.requests, 1, "one automatic OpenAI-relay request per QR application");
     assert.equal(fakeQrRequests, 1);
     assert.equal(fakeV2LocalRequests, 1, "the OpenAI-relay test adapter uses only the local Fake response");
+    assert.deepEqual(fakeAutoRequestBodies[0], {
+      viewportClass: width === 360 ? "compact" : "regular",
+      accessibility: {
+        textScale: "large",
+        buttonScale: "large",
+        contrast: "high",
+        viewportMode: { mode: "bottom", heightPercent: 70 },
+      },
+      orderedItemIds: ["americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea"],
+    });
     auto.qrLookups = fakeQrRequests;
     assert.equal(auto.source, "universal_v2_qr_auto");
     assert.equal(auto.option, "single-column-list");
@@ -617,6 +634,43 @@ try {
     qrAutoEvidence.push(auto);
     await send("Network.setBlockedURLs", { urls: [] });
   }
+
+  fakeQrProfileResponse = fakeV5GProfile;
+  fakeAutoAiMode = "delayed-mock";
+  fakeQrRequests = 0;
+  fakeAutoAiRequests = 0;
+  fakeV2LocalRequests = 0;
+  await visit("?menuLayoutDiagnostics=1", 390, 844, true);
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.__qrAutoRequestStarted = false;
+    window.fetch = (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname === '/api/dev/universal-layout/v2/openai-plan') {
+        window.__qrAutoRequestStarted = true;
+      }
+      return nativeFetch(input, init);
+    };
+  })()`);
+  await submitManualQrToken();
+  await until(
+    `!document.querySelector('.qr-modal') && document.querySelector('.kiosk')?.classList.contains('a11y-bottom-viewport-enabled')`,
+    "G profile before stale-response test",
+  );
+  await evaluate("document.querySelector('#start-store').click()");
+  await until("window.__qrAutoRequestStarted === true", "automatic request before menu exit");
+  await evaluate("document.querySelector('#menu-product-0').click()");
+  await until("Boolean(document.querySelector('#item-add'))", "menu exit cancels pending QR plan");
+  await wait(500);
+  assert.equal(fakeQrRequests, 1);
+  assert.equal(fakeAutoAiRequests, 1);
+  assert.equal(
+    await evaluate(`(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(event =>
+      event.source === 'universal_v2_qr_auto' && event.phase === 'plan_validated')`),
+    false,
+    "a late QR plan cannot apply after leaving the menu",
+  );
+  assert.equal(await evaluate("Boolean(document.querySelector('#item-add'))"), true);
 
   const standardV5Profile = {
     ...fakeV5GProfile,

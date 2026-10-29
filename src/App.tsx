@@ -26,6 +26,7 @@ import {
 import {
   createAutoMenuLayoutCoordinator,
 } from "./accessibility/autoMenuLayout";
+import { resolveQrAutoLayoutExecutionMode } from "./accessibility/qrAutoLayoutGate";
 import {
   createMenuPlanGate,
   createMenuScreenModel,
@@ -733,8 +734,15 @@ export default function App() {
     const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
     const v2OpenAiMode = import.meta.env.DEV && params.get("universalLayoutV2OpenAi") === "1";
     const manualMode = v2MockMode || v2RelayMode || v2OpenAiMode;
+    const qrAutoExecutionMode = resolveQrAutoLayoutExecutionMode({
+      development: import.meta.env.DEV,
+      autoEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_AUTO === "true",
+      mockEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_MOCK === "true",
+      openAiEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_OPENAI === "true",
+    });
     const orderedItemIds = currentProducts.map((product) => product.id);
     const qrAutoMode = import.meta.env.DEV &&
+      qrAutoExecutionMode !== null &&
       qrAutoLayoutGeneration !== null &&
       qrAutoLayoutGeneration === qrRequestGenerationRef.current &&
       activeProfile === "central" &&
@@ -743,7 +751,11 @@ export default function App() {
       window.innerWidth <= 1100 &&
       isQrAutoLayoutGProfile(preferences) &&
       JSON.stringify(orderedItemIds) === JSON.stringify(QR_AUTO_LAYOUT_PRODUCT_IDS);
-    const automaticMode = qrAutoMode && !manualMode;
+    const automaticOpenAiMode = qrAutoMode &&
+      qrAutoExecutionMode === "openai" && !manualMode;
+    const automaticMockMode = qrAutoMode &&
+      qrAutoExecutionMode === "mock" && !manualMode;
+    const automaticMode = automaticOpenAiMode || automaticMockMode;
     const enabled = manualMode || automaticMode;
     const source = automaticMode
       ? "universal_v2_qr_auto"
@@ -815,7 +827,7 @@ export default function App() {
         const response = await fetch(
           v2RelayMode
             ? "/api/dev/universal-layout/v2/relay-plan"
-            : v2OpenAiMode || automaticMode
+            : v2OpenAiMode || automaticOpenAiMode
               ? "/api/dev/universal-layout/v2/openai-plan"
             : "/api/dev/universal-layout/v2/mock-plan",
           {
@@ -966,7 +978,7 @@ export default function App() {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
             source,
-            reason: v2OpenAiMode || automaticMode
+            reason: v2OpenAiMode || automaticOpenAiMode
               ? "central_openai_relay_request_failed"
               : v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });

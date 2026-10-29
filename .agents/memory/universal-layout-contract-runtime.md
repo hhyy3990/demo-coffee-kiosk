@@ -9,6 +9,12 @@ The central host and auth values may reuse the existing `AI_LAYOUT_CENTRAL_URL`,
 
 Keep the OpenAI-backed Universal endpoint on a separate Development route with its own `UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED=true` gate. Mock and OpenAI relays must be mutually exclusive; both use the shared model builder and validator, and the browser selects only one mode before rechecking the current screen/profile.
 
+QR-triggered v2 automation has its own client-side Development gates: `VITE_DEMO_COFFEE_AI_LAYOUT_AUTO=true` plus exactly one of `VITE_DEMO_COFFEE_AI_LAYOUT_MOCK=true` or `VITE_DEMO_COFFEE_AI_LAYOUT_OPENAI=true`. The server-side v2 OpenAI gate remains independent; all gates default off.
+
+**Why:** A browser opt-in must not authorize the server relay by itself, and a local Fake test must never become an OpenAI request when modes conflict.
+
+**How to apply:** Keep both client and server gates off in the normal workflow. For a Fake test of the OpenAI UI path, enable the client mode only in an isolated Development build, keep the server upstream gate off, and intercept the browser request before it reaches the server.
+
 **Why:** The central package's exact hashes and validator are part of the contract, and the Node-only source must not leak into the React bundle or production route surface. The central APIs return a top-level plan, while the local React integration uses its own model-plan envelope.
 
 **How to apply:** Generate and validate models/plans on the Development server; wrap the validated model under `model` when forwarding. Keep forwarding disabled unless explicitly enabled in Development. In the browser, compare screen identity, current accessibility/viewport snapshot, ordered item snapshot, connected target/count, and plan-to-model metadata before React commit; do not add a browser-side hash or duplicate validator. A copied policy fixture does not prove central API registration.
