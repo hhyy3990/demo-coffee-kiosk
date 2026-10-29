@@ -64,7 +64,7 @@ type UniversalMockLayout = {
   constraintHash: string;
 };
 type UniversalV2Preset = {
-  optionId: "compact-grid";
+  optionId: "compact-grid" | "single-column-list";
   structureHash: string;
   constraintHash: string;
   viewportClass: "compact" | "regular" | "wide";
@@ -389,6 +389,7 @@ export default function App() {
         !new URLSearchParams(window.location.search).has("mockCentralQrProfileForAiTest")) return;
     const mockProfile = new URLSearchParams(window.location.search).get("mockCentralQrProfileForAiTest");
     const isStandard = mockProfile === "standard";
+    const isG = mockProfile === "g";
     const textSize = mockProfile === "extraLarge"
       ? "extraLarge"
       : isStandard ? DEFAULT_PREFERENCES.textSize : "large";
@@ -398,6 +399,12 @@ export default function App() {
       textSize,
       buttonSize: isStandard ? DEFAULT_PREFERENCES.buttonSize : "large",
       contrast: isStandard ? DEFAULT_PREFERENCES.contrast : "high",
+      easyLanguage: isG,
+      smartGuide: isG,
+      scrollGuidance: isG,
+      bottomControls: isG,
+      viewportMode: isG ? { mode: "bottom", heightPercent: 70 } : null,
+      voiceGuidance: false,
     }));
     setActiveProfile("central");
   }, []);
@@ -811,6 +818,15 @@ export default function App() {
         const operation = Array.isArray(operations)
           ? operations[0] as Record<string, unknown> | undefined
           : undefined;
+        const expectedOptionId = accessibility.textScale === "large" &&
+          accessibility.buttonScale === "large" &&
+          accessibility.contrast === "high" &&
+          accessibility.viewportMode?.mode === "bottom" &&
+          accessibility.viewportMode.heightPercent === 70
+          ? "single-column-list"
+          : accessibility.textScale === "standard" && accessibility.buttonScale === "standard"
+            ? "compact-grid"
+            : null;
         const metadataMatches = model?.schemaVersion === 2 &&
           model.contractVersion === "universal-layout.v2" &&
           model.hostId === "democoffee" &&
@@ -828,7 +844,9 @@ export default function App() {
           /^[a-f0-9]{64}$/.test(component.itemOrderHash) &&
           Array.isArray(component.operations) && component.operations.includes("selectLayoutOption") &&
           Array.isArray(arrangement?.optionIds) &&
-          arrangement.optionIds.includes("compact-grid") &&
+          expectedOptionId !== null &&
+          arrangement.optionIds.includes(expectedOptionId) &&
+          arrangement.optionIds.length === 1 &&
           Array.isArray(model.allowedOperations) && model.allowedOperations.includes("selectLayoutOption") &&
           plan?.schemaVersion === model.schemaVersion &&
           plan.contractVersion === model.contractVersion &&
@@ -842,7 +860,7 @@ export default function App() {
           operation?.type === "selectLayoutOption" &&
           operation.targetId === "menu.product-list" &&
           operation.groupId === "arrangement" &&
-          operation.optionId === "compact-grid" &&
+          operation.optionId === expectedOptionId &&
           Object.keys(operation).sort().join(",") === "groupId,optionId,targetId,type" &&
           Object.keys(plan).sort().join(",") ===
             "constraintHash,contractVersion,hostId,operations,schemaVersion,screenId,structureHash,structureVersion,viewportClass" &&
@@ -888,16 +906,16 @@ export default function App() {
         logMenuLayoutDiagnostic({
           phase: "plan_validated",
           source,
-          optionId: "compact-grid",
+          optionId: expectedOptionId,
           viewportClass,
         });
         logMenuLayoutDiagnostic({
           phase: "react_state_update_requested",
           source,
-          optionId: "compact-grid",
+          optionId: expectedOptionId,
         });
         setUniversalV2Preset({
-          optionId: "compact-grid",
+          optionId: expectedOptionId,
           structureHash: model.structureHash as string,
           constraintHash: model.constraintHash as string,
           viewportClass,

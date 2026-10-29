@@ -6,9 +6,7 @@ import {
   validateUniversalLayoutV2Model,
   validateUniversalLayoutV2Plan,
 } from "./universal-v2-contract-export.ts";
-import { demoCoffeeUniversalV2DevPolicy } from "./demo-coffee-dev-policy.ts";
-
-const policies = [demoCoffeeUniversalV2DevPolicy];
+import { demoCoffeeUniversalV2PolicyForViewport } from "./demo-coffee-dev-policy.ts";
 const AccessibilityInput = z.object({
   textScale: z.enum(["standard", "large", "extraLarge"]),
   buttonScale: z.enum(["standard", "large"]),
@@ -46,7 +44,9 @@ export function registerUniversalLayoutV2MockRoute(app, { env = process.env } = 
 
       const input = parsed.data;
       try {
-        const model = createUniversalLayoutV2Model(demoCoffeeUniversalV2DevPolicy, {
+        const policy = demoCoffeeUniversalV2PolicyForViewport(input.viewportClass);
+        const policies = [policy];
+        const model = createUniversalLayoutV2Model(policy, {
           viewportClass: input.viewportClass,
           accessibility: input.accessibility,
           layoutCapabilities: [],
@@ -57,6 +57,15 @@ export function registerUniversalLayoutV2MockRoute(app, { env = process.env } = 
           }],
         });
         const validatedModel = validateUniversalLayoutV2Model(model, policies);
+        const arrangement = validatedModel.components
+          .find((component) => component.id === "menu.product-list")
+          ?.optionGroups?.find((group) => group.id === "arrangement");
+        const optionId = arrangement?.optionIds.includes("single-column-list")
+          ? "single-column-list"
+          : arrangement?.optionIds.includes("compact-grid") ? "compact-grid" : null;
+        if (!optionId) {
+          return res.status(422).json({ error: "UNSUPPORTED_PLAN_OPERATION" });
+        }
         const plan = validateUniversalLayoutV2Plan({
           schemaVersion: validatedModel.schemaVersion,
           contractVersion: validatedModel.contractVersion,
@@ -70,7 +79,7 @@ export function registerUniversalLayoutV2MockRoute(app, { env = process.env } = 
             type: "selectLayoutOption",
             targetId: "menu.product-list",
             groupId: "arrangement",
-            optionId: "compact-grid",
+            optionId,
           }],
         }, validatedModel, policies);
         return res.status(200).json({ model: validatedModel, plan });

@@ -60,7 +60,9 @@ try {
     const result = await send("Runtime.evaluate", {
       expression, awaitPromise: true, returnByValue: true,
     });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+    }
     return result.result?.value;
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -71,11 +73,11 @@ try {
     }
     throw new Error(`Timed out: ${label}`);
   };
-  const visit = async (query, width = 1280) => {
+  const visit = async (query, width = 1280, height = 900, mobile = false) => {
     try { await evaluate("sessionStorage.clear()"); } catch {}
     await send("Emulation.setDeviceMetricsOverride", {
-      width, height: 900, deviceScaleFactor: 1, mobile: false,
-      screenWidth: width, screenHeight: 900,
+      width, height, deviceScaleFactor: 1, mobile,
+      screenWidth: width, screenHeight: height,
     });
     await send("Page.navigate", { url: `${appUrl}/${query}` });
     await until("Boolean(document.querySelector('#start-store'))", "welcome screen");
@@ -268,8 +270,8 @@ try {
     accessibilityEvidence.push({ profile: item.profile, ...profileEvidence });
   }
 
-  const runMutatedPlan = async (mutation, expectedLabel) => {
-    await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
+  const runMutatedPlan = async (mutation, expectedLabel, profileQuery = "") => {
+    await visit(`?menuLayoutDiagnostics=1&universalLayoutV2Mock=1${profileQuery}`);
     await evaluate(`(() => {
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (input, init = {}) => {
@@ -302,6 +304,122 @@ try {
     "payload.plan.constraintHash = '0'.repeat(64);",
     "hash mismatch rejection",
   );
+  await runMutatedPlan(
+    "payload.plan.operations[0].optionId = 'compact-grid';",
+    "G disallowed option rejection",
+    "&mockCentralQrProfileForAiTest=g",
+  );
+  await runMutatedPlan(
+    "payload.plan.constraintHash = '0'.repeat(64);",
+    "G stale hash rejection",
+    "&mockCentralQrProfileForAiTest=g",
+  );
+
+  const gLayoutEvidence = [];
+  for (const width of [360, 390]) {
+    await visit(
+      "?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&mockCentralQrProfileForAiTest=g",
+      width,
+      844,
+      true,
+    );
+    await evaluate(`(() => {
+      const nativeFetch = window.fetch.bind(window);
+      window.__gV2Request = null;
+      window.fetch = (input, init = {}) => {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (url.pathname === '/api/dev/universal-layout/v2/mock-plan') {
+          window.__gV2Request = JSON.parse(init.body);
+        }
+        return nativeFetch(input, init);
+      };
+    })()`);
+    await evaluate("document.querySelector('#start-store').click()");
+    await until(
+      `document.querySelector('.product-grid')?.dataset.universalV2Option === 'single-column-list'`,
+      `G single-column-list at ${width}px`,
+    );
+    const view = await evaluate(`(() => {
+      const grid = document.querySelector('.product-grid');
+      const cards = Array.from(grid.querySelectorAll('.product-card'));
+      const cart = document.querySelector('.cart-bar');
+      const cartRect = cart?.getBoundingClientRect() ?? null;
+      const cardRects = cards.map(card => card.getBoundingClientRect());
+      const accessibility = (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+        .findLast(event => event.phase === 'request_started' && event.source === 'universal_v2_mock');
+      const lastButton = cards.at(-1)?.querySelector('button');
+      const buttonRect = lastButton.getBoundingClientRect();
+      return {
+        width: innerWidth,
+        height: innerHeight,
+        option: grid.dataset.universalV2Option,
+        columns: getComputedStyle(grid).gridTemplateColumns.split(/\\\\s+/).filter(Boolean).length,
+        ids: cards.map(card => card.dataset.menuProductId),
+        cartPosition: cart ? getComputedStyle(cart).position : null,
+        cartBottom: cartRect?.bottom ?? null,
+        maxCardBottom: Math.max(...cardRects.map(rect => rect.bottom)),
+        cardCartOverlap: cartRect ? cardRects.some(rect =>
+          rect.left < cartRect.right && rect.right > cartRect.left &&
+          rect.top < cartRect.bottom && rect.bottom > cartRect.top) : false,
+        buttonHeight: buttonRect.height,
+        request: window.__gV2Request,
+        kioskClasses: document.querySelector('.kiosk').className,
+      };
+    })()`);
+    assert.equal(view.width, width);
+    assert.equal(view.height, 844);
+    assert.equal(view.option, "single-column-list");
+    assert.equal(view.columns, 1);
+    assert.deepEqual(view.ids, [
+      "americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea",
+    ]);
+    assert.equal(view.cardCartOverlap, false);
+    assert.ok(view.buttonHeight >= 44);
+    assert.ok(view.kioskClasses.includes("a11y-text-large"));
+    assert.ok(view.kioskClasses.includes("a11y-controls-large"));
+    assert.ok(view.kioskClasses.includes("a11y-high-contrast"));
+    assert.ok(view.kioskClasses.includes("a11y-bottom-controls"));
+    assert.deepEqual(view.request.accessibility, {
+      textScale: "large",
+      buttonScale: "large",
+      contrast: "high",
+      viewportMode: { mode: "bottom", heightPercent: 70 },
+    });
+    assert.equal(view.request.viewportClass, width === 360 ? "compact" : "regular");
+
+    await evaluate("document.querySelector('#menu-product-4').scrollIntoView({block:'center',behavior:'instant'})");
+    const hit = await evaluate(`(() => {
+      const button = document.querySelector('#menu-product-4');
+      const rect = button.getBoundingClientRect();
+      const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return target === button || button.contains(target);
+    })()`);
+    assert.equal(hit, true, `last product button hit-test at ${width}px`);
+    await evaluate("document.querySelector('#menu-product-4').click()");
+    await until("Boolean(document.querySelector('#item-add'))", "G product options");
+    await evaluate("document.querySelector('#item-add').click()");
+    await until("Boolean(document.querySelector('#menu-order-confirm'))", "G menu after add");
+    const cartOverlap = await evaluate(`(() => {
+      const cart = document.querySelector('.cart-bar');
+      const cartRect = cart.getBoundingClientRect();
+      return {
+        position: getComputedStyle(cart).position,
+        overlap: Array.from(document.querySelectorAll('.product-card')).some(card => {
+          const rect = card.getBoundingClientRect();
+          return rect.left < cartRect.right && rect.right > cartRect.left &&
+            rect.top < cartRect.bottom && rect.bottom > cartRect.top;
+        }),
+      };
+    })()`);
+    assert.equal(cartOverlap.position, "static");
+    assert.equal(cartOverlap.overlap, false);
+    await evaluate("document.querySelector('#menu-order-confirm').click()");
+    await until("Boolean(document.querySelector('#cart-pay'))", "G cart");
+    const cartText = await evaluate("document.body.innerText");
+    assert.match(cartText, /레몬티/);
+    assert.match(cartText, /4,600원/);
+    gLayoutEvidence.push(view);
+  }
 
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
   await evaluate(`(() => {
@@ -595,7 +713,7 @@ try {
   assert.equal(openAiUiEvidence.productIds.length, 5);
   assert.equal(centralRequests, 0, "the OpenAI UI branch was served by the local Fake");
   console.log(JSON.stringify({
-    applied, narrowRegular, compactViewport,
+    applied, narrowRegular, compactViewport, gLayoutEvidence,
     desktopEvidence,
     accessibilityEvidence,
     cartBarPosition,

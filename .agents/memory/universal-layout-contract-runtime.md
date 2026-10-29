@@ -31,11 +31,11 @@ OpenAI relay coalescing keys the complete validated model, not only selected has
 
 **How to apply:** Keep the OpenAI gate OFF outside an authorized test, capture `central_upstream_started` events before restarting, and set a higher cap only for isolated Development tests.
 
-Universal v2's copied central validator is a contract implementation, not proof that a host policy is centrally registered or approved. DemoCoffee's compact-grid conformance policy is Development-only and locally owned; do not represent it as central registration or enable a relay based on it.
+The user reports that Central Development registered DemoCoffee `menu.v2` with `compact-grid` for A and `single-column-list` for G on `menu.product-list/arrangement`. G is limited to large text, large buttons, high contrast, and bottom-70; local hash checks matched the supplied compact/regular constraints and structure hash. This is not production registration evidence.
 
-**Why:** The central v2 handoff explicitly labels the compact-grid fixture as test-only and has no registered DemoCoffee endpoint or provider.
+**Why:** Central Development registration was explicitly reported by the user, but this work made no central API call and verified only the local contract implementation.
 
-**How to apply:** Use the exact v2 schema, hash, and validators for local Fake plans; keep production routes and claims of central approval disabled until an authoritative registration exists.
+**How to apply:** Keep the host option policy local and Development-only, verify supplied hashes with local fixtures, and do not infer Production registration or issue central requests without separate authorization.
 
 Keep the v2 central Fake relay separate from both the local v2 Fake and v1/OpenAI relays. It must be Development-only, require its own explicit opt-in, validate the returned top-level plan against the current v2 model, and never fall back to the local Fake after a central error. Bound it to one upstream attempt per process unless a later authorized test requires otherwise.
 

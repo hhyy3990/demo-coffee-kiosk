@@ -7,7 +7,7 @@ import {
   validateUniversalLayoutV2Plan,
   validateUniversalLayoutV2Model,
 } from "./universal-v2-contract-export.ts";
-import { demoCoffeeUniversalV2DevPolicy } from "./demo-coffee-dev-policy.ts";
+import { demoCoffeeUniversalV2PolicyForViewport } from "./demo-coffee-dev-policy.ts";
 
 const FAKE_ENDPOINT_PATH = "/api/dev/universal-layout/v2/fake-plan";
 const OPENAI_ENDPOINT_PATH = "/api/dev/universal-layout/v2/openai-plan";
@@ -16,7 +16,6 @@ const MAX_RESPONSE_BYTES = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 25_000;
 const CACHE_TTL_MS = 15_000;
 const MAX_UPSTREAM_REQUESTS = 1;
-const policies = [demoCoffeeUniversalV2DevPolicy];
 
 const Accessibility = z.object({
   textScale: z.enum(["standard", "large", "extraLarge"]),
@@ -83,9 +82,10 @@ function parseJsonBody(req, res, next) {
   );
 }
 
-function buildModel(input) {
+function buildModel(input, policies) {
+  const [policy] = policies;
   return validateUniversalLayoutV2Model(
-    createUniversalLayoutV2Model(demoCoffeeUniversalV2DevPolicy, {
+    createUniversalLayoutV2Model(policy, {
       viewportClass: input.viewportClass,
       accessibility: input.accessibility,
       layoutCapabilities: [],
@@ -198,8 +198,9 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     }
 
     let model;
+    const policies = [demoCoffeeUniversalV2PolicyForViewport(parsed.data.viewportClass)];
     try {
-      model = buildModel(parsed.data);
+      model = buildModel(parsed.data, policies);
     } catch {
       log("model_rejected", { localStatus: 400 });
       return res.status(400).json({ error: "MODEL_INVALID" });

@@ -3,6 +3,7 @@ import test from "node:test";
 import express from "express";
 import { registerUniversalLayoutV2MockRoute } from "./mock-route.mjs";
 import { demoCoffeeUniversalV2DevPolicy } from "./demo-coffee-dev-policy.ts";
+import { demoCoffeeUniversalV2PolicyForViewport } from "./demo-coffee-dev-policy.ts";
 import {
   createUniversalLayoutV2Model,
   universalSha256,
@@ -33,9 +34,9 @@ async function withServer(env, run) {
   }
 }
 
-function makeModel(accessibility = standard) {
+function makeModel(accessibility = standard, viewportClass = "regular") {
   return createUniversalLayoutV2Model(demoCoffeeUniversalV2DevPolicy, {
-    viewportClass: "regular",
+    viewportClass,
     accessibility,
     layoutCapabilities: [],
     componentState: [{
@@ -46,7 +47,7 @@ function makeModel(accessibility = standard) {
   });
 }
 
-function planFor(model, mutation = (plan) => plan) {
+function planFor(model, mutation = (plan) => plan, optionId = "compact-grid") {
   return mutation({
     schemaVersion: model.schemaVersion,
     contractVersion: model.contractVersion,
@@ -60,7 +61,7 @@ function planFor(model, mutation = (plan) => plan) {
       type: "selectLayoutOption",
       targetId: "menu.product-list",
       groupId: "arrangement",
-      optionId: "compact-grid",
+      optionId,
     }],
   });
 }
@@ -152,6 +153,113 @@ test("large text and large controls cannot resolve the compact-grid option", asy
       assert.equal((await response.json()).error, "UNSUPPORTED_PLAN_OPERATION");
     });
   }
+});
+
+test("G exact accessibility profile resolves single-column-list with the published hashes", async () => {
+  const g = {
+    textScale: "large",
+    buttonScale: "large",
+    contrast: "high",
+    viewportMode: { mode: "bottom", heightPercent: 70 },
+  };
+  for (const [viewportClass, expectedConstraintHash] of [
+    ["compact", "8b5e0cd6b04a2f140758ca7ed6d6652bea0a592818c55317f9f39a96fbaed594"],
+    ["regular", "34f297aaeb54dfce542b9478a623b6b92420bd576e10e13766558bdc83b86e28"],
+  ]) {
+    const model = makeModel(g, viewportClass);
+    assert.equal(model.structureHash, "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e");
+    assert.equal(model.constraintHash, expectedConstraintHash);
+    assert.deepEqual(model.components[0].optionGroups, [{
+      id: "arrangement",
+      optionIds: ["single-column-list"],
+    }]);
+    const plan = validateUniversalLayoutV2Plan(
+      planFor(model, (value) => value, "single-column-list"),
+      model,
+      policies,
+    );
+    assert.equal(plan.operations[0].optionId, "single-column-list");
+  }
+});
+
+test("G option is unavailable for unverified accessibility combinations", () => {
+  const g = {
+    textScale: "large",
+    buttonScale: "large",
+    contrast: "high",
+    viewportMode: { mode: "bottom", heightPercent: 70 },
+  };
+  const unverified = [
+    { ...g, textScale: "standard" },
+    { ...g, buttonScale: "standard" },
+    { ...g, contrast: "standard" },
+    { ...g, viewportMode: { mode: "bottom", heightPercent: 60 } },
+    { ...g, viewportMode: null },
+  ];
+  for (const accessibility of unverified) {
+    const model = makeModel(accessibility);
+    assert.equal(
+      model.components[0].optionGroups?.[0]?.optionIds.includes("single-column-list") ?? false,
+      false,
+    );
+    assert.throws(
+      () => validateUniversalLayoutV2Plan(
+        planFor(model, (value) => value, "single-column-list"),
+        model,
+        policies,
+      ),
+      /UNSUPPORTED_OPTION_SELECTION|UNSUPPORTED_PLAN_OPERATION/,
+    );
+  }
+});
+
+test("G option is not exposed for an unverified wide viewport", () => {
+  const accessibility = {
+    textScale: "large",
+    buttonScale: "large",
+    contrast: "high",
+    viewportMode: { mode: "bottom", heightPercent: 70 },
+  };
+  const policy = demoCoffeeUniversalV2PolicyForViewport("wide");
+  const model = createUniversalLayoutV2Model(policy, {
+    viewportClass: "wide",
+    accessibility,
+    layoutCapabilities: [],
+    componentState: [{
+      id: "menu.product-list",
+      itemCount: orderedItemIds.length,
+      itemOrderHash: universalSha256({ orderedItemIds }),
+    }],
+  });
+  assert.equal(model.components[0].optionGroups, undefined);
+  assert.throws(
+    () => validateUniversalLayoutV2Plan(
+      planFor(model, (value) => value, "single-column-list"),
+      model,
+      [policy],
+    ),
+    /UNSUPPORTED_PLAN_OPERATION/,
+  );
+});
+
+test("Development Fake selects single-column-list only for the exact G model", async () => {
+  const g = {
+    textScale: "large",
+    buttonScale: "large",
+    contrast: "high",
+    viewportMode: { mode: "bottom", heightPercent: 70 },
+  };
+  await withServer({ NODE_ENV: "development" }, async (origin) => {
+    const response = await fetch(`${origin}/api/dev/universal-layout/v2/mock-plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewportClass: "regular", accessibility: g, orderedItemIds }),
+    });
+    assert.equal(response.status, 200);
+    const { model, plan } = await response.json();
+    assert.equal(model.constraintHash, "34f297aaeb54dfce542b9478a623b6b92420bd576e10e13766558bdc83b86e28");
+    assert.equal(plan.operations[0].optionId, "single-column-list");
+  });
 });
 
 test("v2 Mock route is unavailable outside Development", async () => {
