@@ -48,6 +48,9 @@ import {
 } from "./accessibility/optionLayoutPlan";
 
 const QrCameraScanner = lazy(() => import("./components/QrCameraScanner"));
+const QR_AUTO_LAYOUT_PRODUCT_IDS = [
+  "americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea",
+] as const;
 
 type Stage = CafeStage;
 type Category = "coffee" | "cake" | "dessert" | "food";
@@ -76,6 +79,19 @@ function modelViewportWidthFor(actualWidth: number): number {
 
 function createCurrentMenuScreenModel(actualWidth: number, preferences: Preferences) {
   return createMenuScreenModel(modelViewportWidthFor(actualWidth), preferences);
+}
+
+function isQrAutoLayoutGProfile(profile: Preferences): boolean {
+  return profile.textSize === "large" &&
+    profile.buttonSize === "large" &&
+    profile.contrast === "high" &&
+    profile.viewportMode?.mode === "bottom" &&
+    profile.viewportMode.heightPercent === 70 &&
+    profile.easyLanguage &&
+    profile.smartGuide &&
+    profile.scrollGuidance &&
+    !profile.voiceGuidance &&
+    !profile.bottomControls;
 }
 
 function logMenuLayoutDiagnostic(event: MenuLayoutDiagnostic) {
@@ -187,6 +203,8 @@ export default function App() {
   const [qrError, setQrError] = useState("");
   const qrRequestInFlightRef = useRef(false);
   const qrRequestGenerationRef = useRef(0);
+  const [qrAutoLayoutGeneration, setQrAutoLayoutGeneration] = useState<number | null>(null);
+  const qrAutoLayoutAttemptedGenerationRef = useRef<number | null>(null);
   const [orderNumber, setOrderNumber] = useState("");
   const [completionState, setCompletionState] = useState<CompletionState>({
     active: false, returning: false, remainingSeconds: 0, error: false,
@@ -328,6 +346,8 @@ export default function App() {
     const unregisterSessionCleanup = sdk.registerSessionCleanup(() => {
       qrRequestGenerationRef.current += 1;
       qrRequestInFlightRef.current = false;
+      setQrAutoLayoutGeneration(null);
+      setUniversalV2Preset(null);
       qrProfileClientRef.current?.cancel();
       setQrOpen(false);
       setQrLoading(false);
@@ -712,8 +732,22 @@ export default function App() {
     const v2MockMode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
     const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
     const v2OpenAiMode = import.meta.env.DEV && params.get("universalLayoutV2OpenAi") === "1";
-    const enabled = v2MockMode || v2RelayMode || v2OpenAiMode;
-    const source = v2OpenAiMode
+    const manualMode = v2MockMode || v2RelayMode || v2OpenAiMode;
+    const orderedItemIds = currentProducts.map((product) => product.id);
+    const qrAutoMode = import.meta.env.DEV &&
+      qrAutoLayoutGeneration !== null &&
+      qrAutoLayoutGeneration === qrRequestGenerationRef.current &&
+      activeProfile === "central" &&
+      stage === "menu" &&
+      category === "coffee" &&
+      window.innerWidth <= 1100 &&
+      isQrAutoLayoutGProfile(preferences) &&
+      JSON.stringify(orderedItemIds) === JSON.stringify(QR_AUTO_LAYOUT_PRODUCT_IDS);
+    const automaticMode = qrAutoMode && !manualMode;
+    const enabled = manualMode || automaticMode;
+    const source = automaticMode
+      ? "universal_v2_qr_auto"
+      : v2OpenAiMode
       ? "universal_v2_openai"
       : v2RelayMode ? "universal_v2_central" : "universal_v2_mock";
     const conflictingMode = [v2MockMode, v2RelayMode, v2OpenAiMode].filter(Boolean).length > 1 || [
@@ -736,7 +770,6 @@ export default function App() {
     const viewportClass = window.innerWidth <= 380
       ? "compact" as const
       : window.innerWidth <= 1100 ? "regular" as const : "wide" as const;
-    const orderedItemIds = currentProducts.map((product) => product.id);
     const accessibility = {
       textScale: preferences.textSize,
       buttonScale: preferences.buttonSize,
@@ -748,6 +781,7 @@ export default function App() {
     const snapshot = JSON.stringify({
       stage,
       activeProfile,
+      qrAutoLayoutGeneration: automaticMode ? qrAutoLayoutGeneration : null,
       viewportWidth: window.innerWidth,
       viewportClass,
       accessibility,
@@ -770,12 +804,18 @@ export default function App() {
       itemCount: orderedItemIds.length,
     });
 
-    void (async () => {
+    const launchRequest = () => {
+      if (cancelled) return;
+      if (automaticMode) {
+        if (qrAutoLayoutAttemptedGenerationRef.current === qrAutoLayoutGeneration) return;
+        qrAutoLayoutAttemptedGenerationRef.current = qrAutoLayoutGeneration;
+      }
+      void (async () => {
       try {
         const response = await fetch(
           v2RelayMode
             ? "/api/dev/universal-layout/v2/relay-plan"
-            : v2OpenAiMode
+            : v2OpenAiMode || automaticMode
               ? "/api/dev/universal-layout/v2/openai-plan"
             : "/api/dev/universal-layout/v2/mock-plan",
           {
@@ -882,6 +922,7 @@ export default function App() {
             JSON.stringify({
               stage,
               activeProfile,
+              qrAutoLayoutGeneration: automaticMode ? qrAutoLayoutGeneration : null,
               viewportWidth: window.innerWidth,
               viewportClass: window.innerWidth <= 380
                 ? "compact"
@@ -925,19 +966,27 @@ export default function App() {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
             source,
-            reason: v2OpenAiMode
+            reason: v2OpenAiMode || automaticMode
               ? "central_openai_relay_request_failed"
               : v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });
         }
       }
-    })();
+      })();
+    };
+    const launchTimer = automaticMode
+      ? window.setTimeout(launchRequest, 0)
+      : (launchRequest(), null);
     return () => {
       cancelled = true;
       controller.abort();
+      if (launchTimer !== null) window.clearTimeout(launchTimer);
       window.removeEventListener("resize", cancelForResize);
     };
-  }, [stage, viewportWidth, preferences, universalItemIdsKey, activeProfile]);
+  }, [
+    stage, viewportWidth, preferences, universalItemIdsKey, activeProfile,
+    qrAutoLayoutGeneration, category,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1664,6 +1713,8 @@ export default function App() {
   const clearProfile = () => {
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
+    setQrAutoLayoutGeneration(null);
+    setUniversalV2Preset(null);
     setProfileDetailsOpen(false);
   };
   const startAccessibilityExperience = () => {
@@ -1691,6 +1742,8 @@ export default function App() {
   const loadProfileToken = async (value: string, inputKind: "scan" | "manual") => {
     if (qrRequestInFlightRef.current) return;
     const requestGeneration = ++qrRequestGenerationRef.current;
+    setQrAutoLayoutGeneration(null);
+    setUniversalV2Preset(null);
     const isCurrentSession = accessibilitySdkRef.current?.createSessionGuard() ?? (() => true);
     qrRequestInFlightRef.current = true;
     setQrLoading(true);
@@ -1700,6 +1753,7 @@ export default function App() {
       if (!isCurrentSession()) return;
       setPreferences(resolved);
       setActiveProfile("central");
+      setQrAutoLayoutGeneration(isQrAutoLayoutGProfile(resolved) ? requestGeneration : null);
       setDemoAccessibilityActive(false);
       setProfileDetailsOpen(false);
       setQrOpen(false);
@@ -1740,6 +1794,8 @@ export default function App() {
   };
   const returnToStart = useCallback(() => {
     accessibilitySdkRef.current?.endSession();
+    setQrAutoLayoutGeneration(null);
+    setUniversalV2Preset(null);
     setCart([]);
     setReceiptChoice(null);
     setSelectedPayment("card");

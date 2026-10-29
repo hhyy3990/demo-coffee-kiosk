@@ -272,6 +272,12 @@ try {
 
   const runMutatedPlan = async (mutation, expectedLabel, profileQuery = "") => {
     await visit(`?menuLayoutDiagnostics=1&universalLayoutV2Mock=1${profileQuery}`);
+    if (profileQuery.includes("mockCentralQrProfileForAiTest")) {
+      await until(
+        "document.querySelector('.kiosk')?.classList.contains('a11y-text-large')",
+        "test G profile before plan mutation",
+      );
+    }
     await evaluate(`(() => {
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (input, init = {}) => {
@@ -287,10 +293,17 @@ try {
       };
     })()`);
     await evaluate("document.querySelector('#start-store').click()");
-    await until(
-      `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'universal_v2_mock' && e.reason === 'response_model_plan_mismatch')`,
-      expectedLabel,
-    );
+    try {
+      await until(
+        `(window.__demoCoffeeMenuLayoutDiagnostics ?? []).some(e => e.phase === 'plan_rejected' && e.source === 'universal_v2_mock' && e.reason === 'response_model_plan_mismatch')`,
+        expectedLabel,
+      );
+    } catch {
+      const diagnostics = await evaluate(
+        `JSON.stringify((window.__demoCoffeeMenuLayoutDiagnostics ?? []).slice(-8))`,
+      );
+      throw new Error(`${expectedLabel}; recent diagnostics: ${diagnostics}`);
+    }
     assert.equal(
       await evaluate("document.querySelector('.product-grid')?.dataset.universalV2Option ?? null"),
       null,
@@ -420,6 +433,185 @@ try {
     assert.match(cartText, /4,600원/);
     gLayoutEvidence.push(view);
   }
+
+  const fakeV5GProfile = {
+    schemaVersion: 5,
+    updatedAt: "2026-10-30T00:00:00.000Z",
+    preferences: {
+      textSize: "large",
+      buttonSize: "large",
+      contrast: "high",
+      easyLanguage: true,
+      viewportMode: { mode: "bottom", heightPercent: 70 },
+      smartGuide: true,
+      voiceGuidance: false,
+      guideDelaySeconds: 15,
+      language: "ko",
+      stepByStepGuidance: false,
+      conciseGuidance: false,
+      slowGuidance: false,
+      scrollGuidance: true,
+    },
+  };
+  const qrAutoEvidence = [];
+  for (const width of [360, 390]) {
+    await visit("?menuLayoutDiagnostics=1", width, 844, true);
+    await send("Network.setBlockedURLs", { urls: ["https://*"] });
+    await evaluate(`(() => {
+      const nativeFetch = window.fetch.bind(window);
+      const profile = ${JSON.stringify(fakeV5GProfile)};
+      window.__qrLookupCount = 0;
+      window.__autoAiCount = 0;
+      window.__v2FallbackCount = 0;
+      window.fetch = async (input, init = {}) => {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (url.pathname === '/api/qr-profile') {
+          window.__qrLookupCount += 1;
+          return new Response(JSON.stringify(profile), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.pathname === '/api/dev/universal-layout/v2/openai-plan') {
+          window.__autoAiCount += 1;
+          if (window.__autoAiFailure) {
+            return new Response(JSON.stringify({ error: 'RELAY_DISABLED' }), {
+              status: 503, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          return nativeFetch('/api/dev/universal-layout/v2/mock-plan', init);
+        }
+        if (url.pathname === '/api/dev/universal-layout/v2/mock-plan') {
+          window.__v2FallbackCount += 1;
+        }
+        return nativeFetch(input, init);
+      };
+    })()`);
+    await until("Boolean(document.querySelector('[data-a11y-qr-entry-dock] button'))", "QR entry dock");
+    await evaluate("document.querySelector('[data-a11y-qr-entry-dock] button').click()");
+    await until("Boolean(document.querySelector('.qr-manual-toggle'))", "QR modal");
+    await evaluate("document.querySelector('.qr-manual-toggle').click()");
+    await until("Boolean(document.querySelector('#profile-token'))", "manual QR token form");
+    await evaluate(`(() => {
+      const input = document.querySelector('#profile-token');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '0123456789abcdefghij');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('.qr-manual-form button[type="submit"]').click();
+    })()`);
+    await until(
+      `!document.querySelector('.qr-modal') && document.querySelector('.kiosk')?.classList.contains('a11y-bottom-viewport-enabled')`,
+      "successful fake v5 QR profile applied by the SDK",
+    );
+    assert.equal(await evaluate("window.__qrLookupCount"), 1);
+    assert.equal(await evaluate("window.__autoAiCount"), 0, "QR success waits until the menu screen");
+    assert.equal(await evaluate("document.querySelector('.kiosk').classList.contains('a11y-bottom-controls')"), false);
+    await evaluate("document.querySelector('#start-store').click()");
+    await until(
+      `document.querySelector('.product-grid')?.dataset.universalV2Option === 'single-column-list'`,
+      `QR-triggered G AI plan at ${width}px`,
+    );
+    await wait(250);
+    const auto = await evaluate(`(() => ({
+      requests: window.__autoAiCount,
+      qrLookups: window.__qrLookupCount,
+      fallbackCalls: window.__v2FallbackCount,
+      source: (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+        .findLast(event => event.phase === 'plan_validated' && event.source === 'universal_v2_qr_auto')?.source ?? null,
+      option: document.querySelector('.product-grid')?.dataset.universalV2Option ?? null,
+      width: innerWidth,
+      viewportMode: getComputedStyle(document.querySelector('.kiosk'))
+        .getPropertyValue('--a11y-bottom-viewport-height').trim(),
+    }))()`);
+    assert.equal(auto.requests, 1, "one automatic OpenAI-relay request per QR application");
+    assert.equal(auto.qrLookups, 1);
+    assert.equal(auto.fallbackCalls, 1, "the OpenAI-relay test adapter uses only the local Fake response");
+    assert.equal(auto.source, "universal_v2_qr_auto");
+    assert.equal(auto.option, "single-column-list");
+    assert.equal(auto.width, width);
+    assert.match(auto.viewportMode, /844px|590px/);
+    assert.deepEqual(
+      await evaluate(`Array.from(document.querySelectorAll('.product-card')).map(card => card.dataset.menuProductId)`),
+      ["americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea"],
+    );
+    await evaluate("document.querySelector('#menu-product-4').scrollIntoView({block:'center',behavior:'instant'})");
+    assert.equal(await evaluate(`(() => {
+      const button = document.querySelector('#menu-product-4');
+      const rect = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit === button || button.contains(hit);
+    })()`), true);
+    await evaluate("document.querySelector('#menu-product-4').click()");
+    await until("Boolean(document.querySelector('#item-add'))", "QR-auto product options");
+    await evaluate("document.querySelector('#item-add').click()");
+    await until("Boolean(document.querySelector('#menu-order-confirm'))", "QR-auto cart bar");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.cart-bar')).position"), "static");
+    await evaluate("document.querySelector('#menu-order-confirm').click()");
+    await until("Boolean(document.querySelector('#cart-pay'))", "QR-auto cart screen");
+    assert.match(await evaluate("document.body.innerText"), /레몬티/);
+    assert.equal(await evaluate("window.__autoAiCount"), 1, "rerenders do not repeat a QR request");
+    qrAutoEvidence.push(auto);
+    await send("Network.setBlockedURLs", { urls: [] });
+  }
+
+  const standardV5Profile = {
+    ...fakeV5GProfile,
+    preferences: {
+      ...fakeV5GProfile.preferences,
+      textSize: "standard",
+      buttonSize: "standard",
+      contrast: "standard",
+      easyLanguage: false,
+      viewportMode: null,
+      smartGuide: false,
+      scrollGuidance: false,
+    },
+  };
+  await visit("?menuLayoutDiagnostics=1", 390, 844, true);
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    const profile = ${JSON.stringify(standardV5Profile)};
+    window.__qrLookupCount = 0;
+    window.__autoAiCount = 0;
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname === '/api/qr-profile') {
+        window.__qrLookupCount += 1;
+        return new Response(JSON.stringify(profile), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.pathname === '/api/dev/universal-layout/v2/openai-plan') {
+        window.__autoAiCount += 1;
+        return nativeFetch('/api/dev/universal-layout/v2/mock-plan', init);
+      }
+      return nativeFetch(input, init);
+    };
+  })()`);
+  await evaluate("document.querySelector('[data-a11y-qr-entry-dock] button').click()");
+  await evaluate("document.querySelector('.qr-manual-toggle').click()");
+  await evaluate(`(() => {
+    const input = document.querySelector('#profile-token');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, '0123456789abcdefghij');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.qr-manual-form button[type="submit"]').click();
+  })()`);
+  await until("!document.querySelector('.qr-modal')", "standard QR profile applied");
+  await evaluate("document.querySelector('#start-store').click()");
+  await wait(300);
+  assert.equal(await evaluate("window.__qrLookupCount"), 1);
+  assert.equal(await evaluate("window.__autoAiCount"), 0, "non-G QR profiles do not request AI");
+  assert.equal(await evaluate("document.querySelector('.product-grid')?.dataset.universalV2Option ?? null"), null);
+
+  await visit("?menuLayoutDiagnostics=1&mockCentralQrProfileForAiTest=g", 390, 844, true);
+  await evaluate("document.querySelector('#start-store').click()");
+  await wait(300);
+  assert.equal(
+    await evaluate(`(window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+      .some(event => event.source === 'universal_v2_qr_auto' && event.phase === 'request_started')`),
+    false,
+    "test-only profile fixtures do not trigger automatic AI",
+  );
 
   await visit("?menuLayoutDiagnostics=1&universalLayoutV2Mock=1");
   await evaluate(`(() => {
@@ -713,7 +905,7 @@ try {
   assert.equal(openAiUiEvidence.productIds.length, 5);
   assert.equal(centralRequests, 0, "the OpenAI UI branch was served by the local Fake");
   console.log(JSON.stringify({
-    applied, narrowRegular, compactViewport, gLayoutEvidence,
+    applied, narrowRegular, compactViewport, gLayoutEvidence, qrAutoEvidence,
     desktopEvidence,
     accessibilityEvidence,
     cartBarPosition,
