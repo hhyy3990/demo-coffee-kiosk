@@ -11,11 +11,19 @@ The public central QR profile resolver rejects browser cross-origin preflight re
 
 ## Profile schema rollout
 
-The resolver's transitional contract accepts top-level `schemaVersion` 1 or 2 with a `preferences` object and valid `updatedAt`. Validate every required preference before applying. Ignore legacy `simplifiedLayout` only on v1; reject it on v2 and never expose it in the SDK profile type.
+The resolver accepts schema versions 1–5 and validates each version before applying. Versions 1–2 use the legacy `bottomControls` field; versions 3–5 use `viewportMode` and reject legacy fields. Version 4+ requires the language and guidance flags. Version 5 accepts optional `scrollGuidance`, normalizing absence to `false`.
 
-**Why:** The central service can continue serving v1 profiles while consumers move to v2, so rejecting v1 would break existing QR codes; carrying the removed field forward would make v2 ambiguous.
+**Why:** Older issued QR codes remain in circulation while newer profiles use the viewport and guidance schema. Dropping legacy support or silently defaulting malformed data can change a user's saved accessibility settings.
 
-**How to apply:** Keep v1 compatibility until the issuer/service rollout is confirmed, fail closed on unknown versions or malformed responses, and do not treat invalid data as defaults.
+**How to apply:** Preserve version-specific validation, reject unknown or malformed schemas, and never convert invalid profile responses into defaults.
+
+## Isolated QR-flow tests
+
+The QR client captures its `fetch` implementation when it is created. Patching `window.fetch` after app mount does not reliably fake QR lookups; intercept the browser request and fulfill it with a local v5 profile instead.
+
+**Why:** The client is constructed during initial render, before test instrumentation commonly replaces `window.fetch`; a missed interception can reach the real profile service.
+
+**How to apply:** For automatic-layout tests, submit a token through the real QR UI, fulfill `/api/qr-profile` at the browser network layer, and block outbound requests. Do not use the direct profile fixture to test QR-triggered behavior.
 
 ## Camera scanner verification
 
