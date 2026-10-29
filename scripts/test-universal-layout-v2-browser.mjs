@@ -41,7 +41,8 @@ try {
       const path = new URL(message.params.request.url).pathname;
       if (path === "/api/ai-layout/plan" ||
           path === "/api/dev/universal-layout/plan" ||
-          path === "/api/dev/universal-layout/openai-plan") centralRequests += 1;
+          path === "/api/dev/universal-layout/openai-plan" ||
+          path === "/api/dev/universal-layout/v2/openai-plan") centralRequests += 1;
       if (path === "/api/dev/universal-layout/v2/mock-plan") v2MockRequests += 1;
     }
     if (!message.id) return;
@@ -557,6 +558,42 @@ try {
   assert.equal(relayUiSource, true, "central relay mode reaches the React preset path");
   assert.equal(centralRequests, 0, "no relay or OpenAI endpoints were called");
   assert.ok(v2MockRequests >= 5, "only the local v2 Fake endpoint was used");
+  await visit("?menuLayoutDiagnostics=1&universalLayoutV2OpenAi=1", 390);
+  await evaluate(`(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.__v2OpenAiUiRequests = 0;
+    window.fetch = async (input, init = {}) => {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      if (url.pathname !== '/api/dev/universal-layout/v2/openai-plan') return nativeFetch(input, init);
+      window.__v2OpenAiUiRequests += 1;
+      return nativeFetch('/api/dev/universal-layout/v2/mock-plan', init);
+    };
+  })()`);
+  await evaluate("document.querySelector('#start-store').click()");
+  await until(
+    `document.querySelector('.product-grid')?.dataset.universalV2Option === 'compact-grid'`,
+    "OpenAI relay UI branch using local Fake response",
+  );
+  assert.equal(await evaluate("window.__v2OpenAiUiRequests"), 1);
+  const openAiUiEvidence = await evaluate(`(() => {
+    const grid = document.querySelector('.product-grid');
+    return {
+      source: (window.__demoCoffeeMenuLayoutDiagnostics ?? [])
+        .findLast(e => e.phase === 'plan_validated')?.source ?? null,
+      width: innerWidth,
+      gap: getComputedStyle(grid).gap,
+      imageHeight: getComputedStyle(grid.querySelector('.product-art')).height,
+      productIds: Array.from(grid.querySelectorAll('.product-card')).map(
+        card => card.dataset.menuProductId,
+      ),
+    };
+  })()`);
+  assert.equal(openAiUiEvidence.source, "universal_v2_openai");
+  assert.equal(openAiUiEvidence.width, 390);
+  assert.equal(openAiUiEvidence.gap, "10px");
+  assert.equal(openAiUiEvidence.imageHeight, "104px");
+  assert.equal(openAiUiEvidence.productIds.length, 5);
+  assert.equal(centralRequests, 0, "the OpenAI UI branch was served by the local Fake");
   console.log(JSON.stringify({
     applied, narrowRegular, compactViewport,
     desktopEvidence,
@@ -570,6 +607,8 @@ try {
     stickyMatrix,
     relayUiSource,
     relayUiRequests: await evaluate("window.__v2RelayUiRequests"),
+    openAiUiEvidence,
+    openAiUiRequests: await evaluate("window.__v2OpenAiUiRequests"),
     centralRequests,
     v2MockRequests,
   }, null, 2));

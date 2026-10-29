@@ -9,7 +9,8 @@ import {
 } from "./universal-v2-contract-export.ts";
 import { demoCoffeeUniversalV2DevPolicy } from "./demo-coffee-dev-policy.ts";
 
-const ENDPOINT_PATH = "/api/dev/universal-layout/v2/fake-plan";
+const FAKE_ENDPOINT_PATH = "/api/dev/universal-layout/v2/fake-plan";
+const OPENAI_ENDPOINT_PATH = "/api/dev/universal-layout/v2/openai-plan";
 const MAX_BODY = "8kb";
 const MAX_RESPONSE_BYTES = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -45,7 +46,7 @@ function validToken(value) {
     value.length <= 2048 && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
-function buildCentralUrl(base, externalToken) {
+function buildCentralUrl(base, externalToken, endpointPath) {
   if (typeof base !== "string" || base.length > 512 || !validToken(externalToken)) return null;
   try {
     const url = new URL(base);
@@ -53,7 +54,7 @@ function buildCentralUrl(base, externalToken) {
         url.hostname === "naebangsikqr.replit.app" ||
         (url.port && url.port !== "443") || url.username || url.password ||
         url.pathname !== "/" || url.search || url.hash) return null;
-    const endpoint = new URL(ENDPOINT_PATH, url.origin);
+    const endpoint = new URL(endpointPath, url.origin);
     endpoint.searchParams.set("project-protection-bypass", externalToken);
     return endpoint.toString();
   } catch {
@@ -128,14 +129,33 @@ export function registerUniversalLayoutV2RelayRoute(app, {
   fetchImpl = globalThis.fetch,
   now = Date.now,
   logger = (line) => console.info(line),
+  mode = "fake",
 } = {}) {
   if (env.NODE_ENV !== "development") return;
+  if (mode !== "fake" && mode !== "openai") throw new Error("INVALID_UNIVERSAL_V2_RELAY_MODE");
 
+  const endpointPath = mode === "openai" ? OPENAI_ENDPOINT_PATH : FAKE_ENDPOINT_PATH;
+  const enabledEnv = mode === "openai"
+    ? "UNIVERSAL_LAYOUT_V2_OPENAI_RELAY_ENABLED"
+    : "UNIVERSAL_LAYOUT_V2_RELAY_ENABLED";
+  const conflictingEnvs = mode === "openai"
+    ? [
+        "UNIVERSAL_LAYOUT_V2_RELAY_ENABLED",
+        "UNIVERSAL_LAYOUT_RELAY_ENABLED",
+        "UNIVERSAL_LAYOUT_OPENAI_RELAY_ENABLED",
+        "AI_LAYOUT_RELAY_ENABLED",
+      ]
+    : ["UNIVERSAL_LAYOUT_V2_OPENAI_RELAY_ENABLED"];
   const inFlight = new Map();
   const resultCache = new Map();
   let upstreamAttemptCount = 0;
 
-  app.post("/api/dev/universal-layout/v2/relay-plan", parseJsonBody, async (req, res) => {
+  app.post(
+    mode === "openai"
+      ? "/api/dev/universal-layout/v2/openai-plan"
+      : "/api/dev/universal-layout/v2/relay-plan",
+    parseJsonBody,
+    async (req, res) => {
     const requestId = randomUUID();
     res.setHeader("X-Request-ID", requestId);
     res.setHeader("Cache-Control", "no-store");
@@ -147,7 +167,8 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     }));
 
     if (env.NODE_ENV !== "development" ||
-        env.UNIVERSAL_LAYOUT_V2_RELAY_ENABLED !== "true" ||
+        env[enabledEnv] !== "true" ||
+        conflictingEnvs.some((name) => env[name] === "true") ||
         typeof fetchImpl !== "function") {
       log("relay_disabled", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_DISABLED" });
@@ -161,7 +182,7 @@ export function registerUniversalLayoutV2RelayRoute(app, {
 
     const externalToken = env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN;
     const serviceToken = env.AI_LAYOUT_SERVICE_TOKEN;
-    const url = buildCentralUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken);
+    const url = buildCentralUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken, endpointPath);
     if (!url || !validToken(serviceToken)) {
       log("relay_unconfigured", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_NOT_CONFIGURED" });
@@ -262,5 +283,6 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     } finally {
       if (inFlight.get(key) === pending) inFlight.delete(key);
     }
-  });
+    },
+  );
 }

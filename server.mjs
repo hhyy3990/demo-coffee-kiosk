@@ -68,6 +68,7 @@ if (process.env.NODE_ENV === "development") {
   registerUniversalLayoutRelayRoute(app, { mode: "openai" });
   registerUniversalLayoutV2MockRoute(app);
   registerUniversalLayoutV2RelayRoute(app);
+  registerUniversalLayoutV2RelayRoute(app, { mode: "openai" });
 }
 
 if (process.env.NODE_ENV === "production") {

@@ -704,9 +704,12 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const v2MockMode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
     const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
-    const enabled = v2MockMode || v2RelayMode;
-    const source = v2RelayMode ? "universal_v2_central" : "universal_v2_mock";
-    const conflictingMode = v2MockMode && v2RelayMode || [
+    const v2OpenAiMode = import.meta.env.DEV && params.get("universalLayoutV2OpenAi") === "1";
+    const enabled = v2MockMode || v2RelayMode || v2OpenAiMode;
+    const source = v2OpenAiMode
+      ? "universal_v2_openai"
+      : v2RelayMode ? "universal_v2_central" : "universal_v2_mock";
+    const conflictingMode = [v2MockMode, v2RelayMode, v2OpenAiMode].filter(Boolean).length > 1 || [
       "universalLayoutMock",
       "universalLayoutRelay",
       "universalLayoutOpenAi",
@@ -765,6 +768,8 @@ export default function App() {
         const response = await fetch(
           v2RelayMode
             ? "/api/dev/universal-layout/v2/relay-plan"
+            : v2OpenAiMode
+              ? "/api/dev/universal-layout/v2/openai-plan"
             : "/api/dev/universal-layout/v2/mock-plan",
           {
           method: "POST",
@@ -902,7 +907,9 @@ export default function App() {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
             source,
-            reason: v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
+            reason: v2OpenAiMode
+              ? "central_openai_relay_request_failed"
+              : v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });
         }
       }
@@ -921,7 +928,10 @@ export default function App() {
     const centralAiMode = import.meta.env.DEV && params.get("universalLayoutOpenAi") === "1";
     const v2Mode = import.meta.env.DEV && params.get("universalLayoutV2Mock") === "1";
     const v2RelayMode = import.meta.env.DEV && params.get("universalLayoutV2Relay") === "1";
-    const selectedModes = [mockMode, centralMode, centralAiMode, v2Mode, v2RelayMode].filter(Boolean).length;
+    const v2OpenAiMode = import.meta.env.DEV && params.get("universalLayoutV2OpenAi") === "1";
+    const selectedModes = [
+      mockMode, centralMode, centralAiMode, v2Mode, v2RelayMode, v2OpenAiMode,
+    ].filter(Boolean).length;
     if (selectedModes > 1) {
       logMenuLayoutDiagnostic({
         phase: "plan_rejected",
