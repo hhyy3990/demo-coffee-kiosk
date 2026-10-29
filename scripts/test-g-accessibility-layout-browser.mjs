@@ -150,11 +150,27 @@ try {
         const button = document.querySelector('#menu-product-4');
         button.scrollIntoView({ block: 'center', behavior: 'instant' });
         const rect = button.getBoundingClientRect();
-        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, height: rect.height };
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          x, y, height: rect.height,
+          centerHit: hit === button || button.contains(hit),
+          hitTarget: hit?.id ?? hit?.closest('button')?.id ?? hit?.className ?? null,
+          guide: document.querySelector('.a11y-guide-toast')?.textContent ?? null,
+        };
       })()`);
       assert.ok(firstProduct.height >= 44);
+      assert.equal(firstProduct.centerHit, true, `pre-cart target hit: ${JSON.stringify(firstProduct)}`);
+      await wait(120);
       await clickAt(firstProduct);
-      await until("Boolean(document.querySelector('#item-add'))", "product options");
+      await wait(150);
+      const firstActionState = await evaluate(`(() => ({
+        optionsVisible: Boolean(document.querySelector('#item-add')),
+        heading: document.querySelector('.eyebrow')?.textContent ?? null,
+        guide: document.querySelector('.a11y-guide-toast')?.textContent ?? null,
+      }))()`);
+      assert.equal(firstActionState.optionsVisible, true, `product action failed: ${JSON.stringify({ firstProduct, firstActionState })}`);
       await evaluate(`(() => {
         const option = Array.from(document.querySelectorAll('.pill-option'))
           .find(button => button.textContent.includes('차갑게'));
@@ -164,13 +180,23 @@ try {
         `Array.from(document.querySelectorAll('.pill-option')).some(button => button.textContent.includes('차갑게') && button.classList.contains('selected'))`,
       );
       assert.equal(optionSelected, true, "temperature option remains selectable");
+      const optionTargetSizes = await evaluate(`Array.from(document.querySelectorAll('.pill-option, #item-add'))
+        .map(button => ({ label: button.textContent.trim(), height: button.getBoundingClientRect().height }))`);
+      assert.ok(optionTargetSizes.length > 0 && optionTargetSizes.every(({ height }) => height >= 44));
       await evaluate("document.querySelector('#item-add').click()");
       await until("Boolean(document.querySelector('.cart-bar'))", "cart bar");
 
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: Math.round(width / 2),
+        y: 450,
+        deltaX: 0,
+        deltaY: 5000,
+      });
+      await wait(250);
       const atBottom = await evaluate(`(() => {
         const area = document.querySelector('.a11y-bottom-viewport-scroll-area') ||
           document.scrollingElement;
-        area.scrollTop = area.scrollHeight;
         const button = document.querySelector('#menu-product-4');
         const card = button.closest('.product-card');
         const bar = document.querySelector('.cart-bar');
@@ -203,6 +229,10 @@ try {
       })()`);
       assert.equal(atBottom.productCount, 5);
       assert.ok(atBottom.scrollHeight > atBottom.clientHeight, `${testCase.profile}/${width}px scrolls`);
+      assert.ok(
+        atBottom.scrollTop + atBottom.clientHeight >= atBottom.scrollHeight - 1,
+        `${testCase.profile}/${width}px reached natural scroll end: ${JSON.stringify(atBottom)}`,
+      );
       assert.equal(
         atBottom.overlaps, false,
         `${testCase.profile}/${width}px card/cart overlap: ${JSON.stringify(atBottom)}`,
@@ -214,6 +244,7 @@ try {
       assert.ok(atBottom.buttonHeight >= 44);
       assert.ok(atBottom.documentWidth <= width);
 
+      await wait(120);
       await clickAt({ x: atBottom.buttonCenterX, y: atBottom.buttonCenterY });
       await wait(150);
       const secondActionState = await evaluate(`(() => ({
@@ -234,6 +265,12 @@ try {
       await until("document.querySelectorAll('.cart-item').length === 2", "cart review");
       const cartItems = await evaluate("document.querySelectorAll('.cart-item').length");
       assert.equal(cartItems, 2);
+      const cartTargetSizes = await evaluate(`Array.from(document.querySelectorAll('.cart-quantity button'))
+        .map(button => ({ label: button.getAttribute('aria-label'), height: button.getBoundingClientRect().height }))`);
+      if (testCase.profile === "G") {
+        assert.ok(cartTargetSizes.length > 0 && cartTargetSizes.every(({ height }) => height >= 44),
+          `G cart controls need 44px targets: ${JSON.stringify(cartTargetSizes)}`);
+      }
 
       await evaluate(`document.querySelector('.page-heading .back-button')?.click()`);
       await until("Boolean(document.querySelector('.product-grid'))", "return to menu");
@@ -252,6 +289,7 @@ try {
         overlap: atBottom.overlaps,
         lastProductHit: atBottom.buttonCenterHit,
         optionsSelectable: optionSelected,
+        cartControlHeights: cartTargetSizes.map(({ height }) => height),
         cartLines: cartItems,
         sessionReset: true,
       });
