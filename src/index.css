@@ -474,6 +474,10 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
   .product-bottom { padding-top:11px; }
   .cart-bar { bottom:8px;padding:12px; }
   .cart-bar .primary-button { min-height:46px;padding:0 14px; }
+  .kiosk.a11y-text-large.a11y-controls-large.a11y-high-contrast.a11y-bottom-controls .cart-bar {
+    position:static;
+    bottom:auto;
+  }
   .section-heading { align-items:flex-start;flex-direction:column; }
   .steps { align-self:flex-start; }
   .item-detail { grid-template-columns:1fr;gap:20px; }
