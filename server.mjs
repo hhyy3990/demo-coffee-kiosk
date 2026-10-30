@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { registerAiLayoutRoute } from "./server/ai-layout-relay.mjs";
 import { registerQrProfileRoute } from "./server/qr-profile-route.mjs";
+import { registerUniversalLayoutV2ProductionRelayRoute } from "./server/universal-layout-v2/production-relay-route.mjs";
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
@@ -11,6 +12,7 @@ app.disable("x-powered-by");
 registerQrProfileRoute(app);
 
 registerAiLayoutRoute(app);
+registerUniversalLayoutV2ProductionRelayRoute(app);
 if (process.env.NODE_ENV === "development") {
   const { registerUniversalLayoutMockRoute } =
     await import("./server/universal-layout-v1/mock-route.mjs");

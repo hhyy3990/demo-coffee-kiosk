@@ -736,12 +736,15 @@ export default function App() {
     const manualMode = v2MockMode || v2RelayMode || v2OpenAiMode;
     const qrAutoExecutionMode = resolveQrAutoLayoutExecutionMode({
       development: import.meta.env.DEV,
+      production: import.meta.env.PROD,
       autoEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_AUTO === "true",
       mockEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_MOCK === "true",
       openAiEnabled: import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_OPENAI === "true",
+      productionAiEnabled:
+        import.meta.env.VITE_DEMO_COFFEE_AI_LAYOUT_PRODUCTION_AUTO === "true",
     });
     const orderedItemIds = currentProducts.map((product) => product.id);
-    const qrAutoMode = import.meta.env.DEV &&
+    const qrAutoMode = (import.meta.env.DEV || import.meta.env.PROD) &&
       qrAutoExecutionMode !== null &&
       qrAutoLayoutGeneration !== null &&
       qrAutoLayoutGeneration === qrRequestGenerationRef.current &&
@@ -753,11 +756,16 @@ export default function App() {
       JSON.stringify(orderedItemIds) === JSON.stringify(QR_AUTO_LAYOUT_PRODUCT_IDS);
     const automaticOpenAiMode = qrAutoMode &&
       qrAutoExecutionMode === "openai" && !manualMode;
+    const automaticProductionAiMode = qrAutoMode &&
+      qrAutoExecutionMode === "production-openai" && !manualMode;
     const automaticMockMode = qrAutoMode &&
       qrAutoExecutionMode === "mock" && !manualMode;
-    const automaticMode = automaticOpenAiMode || automaticMockMode;
+    const automaticMode =
+      automaticOpenAiMode || automaticProductionAiMode || automaticMockMode;
     const enabled = manualMode || automaticMode;
-    const source = automaticMode
+    const source = automaticProductionAiMode
+      ? "universal_v2_production_qr_auto"
+      : automaticMode
       ? "universal_v2_qr_auto"
       : v2OpenAiMode
       ? "universal_v2_openai"
@@ -825,7 +833,9 @@ export default function App() {
       void (async () => {
       try {
         const response = await fetch(
-          v2RelayMode
+          automaticProductionAiMode
+            ? "/api/production/universal-layout/v2/openai-plan"
+            : v2RelayMode
             ? "/api/dev/universal-layout/v2/relay-plan"
             : v2OpenAiMode || automaticOpenAiMode
               ? "/api/dev/universal-layout/v2/openai-plan"
@@ -978,7 +988,9 @@ export default function App() {
           logMenuLayoutDiagnostic({
             phase: "plan_rejected",
             source,
-            reason: v2OpenAiMode || automaticOpenAiMode
+            reason: automaticProductionAiMode
+              ? "production_openai_relay_request_failed"
+              : v2OpenAiMode || automaticOpenAiMode
               ? "central_openai_relay_request_failed"
               : v2RelayMode ? "central_relay_request_failed" : "local_mock_request_failed",
           });
