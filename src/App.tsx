@@ -36,6 +36,10 @@ import {
   type ValidatedMenuLayout,
 } from "./accessibility/menuLayoutPlan";
 import { requestMenuLayoutPlan } from "./accessibility/requestMenuLayoutPlan";
+import {
+  claimQrProductionEvent,
+  createQrProductionEventId,
+} from "./accessibility/qrProductionEvent";
 import { persistMenuLayoutDiagnostic } from "./accessibility/menuLayoutDiagnostics";
 import MenuLayoutDiagnosticsPanel from "./components/MenuLayoutDiagnosticsPanel";
 import OptionChoiceLayout from "./components/option-layout/OptionChoiceLayout";
@@ -205,6 +209,7 @@ export default function App() {
   const qrRequestInFlightRef = useRef(false);
   const qrRequestGenerationRef = useRef(0);
   const [qrAutoLayoutGeneration, setQrAutoLayoutGeneration] = useState<number | null>(null);
+  const [qrProductionEventId, setQrProductionEventId] = useState<string | null>(null);
   const qrAutoLayoutAttemptedGenerationRef = useRef<number | null>(null);
   const [orderNumber, setOrderNumber] = useState("");
   const [completionState, setCompletionState] = useState<CompletionState>({
@@ -348,6 +353,7 @@ export default function App() {
       qrRequestGenerationRef.current += 1;
       qrRequestInFlightRef.current = false;
       setQrAutoLayoutGeneration(null);
+      setQrProductionEventId(null);
       setUniversalV2Preset(null);
       qrProfileClientRef.current?.cancel();
       setQrOpen(false);
@@ -830,6 +836,15 @@ export default function App() {
         if (qrAutoLayoutAttemptedGenerationRef.current === qrAutoLayoutGeneration) return;
         qrAutoLayoutAttemptedGenerationRef.current = qrAutoLayoutGeneration;
       }
+      if (automaticProductionAiMode &&
+          (!qrProductionEventId || !claimQrProductionEvent(qrProductionEventId))) {
+        logMenuLayoutDiagnostic({
+          phase: "plan_rejected",
+          source,
+          reason: "production_qr_event_already_attempted_or_unavailable",
+        });
+        return;
+      }
       void (async () => {
       try {
         const response = await fetch(
@@ -843,7 +858,12 @@ export default function App() {
           {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ viewportClass, accessibility, orderedItemIds }),
+          body: JSON.stringify({
+            viewportClass,
+            accessibility,
+            orderedItemIds,
+            ...(automaticProductionAiMode ? { eventId: qrProductionEventId } : {}),
+          }),
           credentials: "same-origin",
           cache: "no-store",
           signal: controller.signal,
@@ -1009,7 +1029,7 @@ export default function App() {
     };
   }, [
     stage, viewportWidth, preferences, universalItemIdsKey, activeProfile,
-    qrAutoLayoutGeneration, category,
+    qrAutoLayoutGeneration, qrProductionEventId, category,
   ]);
 
   useEffect(() => {
@@ -1738,6 +1758,7 @@ export default function App() {
     setPreferences({ ...DEFAULT_PREFERENCES });
     setActiveProfile("none");
     setQrAutoLayoutGeneration(null);
+      setQrProductionEventId(null);
     setUniversalV2Preset(null);
     setProfileDetailsOpen(false);
   };
@@ -1767,6 +1788,7 @@ export default function App() {
     if (qrRequestInFlightRef.current) return;
     const requestGeneration = ++qrRequestGenerationRef.current;
     setQrAutoLayoutGeneration(null);
+    setQrProductionEventId(null);
     setUniversalV2Preset(null);
     const isCurrentSession = accessibilitySdkRef.current?.createSessionGuard() ?? (() => true);
     qrRequestInFlightRef.current = true;
@@ -1778,6 +1800,11 @@ export default function App() {
       setPreferences(resolved);
       setActiveProfile("central");
       setQrAutoLayoutGeneration(isQrAutoLayoutGProfile(resolved) ? requestGeneration : null);
+      setQrProductionEventId(
+        import.meta.env.PROD && isQrAutoLayoutGProfile(resolved)
+          ? createQrProductionEventId()
+          : null,
+      );
       setDemoAccessibilityActive(false);
       setProfileDetailsOpen(false);
       setQrOpen(false);
@@ -1819,6 +1846,7 @@ export default function App() {
   const returnToStart = useCallback(() => {
     accessibilitySdkRef.current?.endSession();
     setQrAutoLayoutGeneration(null);
+    setQrProductionEventId(null);
     setUniversalV2Preset(null);
     setCart([]);
     setReceiptChoice(null);

@@ -19,7 +19,9 @@ const access = {
   viewportMode: { mode: "bottom", heightPercent: 70 },
 };
 const itemIds = ["americano", "latte", "vanilla-latte", "cold-brew", "lemon-tea"];
-const input = { viewportClass: "regular", accessibility: access, orderedItemIds: itemIds };
+const eventId = "3f7c8c98-265f-4e44-8a75-a7c019a4a931";
+const secondEventId = "3f7c8c98-265f-4e44-8a75-a7c019a4a932";
+const input = { eventId, viewportClass: "regular", accessibility: access, orderedItemIds: itemIds };
 const enabledEnv = {
   NODE_ENV: "production",
   UNIVERSAL_LAYOUT_V2_PRODUCTION_AI_ENABLED: "true",
@@ -95,14 +97,14 @@ test("Production v2 relay is inert unless its server gate is explicitly enabled"
   });
 });
 
-test("Production relay sends the production contract, validates the top-level plan, and deduplicates", async () => {
+test("Production relay uses the event ID as idempotency key and deduplicates one event", async () => {
   let calls = 0;
   await withServer({
     fetchImpl: async (url, init) => {
       calls += 1;
       assert.equal(url, "https://naebangsikqr.replit.app/api/production/universal-layout/v2/openai-plan");
       assert.equal(init.headers["X-Host-AI-Token"], "host-test-token");
-      assert.match(init.headers["Idempotency-Key"], /^[a-f0-9]{64}$/);
+        assert.equal(init.headers["Idempotency-Key"], eventId);
       assert.equal(init.redirect, "manual");
       const body = JSON.parse(init.body);
       assert.deepEqual(Object.keys(body), ["model"]);
@@ -122,6 +124,39 @@ test("Production relay sends the production contract, validates the top-level pl
     assert.ok(logs.some((line) => line.includes('"stage":"duplicate_cached"')));
     assert.equal(logs.join("\n").includes("host-test-token"), false);
     assert.equal(logs.join("\n").includes("americano"), false);
+  });
+});
+
+test("a new explicit QR event gets a separate provider call", async () => {
+  let calls = 0;
+  const idempotencyKeys = [];
+  await withServer({
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      idempotencyKeys.push(init.headers["Idempotency-Key"]);
+      return Response.json(planFor(JSON.parse(init.body).model));
+    },
+  }, async (origin) => {
+    assert.equal((await post(origin)).status, 200);
+    assert.equal((await post(origin, { ...input, eventId: secondEventId })).status, 200);
+    assert.equal(calls, 2);
+    assert.deepEqual(idempotencyKeys, [eventId, secondEventId]);
+  });
+});
+
+test("Production relay rejects malformed event IDs before any provider request", async () => {
+  let calls = 0;
+  await withServer({
+    fetchImpl: async () => {
+      calls += 1;
+      throw new Error("unexpected-fetch");
+    },
+  }, async (origin) => {
+    for (const malformed of ["", "not-a-uuid", "00000000-0000-0000-0000-000000000000"]) {
+      const response = await post(origin, { ...input, eventId: malformed });
+      assert.equal(response.status, 400);
+    }
+    assert.equal(calls, 0);
   });
 });
 
@@ -146,7 +181,7 @@ test("Production relay rejects altered item order or unsupported accessibility b
   });
 });
 
-test("Production relay does not follow redirects or retry upstream failures", async () => {
+test("Production relay does not follow redirects or retry an event after failure", async () => {
   let calls = 0;
   await withServer({
     fetchImpl: async (_url, init) => {
@@ -158,6 +193,7 @@ test("Production relay does not follow redirects or retry upstream failures", as
     const response = await post(origin);
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "UPSTREAM_FAILURE");
+    assert.equal((await post(origin)).status, 502);
     assert.equal(calls, 1);
   });
 });

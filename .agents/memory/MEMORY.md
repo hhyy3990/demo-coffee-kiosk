@@ -7,3 +7,4 @@
 - [Menu layout diagnostic evidence](menu-layout-diagnostic-evidence.md) — client event history is tab-local; server relay logs cannot prove React or CSS application.
 - [Product option layout boundary](product-option-layout-boundary.md) — keep option-screen layout plans independent from menu.v2 and protect every ordering value and action.
 - [Universal layout contract runtime](universal-layout-contract-runtime.md) — keep v1 hashing and validation server-side; the bundled contract is Node-only and must remain outside the browser bundle.
+- [Production QR AI event policy](production-qr-ai-event-policy.md) — each explicit G QR application gets one UUID-keyed Production attempt; refreshes and duplicates must not replay it.

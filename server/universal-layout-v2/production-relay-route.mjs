@@ -25,6 +25,9 @@ const G_ACCESSIBILITY = {
 };
 
 const Input = z.object({
+  eventId: z.string().regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  ),
   viewportClass: z.enum(["compact", "regular"]),
   accessibility: z.object({
     textScale: z.enum(["standard", "large", "extraLarge"]),
@@ -161,26 +164,35 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
         return res.status(400).json({ error: "MODEL_INVALID" });
       }
 
-      const cacheKey = universalSha256({ model });
-      const idempotencyKey = cacheKey;
+      const modelHash = universalSha256({ model });
+      const eventKey = parsed.data.eventId;
+      const idempotencyKey = eventKey;
       const nowValue = now();
       for (const [key, entry] of cache) {
         if (entry.expiresAt <= nowValue) cache.delete(key);
       }
-      const cached = cache.get(cacheKey);
+      const cached = cache.get(eventKey);
       if (cached) {
+        if (cached.modelHash !== modelHash) {
+          log("event_model_conflict", { localStatus: 409 });
+          return res.status(409).json({ error: "EVENT_MODEL_CONFLICT" });
+        }
         log("duplicate_cached", { localStatus: 200 });
         return res.status(200).json({ model, plan: cached.plan });
       }
 
-      let pending = inFlight.get(cacheKey);
+      let pending = inFlight.get(eventKey);
+      if (pending && pending.modelHash !== modelHash) {
+        log("event_model_conflict", { localStatus: 409 });
+        return res.status(409).json({ error: "EVENT_MODEL_CONFLICT" });
+      }
       if (!pending) {
         if (providerRequestCount >= MAX_PROVIDER_REQUESTS) {
           log("request_limit_reached", { localStatus: 429, providerRequestCount });
           return res.status(429).json({ error: "UPSTREAM_REQUEST_LIMIT" });
         }
         providerRequestCount += 1;
-        pending = (async () => {
+        const request = (async () => {
           log("upstream_start", { elapsedMs: elapsedMs() });
           const response = await fetchImpl(ENDPOINT, {
             method: "POST",
@@ -222,14 +234,17 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
           validateUniversalLayoutV2Plan(plan, model, [policy]);
           return { plan, centralRequestId };
         })();
-        inFlight.set(cacheKey, pending);
+        // Keep the event claimed even when upstream fails: the client must not
+        // turn a replay into another provider attempt.
+        pending = { modelHash, promise: request };
+        inFlight.set(eventKey, pending);
       } else {
         log("duplicate_coalesced", { localStatus: 200 });
       }
 
       try {
-        const { plan, centralRequestId } = await pending;
-        cache.set(cacheKey, { plan, expiresAt: now() + CACHE_TTL_MS });
+        const { plan, centralRequestId } = await pending.promise;
+        cache.set(eventKey, { plan, modelHash, expiresAt: now() + CACHE_TTL_MS });
         log("plan_validated", { centralRequestId });
         log("client_response", { localStatus: 200, centralRequestId, elapsedMs: elapsedMs() });
         return res.status(200).json({ model, plan });
@@ -252,7 +267,8 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
         });
         return res.status(502).json({ error: "UPSTREAM_FAILURE" });
       } finally {
-        if (inFlight.get(cacheKey) === pending) inFlight.delete(cacheKey);
+        // Retain the event marker for the process lifetime, including failures,
+        // so retries and delayed duplicate requests cannot trigger another call.
       }
     },
   );
