@@ -16,6 +16,28 @@ const MAX_RESPONSE_BYTES = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 25_000;
 const CACHE_TTL_MS = 15_000;
 const MAX_UPSTREAM_REQUESTS = 1;
+const CORRELATION_HEADER = "X-DemoCoffee-Request-ID";
+const SAFE_ERROR_NAMES = new Set([
+  "AbortError",
+  "Error",
+  "RangeError",
+  "SyntaxError",
+  "TimeoutError",
+  "TypeError",
+]);
+
+function safeErrorName(error) {
+  const name = error?.name;
+  return SAFE_ERROR_NAMES.has(name) ? name : "Error";
+}
+
+function classifyFetchError(error) {
+  const name = safeErrorName(error);
+  if (name === "TimeoutError") return { errorName: name, failureClass: "timeout", timeout: true };
+  if (name === "AbortError") return { errorName: name, failureClass: "aborted", timeout: false };
+  if (name === "TypeError") return { errorName: name, failureClass: "fetch_type_error", timeout: false };
+  return { errorName: name, failureClass: "network_or_response_error", timeout: false };
+}
 
 const Accessibility = z.object({
   textScale: z.enum(["standard", "large", "extraLarge"]),
@@ -166,6 +188,8 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     parseJsonBody,
     async (req, res) => {
     const requestId = randomUUID();
+    const requestStartedAt = performance.now();
+    const elapsedMs = () => Math.max(0, Math.round(performance.now() - requestStartedAt));
     res.setHeader("X-Request-ID", requestId);
     res.setHeader("Cache-Control", "no-store");
     const log = (stage, details = {}) => logger(JSON.stringify({
@@ -174,18 +198,36 @@ export function registerUniversalLayoutV2RelayRoute(app, {
       stage,
       ...details,
     }));
+    const logOpenAiStage = (stage, details = {}) => {
+      if (mode !== "openai") return;
+      log(stage, {
+        centralStatus: null,
+        centralContentType: null,
+        elapsedMs: elapsedMs(),
+        redirectDetected: false,
+        timeout: false,
+        errorName: null,
+        failureClass: null,
+        ...details,
+      });
+    };
 
     if (env.NODE_ENV !== "development" ||
         env[enabledEnv] !== "true" ||
         conflictingEnvs.some((name) => env[name] === "true") ||
         typeof fetchImpl !== "function") {
       log("relay_disabled", { localStatus: 503 });
+      logOpenAiStage("client_response", { localStatus: 503 });
       return res.status(503).json({ error: "RELAY_DISABLED" });
     }
 
     const parsed = Input.safeParse(req.body);
     if (!parsed.success) {
       log("request_rejected", { localStatus: 400 });
+      logOpenAiStage("client_response", {
+        localStatus: 400,
+        failureClass: "invalid_request",
+      });
       return res.status(400).json({ error: "INVALID_MODEL_INPUT" });
     }
 
@@ -194,6 +236,10 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     const url = buildCentralUrl(env.AI_LAYOUT_CENTRAL_URL, externalToken, endpointPath);
     if (!url || !validToken(serviceToken)) {
       log("relay_unconfigured", { localStatus: 503 });
+      logOpenAiStage("client_response", {
+        localStatus: 503,
+        failureClass: "relay_not_configured",
+      });
       return res.status(503).json({ error: "RELAY_NOT_CONFIGURED" });
     }
 
@@ -203,6 +249,10 @@ export function registerUniversalLayoutV2RelayRoute(app, {
       model = buildModel(parsed.data, policies);
     } catch {
       log("model_rejected", { localStatus: 400 });
+      logOpenAiStage("client_response", {
+        localStatus: 400,
+        failureClass: "model_invalid",
+      });
       return res.status(400).json({ error: "MODEL_INVALID" });
     }
 
@@ -214,6 +264,7 @@ export function registerUniversalLayoutV2RelayRoute(app, {
     const cached = resultCache.get(key);
     if (cached) {
       log("duplicate_cached", { localStatus: 200 });
+      logOpenAiStage("client_response", { localStatus: 200 });
       return res.status(200).json({ model, plan: cached.plan });
     }
 
@@ -225,10 +276,15 @@ export function registerUniversalLayoutV2RelayRoute(app, {
           upstreamAttemptCount,
           maxUpstreamRequests: MAX_UPSTREAM_REQUESTS,
         });
+        logOpenAiStage("client_response", {
+          localStatus: 429,
+          failureClass: "upstream_request_limit",
+        });
         return res.status(429).json({ error: "UPSTREAM_REQUEST_LIMIT" });
       }
       pending = (async () => {
         upstreamAttemptCount += 1;
+        logOpenAiStage("upstream_start");
         log("central_upstream_started", {
           upstreamAttemptCount,
           maxUpstreamRequests: MAX_UPSTREAM_REQUESTS,
@@ -238,16 +294,36 @@ export function registerUniversalLayoutV2RelayRoute(app, {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${serviceToken}`,
+            ...(mode === "openai" ? { [CORRELATION_HEADER]: requestId } : {}),
           },
           body: JSON.stringify({ model }),
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           cache: "no-store",
-          redirect: "error",
+          redirect: mode === "openai" ? "manual" : "error",
         });
         const centralContentType = normalizedContentType(response);
         const centralId = response.headers.get("x-request-id");
         const centralRequestId = typeof centralId === "string" &&
           /^[A-Za-z0-9._:-]{1,128}$/.test(centralId) ? centralId : null;
+        const redirectDetected = response.status >= 300 && response.status < 400;
+        logOpenAiStage("upstream_response", {
+          centralStatus: response.status,
+          centralContentType,
+          elapsedMs: elapsedMs(),
+          redirectDetected,
+          failureClass: redirectDetected
+            ? "redirect_rejected"
+            : response.status === 200 ? null : "central_http_error",
+          centralRequestId,
+        });
+        if (redirectDetected) {
+          const error = new Error("UPSTREAM_REDIRECT_REJECTED");
+          error.centralStatus = response.status;
+          error.centralContentType = centralContentType;
+          error.centralRequestId = centralRequestId;
+          error.failureClass = "redirect_rejected";
+          throw error;
+        }
         if (response.status !== 200) {
           const error = new Error("UPSTREAM_HTTP_ERROR");
           error.centralStatus = response.status;
@@ -259,12 +335,14 @@ export function registerUniversalLayoutV2RelayRoute(app, {
         try {
           plan = await readBoundedJson(response);
           validateUniversalLayoutV2Plan(plan, model, policies);
-        } catch {
+        } catch (cause) {
           const error = new Error("UPSTREAM_PLAN_INVALID");
           error.centralStatus = response.status;
           error.centralContentType = centralContentType;
           error.centralRequestId = centralRequestId;
           error.publicCode = "UPSTREAM_PLAN_INVALID";
+          error.failureClass = "invalid_upstream_response";
+          error.errorName = safeErrorName(cause);
           throw error;
         }
         return { plan, centralRequestId, centralContentType };
@@ -284,6 +362,12 @@ export function registerUniversalLayoutV2RelayRoute(app, {
         centralContentType,
         centralRequestId,
       });
+      logOpenAiStage("client_response", {
+        localStatus: 200,
+        centralStatus: 200,
+        centralContentType,
+        centralRequestId,
+      });
       return res.status(200).json({ model, plan });
     } catch (error) {
       const centralStatus = Number.isInteger(error?.centralStatus) ? error.centralStatus : null;
@@ -291,10 +375,26 @@ export function registerUniversalLayoutV2RelayRoute(app, {
       const centralContentType = typeof error?.centralContentType === "string"
         ? error.centralContentType
         : null;
-      const failureClass = error?.publicCode === "UPSTREAM_PLAN_INVALID"
-        ? "plan_invalid"
-        : centralStatus ? "central_http_error"
-          : error?.name === "TimeoutError" ? "timeout" : "network_or_response_error";
+      const fetchFailure = classifyFetchError(error);
+      const failureClass = error?.failureClass ??
+        (error?.publicCode === "UPSTREAM_PLAN_INVALID"
+          ? "plan_invalid"
+          : centralStatus ? "central_http_error" : fetchFailure.failureClass);
+      const errorName = typeof error?.errorName === "string"
+        ? error.errorName
+        : centralStatus ? null : fetchFailure.errorName;
+      const timeout = failureClass === "timeout";
+      if (!centralStatus || error?.publicCode === "UPSTREAM_PLAN_INVALID") {
+        logOpenAiStage("upstream_exception", {
+          centralStatus,
+          centralContentType,
+          elapsedMs: elapsedMs(),
+          redirectDetected: failureClass === "redirect_rejected",
+          timeout,
+          errorName,
+          failureClass,
+        });
+      }
       log("upstream_rejected", {
         localStatus: 502,
         centralStatus,
@@ -302,11 +402,22 @@ export function registerUniversalLayoutV2RelayRoute(app, {
         centralRequestId,
         failureClass,
       });
-      return res.status(502).json({
-        error: typeof error?.publicCode === "string"
-          ? error.publicCode
-          : centralStatus ? "UPSTREAM_HTTP_ERROR" : "UPSTREAM_FAILURE",
+      const localError = error?.publicCode === "UPSTREAM_PLAN_INVALID"
+        ? "UPSTREAM_PLAN_INVALID"
+        : centralStatus && failureClass !== "redirect_rejected"
+          ? "UPSTREAM_HTTP_ERROR"
+          : "UPSTREAM_FAILURE";
+      logOpenAiStage("client_response", {
+        localStatus: 502,
+        centralStatus,
+        centralContentType,
+        centralRequestId,
+        redirectDetected: failureClass === "redirect_rejected",
+        timeout,
+        errorName,
+        failureClass,
       });
+      return res.status(502).json({ error: localError });
     } finally {
       if (inFlight.get(key) === pending) inFlight.delete(key);
     }

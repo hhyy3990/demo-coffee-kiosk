@@ -136,7 +136,8 @@ test("v2 OpenAI relay forwards the canonical model to the OpenAI endpoint and va
       assert.equal(parsedUrl.pathname, "/api/dev/universal-layout/v2/openai-plan");
       assert.equal(parsedUrl.searchParams.get("project-protection-bypass"), env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN);
       assert.equal(init.headers.Authorization, `Bearer ${env.AI_LAYOUT_SERVICE_TOKEN}`);
-      assert.equal(init.redirect, "error");
+      assert.match(init.headers["X-DemoCoffee-Request-ID"], /^[0-9a-f-]{36}$/i);
+      assert.equal(init.redirect, "manual");
       const body = JSON.parse(init.body);
       assert.deepEqual(Object.keys(body), ["model"]);
       assert.equal(body.model.contractVersion, "universal-layout.v2");
@@ -155,7 +156,25 @@ test("v2 OpenAI relay forwards the canonical model to the OpenAI endpoint and va
     assert.equal((await post(origin, input, "openai-plan")).status, 200);
     assert.equal(calls, 1, "only the successful response is cached");
     assert.equal(logs.filter((line) => line.includes('"stage":"central_upstream_started"')).length, 1);
+    const events = logs.map((line) => JSON.parse(line));
+    const upstreamStart = events.find((event) => event.stage === "upstream_start");
+    const requestEvents = events.filter((event) => event.requestId === upstreamStart.requestId);
+    assert.deepEqual(
+      requestEvents.filter((event) =>
+        ["upstream_start", "upstream_response", "client_response"].includes(event.stage),
+      ).map((event) => event.stage),
+      ["upstream_start", "upstream_response", "client_response"],
+    );
+    const upstreamResponse = requestEvents.find((event) => event.stage === "upstream_response");
+    assert.equal(upstreamResponse.centralStatus, 200);
+    assert.equal(upstreamResponse.centralContentType, "application/json");
+    assert.ok(requestEvents
+      .filter((event) => ["upstream_start", "upstream_response", "client_response"].includes(event.stage))
+      .every((event) => Number.isFinite(event.elapsedMs)));
     assert.equal(logs.join("\n").includes(env.AI_LAYOUT_SERVICE_TOKEN), false);
+    assert.equal(logs.join("\n").includes(env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN), false);
+    assert.equal(logs.join("\n").includes("central-dev.replit.dev"), false);
+    assert.equal(logs.join("\n").includes("coffee-a"), false);
     const validatedEvent = logs.map((line) => JSON.parse(line))
       .find((event) => event.stage === "plan_validated");
     assert.equal(validatedEvent.centralStatus, 200);
@@ -203,14 +222,35 @@ test("v2 OpenAI relay rejects failure responses without retrying or leaking upst
   const failures = [
     {
       expectedCode: "UPSTREAM_HTTP_ERROR",
+      expectedClass: "central_http_error",
       run: async () => new Response("private auth detail", { status: 401 }),
     },
     {
       expectedCode: "UPSTREAM_FAILURE",
-      run: async () => { throw new TypeError("private network detail"); },
+      expectedClass: "fetch_type_error",
+      run: async () => { throw new TypeError("private URL and Bearer secret detail"); },
     },
     {
       expectedCode: "UPSTREAM_FAILURE",
+      expectedClass: "network_or_response_error",
+      run: async () => {
+        const error = new Error("private unknown error detail");
+        error.name = "secret\nBearer";
+        throw error;
+      },
+    },
+    {
+      expectedCode: "UPSTREAM_FAILURE",
+      expectedClass: "aborted",
+      run: async () => {
+        const error = new Error("private abort detail");
+        error.name = "AbortError";
+        throw error;
+      },
+    },
+    {
+      expectedCode: "UPSTREAM_FAILURE",
+      expectedClass: "timeout",
       run: async () => {
       const error = new Error("private timeout detail");
       error.name = "TimeoutError";
@@ -218,7 +258,7 @@ test("v2 OpenAI relay rejects failure responses without retrying or leaking upst
       },
     },
   ];
-  for (const { run, expectedCode } of failures) {
+  for (const { run, expectedCode, expectedClass } of failures) {
     let calls = 0;
     await withServer({
       mode: "openai",
@@ -233,6 +273,23 @@ test("v2 OpenAI relay rejects failure responses without retrying or leaking upst
       assert.equal((await response.json()).error, expectedCode);
       assert.equal(calls, 1);
       assert.equal(logs.join("\n").includes("private"), false);
+      const events = logs.map((line) => JSON.parse(line));
+      const failed = events.find((event) => event.stage === "upstream_exception");
+      if (expectedClass === "central_http_error") {
+        assert.equal(failed, undefined);
+        assert.equal(events.find((event) => event.stage === "upstream_response").centralStatus, 401);
+      } else {
+        assert.equal(failed.failureClass, expectedClass);
+        assert.equal(failed.errorName, expectedClass === "fetch_type_error"
+          ? "TypeError"
+          : expectedClass === "aborted"
+            ? "AbortError"
+            : expectedClass === "timeout" ? "TimeoutError" : "Error");
+        assert.equal(failed.timeout, expectedClass === "timeout");
+      }
+      assert.ok(events.some((event) =>
+        event.stage === "client_response" && event.localStatus === 502,
+      ));
       assert.equal((await post(origin, {
         ...input,
         orderedItemIds: ["another"],
@@ -240,6 +297,78 @@ test("v2 OpenAI relay rejects failure responses without retrying or leaking upst
       assert.equal(calls, 1);
     });
   }
+});
+
+test("v2 OpenAI relay logs HTTP failures and rejects redirects without following them", async () => {
+  const env = {
+    ...baseEnv,
+    UNIVERSAL_LAYOUT_V2_RELAY_ENABLED: "false",
+    UNIVERSAL_LAYOUT_V2_OPENAI_RELAY_ENABLED: "true",
+  };
+  for (const status of [307, 400, 401, 502, 503]) {
+    let calls = 0;
+    await withServer({
+      mode: "openai",
+      env,
+      fetchImpl: async (_url, init) => {
+        calls += 1;
+        assert.equal(init.redirect, "manual");
+        return new Response("private response body", {
+          status,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            ...(status === 307 ? { Location: "https://private.example/path?token=must-not-log" } : {}),
+          },
+        });
+      },
+    }, async (origin, logs) => {
+      const response = await post(origin, input, "openai-plan");
+      assert.equal(response.status, 502);
+      assert.equal((await response.json()).error, status === 307 ? "UPSTREAM_FAILURE" : "UPSTREAM_HTTP_ERROR");
+      assert.equal(calls, 1);
+      const events = logs.map((line) => JSON.parse(line));
+      const upstream = events.find((event) => event.stage === "upstream_response");
+      assert.equal(upstream.centralStatus, status);
+      assert.equal(upstream.centralContentType, "application/json");
+      assert.equal(upstream.redirectDetected, status === 307);
+      assert.equal(upstream.failureClass, status === 307 ? "redirect_rejected" : "central_http_error");
+      assert.ok(events.some((event) => event.stage === "client_response" && event.localStatus === 502));
+      assert.equal(logs.join("\n").includes("private.example"), false);
+      assert.equal(logs.join("\n").includes("must-not-log"), false);
+      assert.equal(logs.join("\n").includes("private response body"), false);
+    });
+  }
+});
+
+test("v2 OpenAI relay logs malformed JSON safely and does not retry", async () => {
+  let calls = 0;
+  const env = {
+    ...baseEnv,
+    UNIVERSAL_LAYOUT_V2_RELAY_ENABLED: "false",
+    UNIVERSAL_LAYOUT_V2_OPENAI_RELAY_ENABLED: "true",
+  };
+  await withServer({
+    mode: "openai",
+    env,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("{private malformed body", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  }, async (origin, logs) => {
+    const response = await post(origin, input, "openai-plan");
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error, "UPSTREAM_PLAN_INVALID");
+    assert.equal(calls, 1);
+    const events = logs.map((line) => JSON.parse(line));
+    const failed = events.find((event) => event.stage === "upstream_exception");
+    assert.equal(failed.failureClass, "invalid_upstream_response");
+    assert.equal(failed.errorName, "SyntaxError");
+    assert.equal(failed.centralStatus, 200);
+    assert.equal(logs.join("\n").includes("private malformed body"), false);
+  });
 });
 
 test("v2 OpenAI relay rejects invalid, stale, inaccessible, and unsupported plans", async () => {
