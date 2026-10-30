@@ -54,3 +54,9 @@ A single menu entry can produce duplicate browser-to-local v2 relay POSTs in Dev
 **Why:** A live Development screen test observed two local relay POSTs but only one central upstream fetch; the second local request was a cache hit.
 
 **How to apply:** Report both counts independently and keep the per-process upstream cap as the safety boundary.
+
+Vite client flags are compile-time values. After changing Development workflow `VITE_*` gates, an already-open Preview tab can retain the previous bundle; one QR run reported the feature flag OFF even though the restarted workflow command enabled it.
+
+**Why:** The old browser bundle skipped QR automation while the restarted server process had the temporary client gate set to true.
+
+**How to apply:** Restart the Development workflow, fully reload Preview before applying QR, and verify the browser-side gate before actual QR entry. Server process configuration alone does not prove an existing tab loaded the new client flags.
