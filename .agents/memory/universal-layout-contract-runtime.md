@@ -60,3 +60,9 @@ Vite client flags are compile-time values. After changing Development workflow `
 **Why:** The old browser bundle skipped QR automation while the restarted server process had the temporary client gate set to true.
 
 **How to apply:** Restart the Development workflow, fully reload Preview before applying QR, and verify the browser-side gate before actual QR entry. Server process configuration alone does not prove an existing tab loaded the new client flags.
+
+For Central Development v2 OpenAI endpoint, the Central Agent confirmed the order is service Bearer authentication, JSON/schema validation, registry/model validation, pilot-scope validation, rate guard, then provider call. With a valid Bearer, an empty `{}` is rejected as `400 INVALID_REQUEST` before provider execution; an invalid Bearer returns `401 AUTH_REQUIRED`.
+
+**Why:** DemoCoffee does not contain the central server implementation, so this ordering is based on Central Agent confirmation. A one-time empty-body probe returned `400 INVALID_REQUEST`, confirming that the configured service Bearer reached schema validation without invoking the provider.
+
+**How to apply:** For this Development endpoint only, use an empty-body request to verify service authentication and schema reachability only after confirming the central validation order. Do not infer Production behavior or treat the result as evidence of a successful plan generation.
