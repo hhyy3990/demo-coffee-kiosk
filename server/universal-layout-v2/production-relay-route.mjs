@@ -125,7 +125,9 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
         return res.status(503).json({ error: "RELAY_DISABLED" });
       }
       const hostToken = env.UNIVERSAL_LAYOUT_V2_PRODUCTION_HOST_TOKEN?.trim() ?? "";
-      if (!hostToken || typeof fetchImpl !== "function") {
+      const externalAccessToken =
+        env.UNIVERSAL_LAYOUT_V2_PRODUCTION_EXTERNAL_ACCESS_TOKEN?.trim() ?? "";
+      if (!hostToken || !externalAccessToken || typeof fetchImpl !== "function") {
         log("relay_unconfigured", { localStatus: 503 });
         return res.status(503).json({ error: "RELAY_NOT_CONFIGURED" });
       }
@@ -198,6 +200,7 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "Authorization": `Bearer ${externalAccessToken}`,
               "X-Host-AI-Token": hostToken,
               "Idempotency-Key": idempotencyKey,
             },
@@ -266,9 +269,6 @@ export function registerUniversalLayoutV2ProductionRelayRoute(app, {
           failureClass,
         });
         return res.status(502).json({ error: "UPSTREAM_FAILURE" });
-      } finally {
-        // Retain the event marker for the process lifetime, including failures,
-        // so retries and delayed duplicate requests cannot trigger another call.
       }
     },
   );

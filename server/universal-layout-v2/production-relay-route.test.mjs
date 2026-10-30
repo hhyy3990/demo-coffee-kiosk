@@ -26,6 +26,7 @@ const enabledEnv = {
   NODE_ENV: "production",
   UNIVERSAL_LAYOUT_V2_PRODUCTION_AI_ENABLED: "true",
   UNIVERSAL_LAYOUT_V2_PRODUCTION_HOST_TOKEN: "host-test-token",
+  UNIVERSAL_LAYOUT_V2_PRODUCTION_EXTERNAL_ACCESS_TOKEN: "production-external-test-token",
 };
 
 function modelFor(value = input) {
@@ -97,6 +98,33 @@ test("Production v2 relay is inert unless its server gate is explicitly enabled"
   });
 });
 
+test("Production relay fails closed before fetch when either Production credential is missing", async () => {
+  for (const missingSecret of [
+    "UNIVERSAL_LAYOUT_V2_PRODUCTION_HOST_TOKEN",
+    "UNIVERSAL_LAYOUT_V2_PRODUCTION_EXTERNAL_ACCESS_TOKEN",
+  ]) {
+    let calls = 0;
+    const env = { ...enabledEnv };
+    delete env[missingSecret];
+    // A Development external token must not satisfy the Production credential.
+    if (missingSecret === "UNIVERSAL_LAYOUT_V2_PRODUCTION_EXTERNAL_ACCESS_TOKEN") {
+      env.AI_LAYOUT_REPLIT_EXTERNAL_TOKEN = "development-external-test-token";
+    }
+    await withServer({
+      env,
+      fetchImpl: async () => {
+        calls += 1;
+        throw new Error("must-not-fetch");
+      },
+    }, async (origin) => {
+      const response = await post(origin);
+      assert.equal(response.status, 503, missingSecret);
+      assert.equal((await response.json()).error, "RELAY_NOT_CONFIGURED");
+    });
+    assert.equal(calls, 0, missingSecret);
+  }
+});
+
 test("Production relay uses the event ID as idempotency key and deduplicates one event", async () => {
   let calls = 0;
   await withServer({
@@ -104,7 +132,8 @@ test("Production relay uses the event ID as idempotency key and deduplicates one
       calls += 1;
       assert.equal(url, "https://naebangsikqr.replit.app/api/production/universal-layout/v2/openai-plan");
       assert.equal(init.headers["X-Host-AI-Token"], "host-test-token");
-        assert.equal(init.headers["Idempotency-Key"], eventId);
+      assert.equal(init.headers.Authorization, "Bearer production-external-test-token");
+      assert.equal(init.headers["Idempotency-Key"], eventId);
       assert.equal(init.redirect, "manual");
       const body = JSON.parse(init.body);
       assert.deepEqual(Object.keys(body), ["model"]);
@@ -123,6 +152,7 @@ test("Production relay uses the event ID as idempotency key and deduplicates one
     assert.equal(calls, 1);
     assert.ok(logs.some((line) => line.includes('"stage":"duplicate_cached"')));
     assert.equal(logs.join("\n").includes("host-test-token"), false);
+    assert.equal(logs.join("\n").includes("production-external-test-token"), false);
     assert.equal(logs.join("\n").includes("americano"), false);
   });
 });
@@ -194,6 +224,40 @@ test("Production relay does not follow redirects or retry an event after failure
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "UPSTREAM_FAILURE");
     assert.equal((await post(origin)).status, 502);
+    assert.equal(calls, 1);
+  });
+});
+
+test("Production relay safely rejects auth, quota, and gateway statuses without retrying", async () => {
+  for (const status of [401, 403, 429, 502, 503]) {
+    let calls = 0;
+    await withServer({
+      fetchImpl: async () => {
+        calls += 1;
+        return Response.json({ error: "private upstream response" }, { status });
+      },
+    }, async (origin) => {
+      const response = await post(origin);
+      assert.equal(response.status, 502, `central ${status}`);
+      assert.deepEqual(await response.json(), { error: "UPSTREAM_FAILURE" });
+      assert.equal((await post(origin)).status, 502, `duplicate central ${status}`);
+    });
+    assert.equal(calls, 1, `central ${status}`);
+  }
+});
+
+test("Production relay safely handles timeout without retrying the provider call", async () => {
+  let calls = 0;
+  await withServer({
+    fetchImpl: async () => {
+      calls += 1;
+      const error = new Error("simulated timeout");
+      error.name = "TimeoutError";
+      throw error;
+    },
+  }, async (origin) => {
+    assert.equal((await post(origin)).status, 502);
+    assert.deepEqual(await (await post(origin)).json(), { error: "UPSTREAM_FAILURE" });
     assert.equal(calls, 1);
   });
 });
