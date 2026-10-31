@@ -41,6 +41,14 @@ export const demoCoffeeUniversalV2DevPolicy: UniversalLayoutV2Policy = {
           contrast: ["high"],
           viewportMode: ["bottom-70"],
         },
+      }, {
+        id: "large-card-row",
+        accessibility: {
+          textScale: ["large"],
+          buttonScale: ["large"],
+          contrast: ["high"],
+          viewportMode: ["bottom-70"],
+        },
       }],
     }],
     minimumTouchTargetPx: 44,
@@ -49,8 +57,8 @@ export const demoCoffeeUniversalV2DevPolicy: UniversalLayoutV2Policy = {
 };
 
 /**
- * The G option has local central-hash evidence only for compact and regular
- * viewports. Keep it out of wider models until that viewport is verified.
+ * The Development G layout candidates are verified only for compact and
+ * regular viewports. Keep both out of wider models until that viewport is verified.
  */
 export function demoCoffeeUniversalV2PolicyForViewport(
   viewportClass: UniversalLayoutV2Viewport,
@@ -62,7 +70,8 @@ export function demoCoffeeUniversalV2PolicyForViewport(
       ...component,
       optionGroups: component.optionGroups?.map((group) => ({
         ...group,
-        options: group.options.filter((option) => option.id !== "single-column-list"),
+        options: group.options.filter((option) =>
+          option.id !== "single-column-list" && option.id !== "large-card-row"),
       })),
     })),
   };

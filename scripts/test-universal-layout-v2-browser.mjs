@@ -513,6 +513,61 @@ try {
     gLayoutEvidence.push(view);
   }
 
+  const g430LayoutEvidence = [];
+  for (const optionId of ["single-column-list", "large-card-row"]) {
+    await visit(
+      `?menuLayoutDiagnostics=1&universalLayoutV2Mock=1&universalLayoutV2MockOption=${optionId}&mockCentralQrProfileForAiTest=g`,
+      430,
+      900,
+      true,
+    );
+    await evaluate("document.querySelector('#start-store').click()");
+    await until(
+      `document.querySelector('.product-grid')?.dataset.universalV2Option === '${optionId}'`,
+      `G ${optionId} at 430x900`,
+    );
+    const evidence = await evaluate(`(() => {
+      const grid = document.querySelector('.product-grid');
+      const cards = Array.from(grid.querySelectorAll('.product-card'));
+      const cardButton = cards[0]?.querySelector('button');
+      const image = cards[0]?.querySelector('.product-art');
+      const meta = cards[0]?.querySelector('.product-meta');
+      const cardRect = cards[0]?.getBoundingClientRect();
+      const imageRect = image?.getBoundingClientRect();
+      const metaRect = meta?.getBoundingClientRect();
+      return {
+        option: grid?.dataset.universalV2Option ?? null,
+        width: innerWidth,
+        height: innerHeight,
+        documentWidth: document.documentElement.scrollWidth,
+        columns: getComputedStyle(grid).gridTemplateColumns.split(/\\\\s+/).filter(Boolean).length,
+        cardCount: cards.length,
+        buttonHeight: cardButton?.getBoundingClientRect().height ?? 0,
+        imageLeft: imageRect?.left ?? 0,
+        metaLeft: metaRect?.left ?? 0,
+        textOverflows: Array.from(meta?.querySelectorAll('h3, .product-korean, .price, .product-tag') ?? [])
+          .some(el => el.scrollWidth > el.clientWidth + 1),
+        cardRight: cardRect?.right ?? 0,
+        metaRight: metaRect?.right ?? 0,
+        classes: document.querySelector('.kiosk')?.className ?? '',
+      };
+    })()`);
+    assert.equal(evidence.option, optionId);
+    assert.equal(evidence.width, 430);
+    assert.equal(evidence.height, 900);
+    assert.ok(evidence.documentWidth <= 430, `${optionId} has no horizontal page overflow`);
+    assert.equal(evidence.columns, 1);
+    assert.equal(evidence.cardCount, 5);
+    assert.ok(evidence.buttonHeight >= 44);
+    assert.equal(evidence.textOverflows, false);
+    assert.ok(evidence.metaRight <= evidence.cardRight + 1);
+    assert.ok(evidence.classes.includes('a11y-text-large'));
+    assert.ok(evidence.classes.includes('a11y-controls-large'));
+    assert.ok(evidence.classes.includes('a11y-high-contrast'));
+    if (optionId === "large-card-row") assert.ok(evidence.metaLeft > evidence.imageLeft);
+    g430LayoutEvidence.push(evidence);
+  }
+
   const fakeV5GProfile = {
     schemaVersion: 5,
     updatedAt: "2026-10-30T00:00:00.000Z",
@@ -579,10 +634,21 @@ try {
     assert.equal(await evaluate("window.__autoAiCount"), 0, "QR success waits until the menu screen");
     assert.equal(await evaluate("document.querySelector('.kiosk').classList.contains('a11y-bottom-controls')"), false);
     await evaluate("document.querySelector('#start-store').click()");
-    await until(
-      `document.querySelector('.product-grid')?.dataset.universalV2Option === 'single-column-list'`,
-      `QR-triggered G AI plan at ${width}px`,
-    );
+    try {
+      await until(
+        `document.querySelector('.product-grid')?.dataset.universalV2Option === 'single-column-list'`,
+        `QR-triggered G AI plan at ${width}px`,
+      );
+    } catch {
+      const state = await evaluate(`JSON.stringify({
+        events: (window.__demoCoffeeMenuLayoutDiagnostics ?? []).slice(-8),
+        gridOption: document.querySelector('.product-grid')?.dataset.universalV2Option ?? null,
+        requestBodies: window.__gV2Request ?? null,
+        autoRequests: window.__autoAiCount ?? null,
+        localRequests: window.__v2FallbackCount ?? null,
+      })`);
+      throw new Error(`QR-triggered G AI plan at ${width}px; state=${state}`);
+    }
     await wait(250);
     const auto = await evaluate(`(() => ({
       requests: window.__autoAiCount,

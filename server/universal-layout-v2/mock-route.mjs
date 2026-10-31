@@ -24,6 +24,7 @@ const MockRequest = z.object({
   viewportClass: z.enum(["compact", "regular", "wide"]),
   accessibility: AccessibilityInput,
   orderedItemIds: z.array(z.string().regex(/^[A-Za-z0-9._-]{1,64}$/)).max(100),
+  mockOptionId: z.enum(["compact-grid", "single-column-list", "large-card-row"]).optional(),
 }).strict().superRefine((value, context) => {
   if (new Set(value.orderedItemIds).size !== value.orderedItemIds.length) {
     context.addIssue({ code: "custom", path: ["orderedItemIds"], message: "DUPLICATE_ITEM_ID" });
@@ -60,9 +61,13 @@ export function registerUniversalLayoutV2MockRoute(app, { env = process.env } = 
         const arrangement = validatedModel.components
           .find((component) => component.id === "menu.product-list")
           ?.optionGroups?.find((group) => group.id === "arrangement");
-        const optionId = arrangement?.optionIds.includes("single-column-list")
-          ? "single-column-list"
-          : arrangement?.optionIds.includes("compact-grid") ? "compact-grid" : null;
+        const optionId = input.mockOptionId ??
+          (arrangement?.optionIds.includes("single-column-list")
+            ? "single-column-list"
+            : arrangement?.optionIds.includes("compact-grid") ? "compact-grid" : null);
+        if (optionId && !arrangement?.optionIds.includes(optionId)) {
+          return res.status(422).json({ error: "UNSUPPORTED_PLAN_OPERATION" });
+        }
         if (!optionId) {
           return res.status(422).json({ error: "UNSUPPORTED_PLAN_OPERATION" });
         }

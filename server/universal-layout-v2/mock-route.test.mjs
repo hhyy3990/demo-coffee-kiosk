@@ -155,7 +155,7 @@ test("large text and large controls cannot resolve the compact-grid option", asy
   }
 });
 
-test("G exact accessibility profile resolves single-column-list with the published hashes", async () => {
+test("G exact accessibility profile exposes both validated one-column layouts", async () => {
   const g = {
     textScale: "large",
     buttonScale: "large",
@@ -163,22 +163,24 @@ test("G exact accessibility profile resolves single-column-list with the publish
     viewportMode: { mode: "bottom", heightPercent: 70 },
   };
   for (const [viewportClass, expectedConstraintHash] of [
-    ["compact", "8b5e0cd6b04a2f140758ca7ed6d6652bea0a592818c55317f9f39a96fbaed594"],
-    ["regular", "34f297aaeb54dfce542b9478a623b6b92420bd576e10e13766558bdc83b86e28"],
+    ["compact", "f15b39448657ea7ff40a7ca3976ae1705eed011f3b336ef0fc3841a6ad2e0f16"],
+    ["regular", "30230ce0e515bb85aab7b6571de080b10eeb0153bda7e23aa990181f0c441843"],
   ]) {
     const model = makeModel(g, viewportClass);
     assert.equal(model.structureHash, "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e");
     assert.equal(model.constraintHash, expectedConstraintHash);
     assert.deepEqual(model.components[0].optionGroups, [{
       id: "arrangement",
-      optionIds: ["single-column-list"],
+      optionIds: ["large-card-row", "single-column-list"],
     }]);
-    const plan = validateUniversalLayoutV2Plan(
-      planFor(model, (value) => value, "single-column-list"),
-      model,
-      policies,
-    );
-    assert.equal(plan.operations[0].optionId, "single-column-list");
+    for (const optionId of ["single-column-list", "large-card-row"]) {
+      const plan = validateUniversalLayoutV2Plan(
+        planFor(model, (value) => value, optionId),
+        model,
+        policies,
+      );
+      assert.equal(plan.operations[0].optionId, optionId);
+    }
   }
 });
 
@@ -242,7 +244,7 @@ test("G option is not exposed for an unverified wide viewport", () => {
   );
 });
 
-test("Development Fake selects single-column-list only for the exact G model", async () => {
+test("Development Fake can render either G layout when explicitly selected", async () => {
   const g = {
     textScale: "large",
     buttonScale: "large",
@@ -250,15 +252,42 @@ test("Development Fake selects single-column-list only for the exact G model", a
     viewportMode: { mode: "bottom", heightPercent: 70 },
   };
   await withServer({ NODE_ENV: "development" }, async (origin) => {
+    for (const optionId of ["single-column-list", "large-card-row"]) {
+      const response = await fetch(`${origin}/api/dev/universal-layout/v2/mock-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          viewportClass: "regular",
+          accessibility: g,
+          orderedItemIds,
+          mockOptionId: optionId,
+        }),
+      });
+      assert.equal(response.status, 200);
+      const { model, plan } = await response.json();
+      assert.equal(model.constraintHash, "30230ce0e515bb85aab7b6571de080b10eeb0153bda7e23aa990181f0c441843");
+      assert.deepEqual(model.components[0].optionGroups[0].optionIds, [
+        "large-card-row", "single-column-list",
+      ]);
+      assert.equal(plan.operations[0].optionId, optionId);
+    }
+  });
+});
+
+test("Development Fake rejects a layout choice that the accessibility model excludes", async () => {
+  await withServer({ NODE_ENV: "development" }, async (origin) => {
     const response = await fetch(`${origin}/api/dev/universal-layout/v2/mock-plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ viewportClass: "regular", accessibility: g, orderedItemIds }),
+      body: JSON.stringify({
+        viewportClass: "regular",
+        accessibility: standard,
+        orderedItemIds,
+        mockOptionId: "large-card-row",
+      }),
     });
-    assert.equal(response.status, 200);
-    const { model, plan } = await response.json();
-    assert.equal(model.constraintHash, "34f297aaeb54dfce542b9478a623b6b92420bd576e10e13766558bdc83b86e28");
-    assert.equal(plan.operations[0].optionId, "single-column-list");
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).error, "UNSUPPORTED_PLAN_OPERATION");
   });
 });
 

@@ -265,6 +265,56 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 .product-grid[data-universal-v2-option="single-column-list"] {
   grid-template-columns:minmax(0,1fr);
 }
+.product-grid[data-menu-layout-id="menu.product-list"][data-universal-v2-option="large-card-row"] {
+  grid-template-columns:minmax(0,1fr);
+  gap:12px;
+}
+.product-grid[data-universal-v2-option="large-card-row"] .product-card > button {
+  display:grid;
+  grid-template-columns:clamp(104px,28%,132px) minmax(0,1fr);
+  align-items:stretch;
+  min-height:148px;
+  height:auto;
+}
+.product-grid[data-universal-v2-option="large-card-row"] .product-art {
+  height:auto;
+  min-height:148px;
+}
+.product-grid[data-universal-v2-option="large-card-row"] .product-meta {
+  min-width:0;
+  padding:14px;
+  overflow-wrap:anywhere;
+}
+.product-grid[data-universal-v2-option="large-card-row"] .product-korean,
+.product-grid[data-universal-v2-option="large-card-row"] .product-name-row,
+.product-grid[data-universal-v2-option="large-card-row"] .product-bottom {
+  min-width:0;
+}
+.kiosk.a11y-text-large .product-grid[data-universal-v2-option="large-card-row"] .product-meta {
+  padding:14px 15px;
+}
+.kiosk.a11y-text-large .product-grid[data-universal-v2-option="large-card-row"] .product-korean {
+  font-size:.9em;
+  line-height:1.45;
+}
+.kiosk.a11y-text-large .product-grid[data-universal-v2-option="large-card-row"] .product-name-row h3 {
+  font-size:1.16em;
+  line-height:1.35;
+}
+.kiosk.a11y-text-large .product-grid[data-universal-v2-option="large-card-row"] .price {
+  font-size:1.05em;
+}
+.kiosk.a11y-text-large .product-grid[data-universal-v2-option="large-card-row"] .product-tag {
+  font-size:.82em;
+  line-height:1.35;
+}
+.kiosk.a11y-controls-large .product-grid[data-universal-v2-option="large-card-row"] .product-card > button {
+  min-height:160px;
+}
+.kiosk.a11y-controls-large .product-grid[data-universal-v2-option="large-card-row"] .add-round {
+  width:50px;
+  height:50px;
+}
 .product-grid[data-universal-v2-option="compact-grid"] .product-card > button { min-height:44px; }
 .product-grid[data-universal-v2-option="compact-grid"] .product-art { height:118px; }
 .product-grid[data-universal-v2-option="compact-grid"] .product-meta { padding:12px; }
@@ -537,6 +587,9 @@ h3 { font: 700 1.12em/1.3 "Manrope", "Gowun Dodum", sans-serif; letter-spacing: 
 }
 @media (min-width:381px) and (max-width:440px) {
   .welcome-support { grid-template-columns:1fr; }
+}
+.kiosk .product-grid[data-menu-layout-id="menu.product-list"][data-universal-v2-option="large-card-row"] {
+  grid-template-columns:minmax(0,1fr);
 }
 @media (prefers-reduced-motion:reduce) {
   *,*::before,*::after { scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important; }

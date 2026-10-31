@@ -72,7 +72,7 @@ type UniversalMockLayout = {
   constraintHash: string;
 };
 type UniversalV2Preset = {
-  optionId: "compact-grid" | "single-column-list";
+  optionId: "compact-grid" | "single-column-list" | "large-card-row";
   structureHash: string;
   constraintHash: string;
   viewportClass: "compact" | "regular" | "wide";
@@ -863,6 +863,9 @@ export default function App() {
             accessibility,
             orderedItemIds,
             ...(automaticProductionAiMode ? { eventId: qrProductionEventId } : {}),
+            ...(v2MockMode && params.get("universalLayoutV2MockOption")
+              ? { mockOptionId: params.get("universalLayoutV2MockOption") }
+              : {}),
           }),
           credentials: "same-origin",
           cache: "no-store",
@@ -900,15 +903,21 @@ export default function App() {
         const operation = Array.isArray(operations)
           ? operations[0] as Record<string, unknown> | undefined
           : undefined;
-        const expectedOptionId = accessibility.textScale === "large" &&
+        const isExactGAccessibility = accessibility.textScale === "large" &&
           accessibility.buttonScale === "large" &&
           accessibility.contrast === "high" &&
           accessibility.viewportMode?.mode === "bottom" &&
-          accessibility.viewportMode.heightPercent === 70
-          ? "single-column-list"
+          accessibility.viewportMode.heightPercent === 70;
+        const expectedOptionIds = isExactGAccessibility
+          ? automaticProductionAiMode
+            ? ["single-column-list"]
+            : ["large-card-row", "single-column-list"]
           : accessibility.textScale === "standard" && accessibility.buttonScale === "standard"
-            ? "compact-grid"
-            : null;
+            ? ["compact-grid"]
+            : [];
+        const selectedOptionId = typeof operation?.optionId === "string"
+          ? operation.optionId
+          : null;
         const metadataMatches = model?.schemaVersion === 2 &&
           model.contractVersion === "universal-layout.v2" &&
           model.hostId === "democoffee" &&
@@ -926,9 +935,8 @@ export default function App() {
           /^[a-f0-9]{64}$/.test(component.itemOrderHash) &&
           Array.isArray(component.operations) && component.operations.includes("selectLayoutOption") &&
           Array.isArray(arrangement?.optionIds) &&
-          expectedOptionId !== null &&
-          arrangement.optionIds.includes(expectedOptionId) &&
-          arrangement.optionIds.length === 1 &&
+          expectedOptionIds.length > 0 &&
+          JSON.stringify(arrangement.optionIds) === JSON.stringify(expectedOptionIds) &&
           Array.isArray(model.allowedOperations) && model.allowedOperations.includes("selectLayoutOption") &&
           plan?.schemaVersion === model.schemaVersion &&
           plan.contractVersion === model.contractVersion &&
@@ -942,7 +950,8 @@ export default function App() {
           operation?.type === "selectLayoutOption" &&
           operation.targetId === "menu.product-list" &&
           operation.groupId === "arrangement" &&
-          operation.optionId === expectedOptionId &&
+          selectedOptionId !== null &&
+          expectedOptionIds.includes(selectedOptionId) &&
           Object.keys(operation).sort().join(",") === "groupId,optionId,targetId,type" &&
           Object.keys(plan).sort().join(",") ===
             "constraintHash,contractVersion,hostId,operations,schemaVersion,screenId,structureHash,structureVersion,viewportClass" &&
@@ -989,16 +998,16 @@ export default function App() {
         logMenuLayoutDiagnostic({
           phase: "plan_validated",
           source,
-          optionId: expectedOptionId,
+          optionId: selectedOptionId,
           viewportClass,
         });
         logMenuLayoutDiagnostic({
           phase: "react_state_update_requested",
           source,
-          optionId: expectedOptionId,
+          optionId: selectedOptionId,
         });
         setUniversalV2Preset({
-          optionId: expectedOptionId,
+          optionId: selectedOptionId as UniversalV2Preset["optionId"],
           structureHash: model.structureHash as string,
           constraintHash: model.constraintHash as string,
           viewportClass,
