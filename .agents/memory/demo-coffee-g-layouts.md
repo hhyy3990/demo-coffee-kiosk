@@ -3,8 +3,8 @@ name: DemoCoffee G layout rollout
 description: Scope boundary for adding accessible menu layout candidates to the G QR profile.
 ---
 
-Keep experimental G-profile layout candidates in Development. Production currently relies on a separate central allowlist and must remain single-column until the central policy is updated and Production rollout is separately approved.
+G-profile layout candidates can be added to DemoCoffee Production code after the central contract is confirmed. Updating local Production policy/client code does not authorize publishing; deployment remains a separate decision.
 
-**Why:** The user requested Development-only implementation so they can validate alternatives before deciding whether to change Production.
+**Why:** The user confirmed the central option order and hashes, authorized the matching DemoCoffee Production code update, and reserved the publishing decision.
 
-**How to apply:** Do not treat local policy or Mock validation as evidence of Production registration. Keep Production code paths constrained to their currently registered candidates and do not publish without explicit approval.
+**How to apply:** Verify option order, hashes, relay validation, and shared rendering against the confirmed contract. Do not make live provider calls or publish unless separately approved.

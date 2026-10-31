@@ -42,7 +42,7 @@ function modelFor(value = input) {
   });
 }
 
-function planFor(model) {
+function planFor(model, optionId = "single-column-list") {
   return {
     schemaVersion: model.schemaVersion,
     contractVersion: model.contractVersion,
@@ -56,7 +56,7 @@ function planFor(model) {
       type: "selectLayoutOption",
       targetId: "menu.product-list",
       groupId: "arrangement",
-      optionId: "single-column-list",
+      optionId,
     }],
   };
 }
@@ -154,6 +154,60 @@ test("Production relay uses the event ID as idempotency key and deduplicates one
     assert.equal(logs.join("\n").includes("host-test-token"), false);
     assert.equal(logs.join("\n").includes("production-external-test-token"), false);
     assert.equal(logs.join("\n").includes("americano"), false);
+  });
+});
+
+test("Production policy matches the finalized G option order and viewport hashes", () => {
+  const expected = {
+    compact: "f15b39448657ea7ff40a7ca3976ae1705eed011f3b336ef0fc3841a6ad2e0f16",
+    regular: "30230ce0e515bb85aab7b6571de080b10eeb0153bda7e23aa990181f0c441843",
+  };
+  for (const viewportClass of ["compact", "regular"]) {
+    const model = modelFor({ ...input, viewportClass });
+    assert.deepEqual(model.components[0].optionGroups, [{
+      id: "arrangement",
+      optionIds: ["large-card-row", "single-column-list"],
+    }]);
+    assert.equal(model.constraintHash, expected[viewportClass]);
+    assert.equal(
+      model.structureHash,
+      "c4e004d4df6fd7f4b0084b0b83569667239cd81284519d46108ad5921dd5cc4e",
+    );
+    assert.equal(
+      model.components[0].itemOrderHash,
+      "af0c4a1b243d46755fc31fa279e936f612bf2b3914b293d67e585d6aa5fb091a",
+    );
+  }
+});
+
+test("Production relay validates both G layout responses for compact and regular models", async () => {
+  const cases = [
+    ["compact", "large-card-row", "6c8b1e12-8df4-4d2b-b201-ef1c8d7a1141"],
+    ["compact", "single-column-list", "6c8b1e12-8df4-4d2b-b201-ef1c8d7a1142"],
+    ["regular", "large-card-row", "6c8b1e12-8df4-4d2b-b201-ef1c8d7a1143"],
+    ["regular", "single-column-list", "6c8b1e12-8df4-4d2b-b201-ef1c8d7a1144"],
+  ];
+  let selectedOptionId;
+  await withServer({
+    fetchImpl: async (_url, init) => {
+      const { model } = JSON.parse(init.body);
+      return Response.json(planFor(model, selectedOptionId));
+    },
+  }, async (origin) => {
+    for (const [viewportClass, optionId, requestEventId] of cases) {
+      selectedOptionId = optionId;
+      const response = await post(origin, {
+        ...input,
+        eventId: requestEventId,
+        viewportClass,
+      });
+      const payload = await response.json();
+      assert.equal(response.status, 200, `${viewportClass}/${optionId}`);
+      assert.equal(payload.plan.operations[0].optionId, optionId);
+      assert.deepEqual(payload.model.components[0].optionGroups?.[0]?.optionIds, [
+        "large-card-row", "single-column-list",
+      ]);
+    }
   });
 });
 

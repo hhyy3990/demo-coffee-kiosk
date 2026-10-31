@@ -28,6 +28,14 @@ export const demoCoffeeUniversalV2ProductionPolicy: UniversalLayoutV2Policy = {
     optionGroups: [{
       id: "arrangement",
       options: [{
+        id: "large-card-row",
+        accessibility: {
+          textScale: ["large"],
+          buttonScale: ["large"],
+          contrast: ["high"],
+          viewportMode: ["bottom-70"],
+        },
+      }, {
         id: "single-column-list",
         accessibility: {
           textScale: ["large"],

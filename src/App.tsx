@@ -909,9 +909,7 @@ export default function App() {
           accessibility.viewportMode?.mode === "bottom" &&
           accessibility.viewportMode.heightPercent === 70;
         const expectedOptionIds = isExactGAccessibility
-          ? automaticProductionAiMode
-            ? ["single-column-list"]
-            : ["large-card-row", "single-column-list"]
+          ? ["large-card-row", "single-column-list"]
           : accessibility.textScale === "standard" && accessibility.buttonScale === "standard"
             ? ["compact-grid"]
             : [];
