@@ -55,3 +55,9 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["npm", "start"]
 build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.production]
+UNIVERSAL_LAYOUT_V2_PRODUCTION_AI_ENABLED = "true"
+VITE_DEMO_COFFEE_AI_LAYOUT_PRODUCTION_AUTO = "true"
